@@ -34,10 +34,28 @@ FDM/FVM による非圧縮性 Navier-Stokes ソルバーを Process Architecture
 - [x] 非定常Robin BC物理テスト（冷却漸近 + エネルギー収支）
 - [x] 冷却フィンベンチマーク（解析解比較、温度分布+底端熱流束）
 - [x] MultilayerBuilder + HeatTransferFDM + Robin BC 連携例
+- [x] SciPy 疎行列ソルバー（直接解法 SuperLU / ILU前処理付き BiCGSTAB）
+- [x] 冷却フィンアレイ 2D/3D 拡張テスト（断面メッシュ・メッシュ収束性）
+- [x] GitHub Actions CI ワークフロー（lint/test/契約検証、Python 3.10-3.12）
 
 ## Phase 2: メッシュ・離散化（予定）
 
-- [ ] 構造化直交メッシュ生成 Process
+### 設計方針
+
+Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および非構造化メッシュへ拡張する。
+既存の `HeatTransferInput.dx/dy/dz` に依存する離散化を、メッシュオブジェクト経由で
+セル体積・面面積・面法線を取得する形に抽象化する。
+
+- **StructuredMeshProcess**: `nx, ny, nz` + 各方向の分割比率から不等間隔直交格子を生成
+- **UnstructuredMeshReaderProcess**: OpenFOAM の `polyMesh/` ディレクトリを読み込み
+- **MeshData**: セル中心座標、面積ベクトル、セル体積、隣接関係を保持する共通データ構造
+- 離散化スキームは **Strategy Pattern** で実装（ConvectionSchemeStrategy, DiffusionSchemeStrategy）
+- 既存の伝熱ソルバーは Phase 2 完了後にメッシュ依存部分をリファクタリング
+
+### タスク
+
+- [ ] MeshData スキーマ設計（セル中心、面面積、体積、隣接行列）
+- [ ] StructuredMeshProcess 実装（不等間隔直交格子）
 - [ ] 非構造化メッシュ読み込み Process（OpenFOAM互換）
 - [ ] 中心差分拡散スキーム実装
 - [ ] 1次風上対流スキーム実装
@@ -69,7 +87,7 @@ FDM/FVM による非圧縮性 Navier-Stokes ソルバーを Process Architecture
 
 - LES / DES
 - 多相流（VOF）
-- 伝熱ソルバー高速化（Numba JIT）
+- 伝熱ソルバー高速化（Numba JIT / PyAMG マルチグリッド）
 - 適応格子細分化（AMR）
 
 ---

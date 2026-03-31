@@ -665,3 +665,379 @@ class TestCoolingFinBenchmark:
         # フィン温度は T_inf 以上、T_base 以下
         assert result.T.min() >= T_inf - 1.0
         assert result.T.max() <= T_base + 1.0
+
+
+# ---------------------------------------------------------------------------
+# 疎行列ソルバーテスト
+# ---------------------------------------------------------------------------
+
+
+class TestSparsesolverPhysics:
+    """疎行列ソルバー（direct / bicgstab）の物理テスト.
+
+    既存の解析解テストを疎行列ソルバーで再検証し、
+    ヤコビ法との結果一致を確認する。
+    """
+
+    def test_direct_1d_dirichlet(self):
+        """直接解法: 1D 両端 Dirichlet の線形温度分布."""
+        nx, ny, nz = 20, 1, 1
+        T_left, T_right = 100.0, 500.0
+        inp = HeatTransferInput(
+            Lx=1.0,
+            Ly=0.05,
+            Lz=0.05,
+            k=np.full((nx, ny, nz), 10.0),
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 300.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+        )
+        solver = HeatTransferFDMProcess(method="direct")
+        result = solver.process(inp)
+
+        assert result.converged
+        # 解析解: 線形分布
+        dx = 1.0 / nx
+        x = np.array([(i + 0.5) * dx for i in range(nx)])
+        T_exact = T_left + (T_right - T_left) * x
+        np.testing.assert_allclose(result.T[:, 0, 0], T_exact, rtol=1e-6)
+
+    def test_direct_1d_with_source(self):
+        """直接解法: 1D Dirichlet + 内部発熱."""
+        nx, ny, nz = 30, 1, 1
+        k_val = 50.0
+        q_val = 1e6
+        T_left, T_right = 300.0, 300.0
+        L = 0.01
+        inp = HeatTransferInput(
+            Lx=L,
+            Ly=0.001,
+            Lz=0.001,
+            k=np.full((nx, ny, nz), k_val),
+            C=np.ones((nx, ny, nz)),
+            q=np.full((nx, ny, nz), q_val),
+            T0=np.full((nx, ny, nz), 300.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+        )
+        solver = HeatTransferFDMProcess(method="direct")
+        result = solver.process(inp)
+
+        dx = L / nx
+        x = np.array([(i + 0.5) * dx for i in range(nx)])
+        T_exact = T_left + q_val / (2.0 * k_val) * x * (L - x)
+        np.testing.assert_allclose(result.T[:, 0, 0], T_exact, rtol=0.01)
+
+    def test_direct_robin_boundary(self):
+        """直接解法: 1D Robin BC."""
+        nx, ny, nz = 20, 1, 1
+        k_val = 10.0
+        h_val = 100.0
+        T_inf = 300.0
+        T_left = 500.0
+        L = 0.1
+        inp = HeatTransferInput(
+            Lx=L,
+            Ly=0.01,
+            Lz=0.01,
+            k=np.full((nx, ny, nz), k_val),
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 400.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.ROBIN, h_conv=h_val, T_inf=T_inf),
+        )
+        solver_direct = HeatTransferFDMProcess(method="direct")
+        result_direct = solver_direct.process(inp)
+
+        solver_jacobi = HeatTransferFDMProcess(method="jacobi")
+        result_jacobi = solver_jacobi.process(inp)
+
+        # 直接解法とヤコビ法の結果が一致
+        np.testing.assert_allclose(
+            result_direct.T,
+            result_jacobi.T,
+            rtol=1e-4,
+            err_msg="直接解法とヤコビ法の結果が一致しない",
+        )
+
+    def test_bicgstab_1d_dirichlet(self):
+        """BiCGSTAB: 1D 両端 Dirichlet の線形温度分布."""
+        nx, ny, nz = 20, 1, 1
+        T_left, T_right = 100.0, 500.0
+        inp = HeatTransferInput(
+            Lx=1.0,
+            Ly=0.05,
+            Lz=0.05,
+            k=np.full((nx, ny, nz), 10.0),
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 300.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+        )
+        solver = HeatTransferFDMProcess(method="bicgstab")
+        result = solver.process(inp)
+
+        assert result.converged
+        dx = 1.0 / nx
+        x = np.array([(i + 0.5) * dx for i in range(nx)])
+        T_exact = T_left + (T_right - T_left) * x
+        np.testing.assert_allclose(result.T[:, 0, 0], T_exact, rtol=1e-4)
+
+    def test_bicgstab_heterogeneous(self):
+        """BiCGSTAB: 異種材料（大きな熱伝導率差）でヤコビ法と一致."""
+        nx, ny, nz = 20, 1, 1
+        k_arr = np.ones((nx, ny, nz))
+        k_arr[:10, :, :] = 400.0  # 銅
+        k_arr[10:, :, :] = 0.3  # FR4
+        T_left, T_right = 400.0, 300.0
+        inp = HeatTransferInput(
+            Lx=0.01,
+            Ly=0.001,
+            Lz=0.001,
+            k=k_arr,
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 350.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+            max_iter=50000,
+            tol=1e-8,
+        )
+        solver_bicgstab = HeatTransferFDMProcess(method="bicgstab")
+        result_bicgstab = solver_bicgstab.process(inp)
+
+        solver_jacobi = HeatTransferFDMProcess(method="jacobi")
+        result_jacobi = solver_jacobi.process(inp)
+
+        np.testing.assert_allclose(
+            result_bicgstab.T,
+            result_jacobi.T,
+            rtol=1e-3,
+            err_msg="BiCGSTAB とヤコビ法の結果が一致しない（異種材料）",
+        )
+
+    def test_direct_transient_robin(self):
+        """直接解法: 非定常 Robin BC 冷却で T_inf に収束."""
+        nx, ny, nz = 5, 5, 5
+        T_init = 500.0
+        T_inf = 300.0
+        h = 5000.0
+        robin = BoundarySpec(BoundaryCondition.ROBIN, h_conv=h, T_inf=T_inf)
+        inp = HeatTransferInput(
+            Lx=0.01,
+            Ly=0.01,
+            Lz=0.01,
+            k=np.full((nx, ny, nz), 50.0),
+            C=np.full((nx, ny, nz), 1e5),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), T_init),
+            bc_xm=robin,
+            bc_xp=robin,
+            bc_ym=robin,
+            bc_yp=robin,
+            bc_zm=robin,
+            bc_zp=robin,
+            dt=0.001,
+            t_end=1.0,
+            output_interval=100,
+        )
+        solver = HeatTransferFDMProcess(method="direct")
+        result = solver.process(inp)
+
+        # 長時間冷却で T_inf に近づく
+        assert result.T.max() < T_init, "温度が初期値から下がっていない"
+        np.testing.assert_allclose(
+            result.T.mean(),
+            T_inf,
+            atol=5.0,
+            err_msg="直接解法: 非定常冷却が T_inf に収束しない",
+        )
+
+    def test_invalid_method_raises(self):
+        """未対応の method で ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError):
+            HeatTransferFDMProcess(method="invalid")
+
+
+# ---------------------------------------------------------------------------
+# 冷却フィンアレイ（2D/3D拡張）テスト
+# ---------------------------------------------------------------------------
+
+
+class TestFinArray:
+    """冷却フィンアレイの2D/3D拡張テスト.
+
+    断面メッシュを複数セルに拡張し、フィン効果を検証する。
+    直接解法 (sparse direct) を使用して高速に解く。
+    """
+
+    def test_2d_fin_cross_section(self):
+        """2Dフィン: 断面方向メッシュを増やしたフィン温度分布.
+
+        断面 ny=5 で、1Dフィン解析解との温度分布比較。
+        断面内で温度勾配が小さいこと（Bi数小の条件）を確認。
+        """
+        L_fin = 0.05
+        W_fin = 0.005
+        k_val = 400.0  # 銅
+        h_conv = 50.0
+        T_base = 350.0
+        T_inf = 300.0
+
+        A_fin = W_fin * W_fin
+        P_fin = 4 * W_fin
+        m = np.sqrt(h_conv * P_fin / (k_val * A_fin))
+
+        nx, ny, nz = 30, 5, 1
+        bc_robin = BoundarySpec(BoundaryCondition.ROBIN, h_conv=h_conv, T_inf=T_inf)
+
+        inp = HeatTransferInput(
+            Lx=L_fin,
+            Ly=W_fin,
+            Lz=W_fin,
+            k=np.full((nx, ny, nz), k_val),
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), T_base),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_base),
+            bc_xp=BoundarySpec(BoundaryCondition.ADIABATIC),
+            bc_ym=bc_robin,
+            bc_yp=bc_robin,
+            bc_zm=bc_robin,
+            bc_zp=bc_robin,
+        )
+        solver = HeatTransferFDMProcess(method="direct")
+        result = solver.process(inp)
+
+        # 1D 解析解（断熱先端）
+        dx = L_fin / nx
+        x_cell = np.array([dx * (i + 0.5) for i in range(nx)])
+        T_1d = T_inf + (T_base - T_inf) * np.cosh(m * (L_fin - x_cell)) / np.cosh(m * L_fin)
+
+        # 断面中央 (ny//2) の温度分布が 1D 解と概ね一致
+        T_center = result.T[:, ny // 2, 0]
+        np.testing.assert_allclose(
+            T_center,
+            T_1d,
+            rtol=0.10,
+            err_msg="2Dフィン: 断面中央温度が1D解析解と一致しない",
+        )
+
+        # 断面内温度差が小さい（Bi = hW/k ≪ 1 の条件）
+        for i in range(nx):
+            T_slice = result.T[i, :, 0]
+            T_range = T_slice.max() - T_slice.min()
+            assert T_range < 2.0, (
+                f"断面 x={i}: 温度差 {T_range:.3f}K が大きい（Bi数小で均一であるべき）"
+            )
+
+    def test_3d_fin_array_base_heat(self):
+        """3Dフィンアレイ: 2本フィンの底端熱流束合計.
+
+        y方向に2本のフィンを並べ、底端から流入する総熱流束を検証。
+        """
+        L_fin = 0.03
+        W_fin = 0.004
+        k_val = 200.0  # アルミ
+        h_conv = 40.0
+        T_base = 370.0
+        T_inf = 300.0
+
+        # 2本フィン: y方向に2つ並べる（ベースプレートは省略、底端Dirichlet）
+        nx, ny, nz = 20, 2, 3
+
+        Ly = W_fin * ny  # 2本分の幅
+        bc_robin = BoundarySpec(BoundaryCondition.ROBIN, h_conv=h_conv, T_inf=T_inf)
+
+        inp = HeatTransferInput(
+            Lx=L_fin,
+            Ly=Ly,
+            Lz=W_fin,
+            k=np.full((nx, ny, nz), k_val),
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), T_base),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_base),
+            bc_xp=bc_robin,  # 先端対流
+            bc_ym=bc_robin,
+            bc_yp=bc_robin,
+            bc_zm=bc_robin,
+            bc_zp=bc_robin,
+        )
+        solver = HeatTransferFDMProcess(method="direct")
+        result = solver.process(inp)
+
+        # 底端熱流束: 各フィンの底端セルから計算
+        dx = L_fin / nx
+        q_total = 0.0
+        for j in range(ny):
+            for kk in range(nz):
+                q_cell = k_val * (T_base - result.T[0, j, kk]) / (dx / 2)
+                q_total += q_cell * (Ly / ny) * (W_fin / nz)
+
+        assert q_total > 0, "底端熱流束が正であるべき"
+        assert result.T.min() >= T_inf - 1.0, "温度がT_inf以下"
+        assert result.T.max() <= T_base + 1.0, "温度がT_base超過"
+
+        # 温度はフィン先端ほど低い
+        T_mean_base = result.T[0, :, :].mean()
+        T_mean_tip = result.T[-1, :, :].mean()
+        assert T_mean_tip < T_mean_base, "フィン先端がベースより高温"
+
+    def test_fin_efficiency_with_mesh_refinement(self):
+        """メッシュ細分化でフィン効率が解析解に近づくことを検証.
+
+        粗メッシュ vs 細メッシュで解析解との差が縮小すること。
+        """
+        L_fin = 0.05
+        W_fin = 0.005
+        k_val = 400.0
+        h_conv = 50.0
+        T_base = 350.0
+        T_inf = 300.0
+
+        A_fin = W_fin * W_fin
+        P_fin = 4 * W_fin
+        m = np.sqrt(h_conv * P_fin / (k_val * A_fin))
+        # 解析解: 断熱先端フィン効率
+        eta_analytical = np.tanh(m * L_fin) / (m * L_fin)
+
+        errors = []
+        for nx in [10, 30]:
+            nz = 1
+            ny = 1
+            bc_robin = BoundarySpec(BoundaryCondition.ROBIN, h_conv=h_conv, T_inf=T_inf)
+            inp = HeatTransferInput(
+                Lx=L_fin,
+                Ly=W_fin,
+                Lz=W_fin,
+                k=np.full((nx, ny, nz), k_val),
+                C=np.ones((nx, ny, nz)),
+                q=np.zeros((nx, ny, nz)),
+                T0=np.full((nx, ny, nz), T_base),
+                bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_base),
+                bc_xp=BoundarySpec(BoundaryCondition.ADIABATIC),
+                bc_ym=bc_robin,
+                bc_yp=bc_robin,
+                bc_zm=bc_robin,
+                bc_zp=bc_robin,
+            )
+            solver = HeatTransferFDMProcess(method="direct")
+            result = solver.process(inp)
+
+            dx = L_fin / nx
+            q_base = k_val * (T_base - result.T[0, 0, 0]) / (dx / 2)
+            q_max = h_conv * P_fin * L_fin * (T_base - T_inf) / A_fin
+            eta_num = q_base / q_max if q_max > 0 else 0.0
+            errors.append(abs(eta_num - eta_analytical))
+
+        # 細メッシュの方が解析解に近い（誤差減少）
+        assert errors[1] < errors[0], (
+            f"メッシュ細分化で精度改善されていない: 粗={errors[0]:.4f}, 細={errors[1]:.4f}"
+        )
