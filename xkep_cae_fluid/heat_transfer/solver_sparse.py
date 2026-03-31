@@ -243,6 +243,216 @@ def build_sparse_system(
     return A, rhs
 
 
+def build_sparse_system_nonuniform(
+    inp: HeatTransferInput,
+    T_old_time: np.ndarray | None = None,
+    is_transient: bool = False,
+) -> tuple[sparse.csr_matrix, np.ndarray]:
+    """不等間隔格子用の疎行列システムを組み立てる.
+
+    dx_array/dy_array/dz_array を使い、各セルごとに異なる格子幅で
+    拡散項を離散化する。
+
+    2次微分の離散化（セルPの東隣Eとの間）:
+      d²T/dx² ≈ k_face * (T_E - T_P) / d_PE
+      ここで d_PE = (dx[i] + dx[i+1]) / 2
+      体積あたり: coeff = k_face / (d_PE * dx[i])
+    """
+    nx, ny, nz = inp.nx, inp.ny, inp.nz
+    n = nx * ny * nz
+    dx_arr = inp.dx_array
+    dy_arr = inp.dy_array
+    dz_arr = inp.dz_array
+    k = inp.k
+
+    rows: list[np.ndarray] = []
+    cols: list[np.ndarray] = []
+    vals: list[np.ndarray] = []
+    diag = np.zeros(n)
+    rhs = np.zeros(n)
+
+    def idx(i: np.ndarray, j: np.ndarray, k_idx: np.ndarray) -> np.ndarray:
+        return i * (ny * nz) + j * nz + k_idx
+
+    ii, jj, kk = np.meshgrid(np.arange(nx), np.arange(ny), np.arange(nz), indexing="ij")
+    ii_f = ii.ravel()
+    jj_f = jj.ravel()
+    kk_f = kk.ravel()
+    flat_idx = idx(ii_f, jj_f, kk_f)
+
+    # x方向のセル幅（各セルに対応）
+    dx_cell = dx_arr[ii_f]  # (n,) 各セルの x 幅
+
+    # --- x方向 ---
+    # x- 内部
+    mask = ii_f > 0
+    i_c = flat_idx[mask]
+    i_nb = idx(ii_f[mask] - 1, jj_f[mask], kk_f[mask])
+    k_face = _face_conductivity(
+        k[ii_f[mask], jj_f[mask], kk_f[mask]],
+        k[ii_f[mask] - 1, jj_f[mask], kk_f[mask]],
+    )
+    d_pn = 0.5 * (dx_arr[ii_f[mask]] + dx_arr[ii_f[mask] - 1])
+    coeff = k_face / (d_pn * dx_cell[mask])
+    diag[i_c] += coeff
+    rows.append(i_c)
+    cols.append(i_nb)
+    vals.append(-coeff)
+
+    # x- 境界
+    mask_bd = ii_f == 0
+    bd_k = k[0, jj_f[mask_bd], kk_f[mask_bd]]
+    dx_bd = dx_arr[0]
+    bc_a, bc_f = _bc_diag_source(inp.bc_xm, bd_k, dx_bd, dx_bd * dx_bd)
+    diag[flat_idx[mask_bd]] += bc_a
+    rhs[flat_idx[mask_bd]] += bc_f
+
+    # x+ 内部
+    mask = ii_f < nx - 1
+    i_c = flat_idx[mask]
+    i_nb = idx(ii_f[mask] + 1, jj_f[mask], kk_f[mask])
+    k_face = _face_conductivity(
+        k[ii_f[mask], jj_f[mask], kk_f[mask]],
+        k[ii_f[mask] + 1, jj_f[mask], kk_f[mask]],
+    )
+    d_pn = 0.5 * (dx_arr[ii_f[mask]] + dx_arr[ii_f[mask] + 1])
+    coeff = k_face / (d_pn * dx_cell[mask])
+    diag[i_c] += coeff
+    rows.append(i_c)
+    cols.append(i_nb)
+    vals.append(-coeff)
+
+    # x+ 境界
+    mask_bd = ii_f == nx - 1
+    bd_k = k[nx - 1, jj_f[mask_bd], kk_f[mask_bd]]
+    dx_bd = dx_arr[nx - 1]
+    bc_a, bc_f = _bc_diag_source(inp.bc_xp, bd_k, dx_bd, dx_bd * dx_bd)
+    diag[flat_idx[mask_bd]] += bc_a
+    rhs[flat_idx[mask_bd]] += bc_f
+
+    # --- y方向 ---
+    dy_cell = dy_arr[jj_f]
+
+    mask = jj_f > 0
+    i_c = flat_idx[mask]
+    i_nb = idx(ii_f[mask], jj_f[mask] - 1, kk_f[mask])
+    k_face = _face_conductivity(
+        k[ii_f[mask], jj_f[mask], kk_f[mask]],
+        k[ii_f[mask], jj_f[mask] - 1, kk_f[mask]],
+    )
+    d_pn = 0.5 * (dy_arr[jj_f[mask]] + dy_arr[jj_f[mask] - 1])
+    coeff = k_face / (d_pn * dy_cell[mask])
+    diag[i_c] += coeff
+    rows.append(i_c)
+    cols.append(i_nb)
+    vals.append(-coeff)
+
+    mask_bd = jj_f == 0
+    bd_k = k[ii_f[mask_bd], 0, kk_f[mask_bd]]
+    dy_bd = dy_arr[0]
+    bc_a, bc_f = _bc_diag_source(inp.bc_ym, bd_k, dy_bd, dy_bd * dy_bd)
+    diag[flat_idx[mask_bd]] += bc_a
+    rhs[flat_idx[mask_bd]] += bc_f
+
+    mask = jj_f < ny - 1
+    i_c = flat_idx[mask]
+    i_nb = idx(ii_f[mask], jj_f[mask] + 1, kk_f[mask])
+    k_face = _face_conductivity(
+        k[ii_f[mask], jj_f[mask], kk_f[mask]],
+        k[ii_f[mask], jj_f[mask] + 1, kk_f[mask]],
+    )
+    d_pn = 0.5 * (dy_arr[jj_f[mask]] + dy_arr[jj_f[mask] + 1])
+    coeff = k_face / (d_pn * dy_cell[mask])
+    diag[i_c] += coeff
+    rows.append(i_c)
+    cols.append(i_nb)
+    vals.append(-coeff)
+
+    mask_bd = jj_f == ny - 1
+    bd_k = k[ii_f[mask_bd], ny - 1, kk_f[mask_bd]]
+    dy_bd = dy_arr[ny - 1]
+    bc_a, bc_f = _bc_diag_source(inp.bc_yp, bd_k, dy_bd, dy_bd * dy_bd)
+    diag[flat_idx[mask_bd]] += bc_a
+    rhs[flat_idx[mask_bd]] += bc_f
+
+    # --- z方向 ---
+    dz_cell = dz_arr[kk_f]
+
+    mask = kk_f > 0
+    i_c = flat_idx[mask]
+    i_nb = idx(ii_f[mask], jj_f[mask], kk_f[mask] - 1)
+    k_face = _face_conductivity(
+        k[ii_f[mask], jj_f[mask], kk_f[mask]],
+        k[ii_f[mask], jj_f[mask], kk_f[mask] - 1],
+    )
+    d_pn = 0.5 * (dz_arr[kk_f[mask]] + dz_arr[kk_f[mask] - 1])
+    coeff = k_face / (d_pn * dz_cell[mask])
+    diag[i_c] += coeff
+    rows.append(i_c)
+    cols.append(i_nb)
+    vals.append(-coeff)
+
+    mask_bd = kk_f == 0
+    bd_k = k[ii_f[mask_bd], jj_f[mask_bd], 0]
+    dz_bd = dz_arr[0]
+    bc_a, bc_f = _bc_diag_source(inp.bc_zm, bd_k, dz_bd, dz_bd * dz_bd)
+    diag[flat_idx[mask_bd]] += bc_a
+    rhs[flat_idx[mask_bd]] += bc_f
+
+    mask = kk_f < nz - 1
+    i_c = flat_idx[mask]
+    i_nb = idx(ii_f[mask], jj_f[mask], kk_f[mask] + 1)
+    k_face = _face_conductivity(
+        k[ii_f[mask], jj_f[mask], kk_f[mask]],
+        k[ii_f[mask], jj_f[mask], kk_f[mask] + 1],
+    )
+    d_pn = 0.5 * (dz_arr[kk_f[mask]] + dz_arr[kk_f[mask] + 1])
+    coeff = k_face / (d_pn * dz_cell[mask])
+    diag[i_c] += coeff
+    rows.append(i_c)
+    cols.append(i_nb)
+    vals.append(-coeff)
+
+    mask_bd = kk_f == nz - 1
+    bd_k = k[ii_f[mask_bd], jj_f[mask_bd], nz - 1]
+    dz_bd = dz_arr[nz - 1]
+    bc_a, bc_f = _bc_diag_source(inp.bc_zp, bd_k, dz_bd, dz_bd * dz_bd)
+    diag[flat_idx[mask_bd]] += bc_a
+    rhs[flat_idx[mask_bd]] += bc_f
+
+    # 時間項
+    if is_transient and T_old_time is not None:
+        time_coeff = inp.C.ravel() / inp.dt
+        diag += time_coeff
+        rhs += time_coeff * T_old_time.ravel()
+
+    # 発熱量
+    rhs += inp.q.ravel()
+
+    # 対角項
+    rows.append(np.arange(n))
+    cols.append(np.arange(n))
+    vals.append(diag)
+
+    all_rows = np.concatenate(rows)
+    all_cols = np.concatenate(cols)
+    all_vals = np.concatenate(vals)
+
+    A = sparse.coo_matrix((all_vals, (all_rows, all_cols)), shape=(n, n)).tocsc()
+    return A, rhs
+
+
+def _build_system(
+    inp: HeatTransferInput,
+    T_old_time: np.ndarray | None = None,
+    is_transient: bool = False,
+) -> tuple[sparse.csr_matrix, np.ndarray]:
+    """等間隔/不等間隔を自動判定してシステムを組み立てる."""
+    if inp.is_nonuniform:
+        return build_sparse_system_nonuniform(inp, T_old_time, is_transient)
+    return build_sparse_system(inp, T_old_time, is_transient)
+
+
 def solve_sparse_direct(
     inp: HeatTransferInput,
     T_old_time: np.ndarray | None = None,
@@ -255,7 +465,7 @@ def solve_sparse_direct(
     tuple[np.ndarray, int]
         (温度場 (nx,ny,nz), 反復数=1)
     """
-    A, b = build_sparse_system(inp, T_old_time, is_transient)
+    A, b = _build_system(inp, T_old_time, is_transient)
     x = spla.spsolve(A, b)
     T = x.reshape(inp.nx, inp.ny, inp.nz)
     return T, 1
@@ -294,7 +504,7 @@ def solve_sparse_amg(
         msg = "PyAMG が必要です。pip install 'xkep-cae-fluid[amg]' でインストールしてください。"
         raise ImportError(msg) from None
 
-    A, b = build_sparse_system(inp, T_old_time, is_transient)
+    A, b = _build_system(inp, T_old_time, is_transient)
 
     # CSR 形式に変換（PyAMG は CSR を想定）
     A_csr = A.tocsr()
@@ -337,7 +547,7 @@ def solve_sparse_iterative(
     tuple[np.ndarray, int, float]
         (温度場 (nx,ny,nz), 反復数, 最終残差)
     """
-    A, b = build_sparse_system(inp, T_old_time, is_transient)
+    A, b = _build_system(inp, T_old_time, is_transient)
 
     # ILU 前処理
     ilu = spla.spilu(A, drop_tol=1e-4)

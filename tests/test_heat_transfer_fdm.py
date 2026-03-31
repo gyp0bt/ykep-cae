@@ -1295,3 +1295,156 @@ class TestNumbaSolverPhysics:
             atol=5.0,
             err_msg="Numba GS: 非定常冷却が T_inf に収束しない",
         )
+
+
+# ---------------------------------------------------------------------------
+# MeshData 対応テスト
+# ---------------------------------------------------------------------------
+
+
+class TestMeshDataIntegration:
+    """HeatTransferInput.from_mesh() と不等間隔格子の疎行列ソルバーテスト."""
+
+    def test_from_mesh_uniform(self):
+        """from_mesh() で等間隔格子入力を生成し、直接解法と比較."""
+        from xkep_cae_fluid.core.mesh import StructuredMeshInput, StructuredMeshProcess
+
+        nx, ny, nz = 10, 1, 1
+        mesh_result = StructuredMeshProcess().process(
+            StructuredMeshInput(Lx=1.0, Ly=0.05, Lz=0.05, nx=nx, ny=ny, nz=nz)
+        )
+        T_left, T_right = 100.0, 500.0
+        k_arr = np.full((nx, ny, nz), 10.0)
+        C_arr = np.ones((nx, ny, nz))
+        q_arr = np.zeros((nx, ny, nz))
+        T0_arr = np.full((nx, ny, nz), 300.0)
+
+        inp_mesh = HeatTransferInput.from_mesh(
+            mesh_result,
+            k=k_arr,
+            C=C_arr,
+            q=q_arr,
+            T0=T0_arr,
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+            tol=1e-10,
+        )
+
+        assert inp_mesh.is_nonuniform
+        assert inp_mesh.dx_array is not None
+
+        result_mesh = HeatTransferFDMProcess(method="direct").process(inp_mesh)
+
+        # 等間隔の通常入力と比較
+        inp_uniform = HeatTransferInput(
+            Lx=1.0,
+            Ly=0.05,
+            Lz=0.05,
+            k=k_arr,
+            C=C_arr,
+            q=q_arr,
+            T0=T0_arr,
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+            tol=1e-10,
+        )
+        result_uniform = HeatTransferFDMProcess(method="direct").process(inp_uniform)
+
+        np.testing.assert_allclose(
+            result_mesh.T,
+            result_uniform.T,
+            rtol=1e-6,
+            err_msg="from_mesh() 等間隔格子が通常入力と一致しない",
+        )
+
+    def test_nonuniform_1d_dirichlet(self):
+        """不等間隔格子でも1D Dirichlet の線形温度分布が得られる."""
+        from xkep_cae_fluid.core.mesh import StructuredMeshInput, StructuredMeshProcess
+
+        nx, ny, nz = 15, 1, 1
+        T_left, T_right = 100.0, 500.0
+
+        # ストレッチング付きメッシュ
+        mesh_result = StructuredMeshProcess().process(
+            StructuredMeshInput(
+                Lx=1.0,
+                Ly=0.05,
+                Lz=0.05,
+                nx=nx,
+                ny=ny,
+                nz=nz,
+                stretch_x=(3.0, 1.0),
+            )
+        )
+
+        inp = HeatTransferInput.from_mesh(
+            mesh_result,
+            k=np.full((nx, ny, nz), 10.0),
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 300.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+            tol=1e-10,
+        )
+
+        result = HeatTransferFDMProcess(method="direct").process(inp)
+
+        # セル中心座標を計算
+        dx = mesh_result.dx
+        x_centers = np.cumsum(dx) - dx / 2
+
+        # 解析解: T(x) = T_left + (T_right - T_left) * x / L
+        T_exact = T_left + (T_right - T_left) * x_centers
+        np.testing.assert_allclose(
+            result.T[:, 0, 0],
+            T_exact,
+            rtol=1e-4,
+            err_msg="不等間隔格子で線形温度分布が得られない",
+        )
+
+    def test_nonuniform_with_source(self):
+        """不等間隔格子で内部発熱ありの解析解と比較."""
+        from xkep_cae_fluid.core.mesh import StructuredMeshInput, StructuredMeshProcess
+
+        nx, ny, nz = 20, 1, 1
+        k_val = 50.0
+        q_val = 1e6
+        T_left = T_right = 300.0
+        L = 0.01
+
+        mesh_result = StructuredMeshProcess().process(
+            StructuredMeshInput(
+                Lx=L,
+                Ly=0.001,
+                Lz=0.001,
+                nx=nx,
+                ny=ny,
+                nz=nz,
+                stretch_x=(2.0, 1.0),
+            )
+        )
+
+        inp = HeatTransferInput.from_mesh(
+            mesh_result,
+            k=np.full((nx, ny, nz), k_val),
+            C=np.ones((nx, ny, nz)),
+            q=np.full((nx, ny, nz), q_val),
+            T0=np.full((nx, ny, nz), 300.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+            tol=1e-10,
+        )
+
+        result = HeatTransferFDMProcess(method="direct").process(inp)
+
+        dx = mesh_result.dx
+        x_centers = np.cumsum(dx) - dx / 2
+        T_exact = T_left + q_val / (2.0 * k_val) * x_centers * (L - x_centers)
+
+        np.testing.assert_allclose(
+            result.T[:, 0, 0],
+            T_exact,
+            rtol=0.05,
+            err_msg="不等間隔格子で発熱問題の解析解と一致しない",
+        )

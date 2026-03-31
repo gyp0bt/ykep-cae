@@ -51,6 +51,7 @@ class HeatTransferInput:
     """伝熱解析ソルバー入力.
 
     等間隔直交格子上の3次元非定常伝熱解析の入力データ。
+    dx_array/dy_array/dz_array が指定された場合、不等間隔格子に対応する。
 
     Parameters
     ----------
@@ -76,6 +77,12 @@ class HeatTransferInput:
         収束判定閾値（残差のL2ノルム）
     output_interval : int
         結果出力間隔（タイムステップ数）
+    dx_array : np.ndarray | None
+        x方向の各セル幅 (nx,)。不等間隔格子用。None の場合は等間隔。
+    dy_array : np.ndarray | None
+        y方向の各セル幅 (ny,)。不等間隔格子用。None の場合は等間隔。
+    dz_array : np.ndarray | None
+        z方向の各セル幅 (nz,)。不等間隔格子用。None の場合は等間隔。
     """
 
     Lx: float
@@ -96,6 +103,9 @@ class HeatTransferInput:
     max_iter: int = 10000
     tol: float = 1e-6
     output_interval: int = 1
+    dx_array: np.ndarray | None = None
+    dy_array: np.ndarray | None = None
+    dz_array: np.ndarray | None = None
 
     @property
     def nx(self) -> int:
@@ -124,6 +134,52 @@ class HeatTransferInput:
     @property
     def is_transient(self) -> bool:
         return self.dt > 0.0
+
+    @property
+    def is_nonuniform(self) -> bool:
+        """不等間隔格子かどうか."""
+        return self.dx_array is not None
+
+    @classmethod
+    def from_mesh(
+        cls,
+        mesh_result: object,
+        k: np.ndarray,
+        C: np.ndarray,
+        q: np.ndarray,
+        T0: np.ndarray,
+        **kwargs: object,
+    ) -> HeatTransferInput:
+        """StructuredMeshResult からインスタンスを生成.
+
+        Parameters
+        ----------
+        mesh_result : StructuredMeshResult
+            メッシュ生成結果（dx, dy, dz 配列を持つ）
+        k, C, q, T0 : np.ndarray
+            物性値と初期条件（(nx, ny, nz) 配列）
+        **kwargs
+            その他のパラメータ（bc_xm, dt, tol 等）
+        """
+        dx_arr = mesh_result.dx  # type: ignore[attr-defined]
+        dy_arr = mesh_result.dy  # type: ignore[attr-defined]
+        dz_arr = mesh_result.dz  # type: ignore[attr-defined]
+        Lx = float(np.sum(dx_arr))
+        Ly = float(np.sum(dy_arr))
+        Lz = float(np.sum(dz_arr))
+        return cls(
+            Lx=Lx,
+            Ly=Ly,
+            Lz=Lz,
+            k=k,
+            C=C,
+            q=q,
+            T0=T0,
+            dx_array=dx_arr,
+            dy_array=dy_arr,
+            dz_array=dz_arr,
+            **kwargs,  # type: ignore[arg-type]
+        )
 
 
 @dataclass(frozen=True)
