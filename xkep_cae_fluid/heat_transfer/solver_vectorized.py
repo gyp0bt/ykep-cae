@@ -41,6 +41,13 @@ def _apply_bc_vectorized(
         return coeff, coeff * bc.value
     elif bc.condition == BoundaryCondition.NEUMANN:
         return np.zeros(shape), np.full(shape, bc.value / d)
+    elif bc.condition == BoundaryCondition.ROBIN:
+        h = bc.h_conv
+        if h <= 0.0:
+            return np.zeros(shape), np.zeros(shape)
+        u_eff = 2.0 * k_boundary * h / (2.0 * k_boundary + h * d)
+        coeff = u_eff / d
+        return coeff, coeff * bc.T_inf
     else:
         return np.zeros(shape), np.zeros(shape)
 

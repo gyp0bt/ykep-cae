@@ -18,6 +18,7 @@ class BoundaryCondition(Enum):
     DIRICHLET = "dirichlet"  # 温度固定
     NEUMANN = "neumann"  # 熱流束指定
     ADIABATIC = "adiabatic"  # 断熱
+    ROBIN = "robin"  # 対流熱伝達 h(T_inf - T)
 
 
 @dataclass(frozen=True)
@@ -32,10 +33,17 @@ class BoundarySpec:
         DIRICHLET: 壁面温度 [K]
         NEUMANN: 熱流束 [W/m²] (正=流入)
         ADIABATIC: 無視される
+        ROBIN: 無視される（h_conv, T_inf を使用）
+    h_conv : float
+        対流熱伝達係数 [W/(m²·K)]（ROBIN 用）
+    T_inf : float
+        外部流体温度 [K]（ROBIN 用）
     """
 
     condition: BoundaryCondition
     value: float = 0.0
+    h_conv: float = 0.0
+    T_inf: float = 0.0
 
 
 @dataclass(frozen=True)

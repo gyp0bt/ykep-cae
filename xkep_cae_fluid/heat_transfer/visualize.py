@@ -1,6 +1,7 @@
 """伝熱解析結果の可視化 PostProcess.
 
 温度マップ（2Dスライス）の描画・保存機能を提供する。
+CJK日本語フォント対応・対称ミラーリング表示機能あり。
 """
 
 from __future__ import annotations
@@ -12,12 +13,49 @@ from typing import ClassVar
 import matplotlib
 
 matplotlib.use("Agg")
+import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 import numpy as np
 
 from xkep_cae_fluid.core.base import AbstractProcess, ProcessMeta
 from xkep_cae_fluid.core.categories import PostProcess
 from xkep_cae_fluid.heat_transfer.data import HeatTransferResult
+
+# CJK 日本語フォントの自動検出と設定
+_CJK_FONT_CANDIDATES = [
+    "IPAGothic",
+    "IPAPGothic",
+    "IPAexGothic",
+    "Noto Sans CJK JP",
+    "Noto Sans JP",
+    "TakaoPGothic",
+    "VL PGothic",
+    "Hiragino Sans",
+]
+
+
+def _find_cjk_font() -> str | None:
+    """利用可能なCJKフォントを検索して返す."""
+    available = {f.name for f in fm.fontManager.ttflist}
+    for candidate in _CJK_FONT_CANDIDATES:
+        if candidate in available:
+            return candidate
+    return None
+
+
+def setup_cjk_font() -> str | None:
+    """CJK日本語フォントを matplotlib に設定する.
+
+    Returns
+    -------
+    str | None
+        設定されたフォント名。見つからない場合は None。
+    """
+    font_name = _find_cjk_font()
+    if font_name is not None:
+        plt.rcParams["font.family"] = font_name
+        plt.rcParams["axes.unicode_minus"] = False
+    return font_name
 
 
 @dataclass(frozen=True)
@@ -54,6 +92,11 @@ class TemperatureMapInput:
         カラーマップの最小値
     vmax : float | None
         カラーマップの最大値
+    mirror_axes : tuple[str, ...] | None
+        対称ミラーリングする軸 ("x", "y", "z" の組み合わせ)
+        例: ("x",) → x方向にミラー、("x", "y") → 両方向にミラー
+    use_cjk_font : bool
+        CJK日本語フォントを自動設定するか
     """
 
     result: HeatTransferResult
@@ -72,6 +115,8 @@ class TemperatureMapInput:
     layer_labels: tuple[str, ...] | None = None
     vmin: float | None = None
     vmax: float | None = None
+    mirror_axes: tuple[str, ...] | None = None
+    use_cjk_font: bool = False
 
 
 @dataclass(frozen=True)
@@ -96,6 +141,43 @@ class TemperatureMapOutput:
     T_max: float = 0.0
 
 
+def _mirror_field(
+    T: np.ndarray,
+    Lx: float,
+    Ly: float,
+    Lz: float,
+    mirror_axes: tuple[str, ...],
+) -> tuple[np.ndarray, float, float, float]:
+    """温度場を指定軸でミラーリングする.
+
+    Parameters
+    ----------
+    T : np.ndarray
+        温度場 (nx, ny, nz)
+    Lx, Ly, Lz : float
+        領域サイズ
+    mirror_axes : tuple[str, ...]
+        ミラーする軸 ("x", "y", "z")
+
+    Returns
+    -------
+    tuple[np.ndarray, float, float, float]
+        (ミラー後の温度場, 新Lx, 新Ly, 新Lz)
+    """
+    for axis in mirror_axes:
+        a = axis.lower()
+        if a == "x":
+            T = np.concatenate([T[::-1, :, :], T], axis=0)
+            Lx *= 2.0
+        elif a == "y":
+            T = np.concatenate([T[:, ::-1, :], T], axis=1)
+            Ly *= 2.0
+        elif a == "z":
+            T = np.concatenate([T[:, :, ::-1], T], axis=2)
+            Lz *= 2.0
+    return T, Lx, Ly, Lz
+
+
 class TemperatureMapProcess(PostProcess["TemperatureMapInput", "TemperatureMapOutput"]):
     """温度マップ（2Dスライス）を描画する PostProcess."""
 
@@ -111,7 +193,17 @@ class TemperatureMapProcess(PostProcess["TemperatureMapInput", "TemperatureMapOu
     def process(self, input_data: TemperatureMapInput) -> TemperatureMapOutput:
         """温度マップを描画する."""
         inp = input_data
+
+        # CJK フォント設定
+        if inp.use_cjk_font:
+            setup_cjk_font()
+
+        # ミラーリング処理
         T = inp.result.T
+        Lx, Ly, Lz = inp.Lx, inp.Ly, inp.Lz
+        if inp.mirror_axes:
+            T, Lx, Ly, Lz = _mirror_field(T, Lx, Ly, Lz, inp.mirror_axes)
+
         nx, ny, nz = T.shape
 
         # スライス位置の決定
@@ -119,24 +211,24 @@ class TemperatureMapProcess(PostProcess["TemperatureMapInput", "TemperatureMapOu
         if axis == "x":
             idx = inp.slice_index if inp.slice_index is not None else nx // 2
             T_slice = T[idx, :, :].T  # (nz, ny)
-            extent_h = inp.Ly
-            extent_v = inp.Lz
+            extent_h = Ly
+            extent_v = Lz
             xlabel = "y [m]"
             ylabel = "z [m]"
             nh, nv = ny, nz
         elif axis == "y":
             idx = inp.slice_index if inp.slice_index is not None else ny // 2
             T_slice = T[:, idx, :].T  # (nz, nx)
-            extent_h = inp.Lx
-            extent_v = inp.Lz
+            extent_h = Lx
+            extent_v = Lz
             xlabel = "x [m]"
             ylabel = "z [m]"
             nh, nv = nx, nz
         elif axis == "z":
             idx = inp.slice_index if inp.slice_index is not None else nz // 2
             T_slice = T[:, :, idx].T  # (ny, nx)
-            extent_h = inp.Lx
-            extent_v = inp.Ly
+            extent_h = Lx
+            extent_v = Ly
             xlabel = "x [m]"
             ylabel = "y [m]"
             nh, nv = nx, ny

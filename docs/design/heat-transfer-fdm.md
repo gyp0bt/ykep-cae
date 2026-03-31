@@ -78,6 +78,21 @@ $$
 | `dirichlet` | `T_wall` | 温度固定境界 |
 | `neumann` | `q_flux` | 熱流束指定境界 (q_flux > 0 = 流入) |
 | `adiabatic` | なし | 断熱境界 (q_flux = 0) |
+| `robin` | `h_conv`, `T_inf` | 対流熱伝達境界 q = h(T_inf - T_surface) |
+
+### Robin境界条件の離散化
+
+壁面からセル中心までの熱抵抗 $d/(2k)$ と対流抵抗 $1/h$ を合成:
+
+$$
+U_{\text{eff}} = \frac{2kh}{2k + hd}
+$$
+
+体積あたりの寄与:
+
+$$
+a_{\text{bc}} = \frac{U_{\text{eff}}}{d}, \quad \text{flux}_{\text{bc}} = a_{\text{bc}} \cdot T_\infty
+$$
 
 ## プロセス設計
 

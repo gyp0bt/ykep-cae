@@ -27,6 +27,10 @@ FDM/FVM による非圧縮性 Navier-Stokes ソルバーを Process Architecture
 - [x] NumPy ベクトル化ヤコビ法ソルバー（高速化）
 - [x] TemperatureMapProcess（温度マップ可視化 PostProcess）
 - [x] 4層多層シート温度マップ例題
+- [x] Robin境界条件（対流熱伝達 h(T∞-T)）
+- [x] MultilayerBuilderProcess（多層シート物性値ビルダー）
+- [x] CJK日本語フォント自動検出・設定
+- [x] 対称ミラーリング表示（1/8対称→全体展開）
 
 ## Phase 2: メッシュ・離散化（予定）
 
@@ -62,7 +66,7 @@ FDM/FVM による非圧縮性 Navier-Stokes ソルバーを Process Architecture
 
 - LES / DES
 - 多相流（VOF）
-- 伝熱ソルバー高速化（NumPy ベクトル化、Numba JIT）
+- 伝熱ソルバー高速化（Numba JIT）
 - 適応格子細分化（AMR）
 
 ---
