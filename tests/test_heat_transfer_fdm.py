@@ -665,3 +665,201 @@ class TestCoolingFinBenchmark:
         # フィン温度は T_inf 以上、T_base 以下
         assert result.T.min() >= T_inf - 1.0
         assert result.T.max() <= T_base + 1.0
+
+
+# ---------------------------------------------------------------------------
+# 疎行列ソルバーテスト
+# ---------------------------------------------------------------------------
+
+
+class TestSparsesolverPhysics:
+    """疎行列ソルバー（direct / bicgstab）の物理テスト.
+
+    既存の解析解テストを疎行列ソルバーで再検証し、
+    ヤコビ法との結果一致を確認する。
+    """
+
+    def test_direct_1d_dirichlet(self):
+        """直接解法: 1D 両端 Dirichlet の線形温度分布."""
+        nx, ny, nz = 20, 1, 1
+        T_left, T_right = 100.0, 500.0
+        inp = HeatTransferInput(
+            Lx=1.0,
+            Ly=0.05,
+            Lz=0.05,
+            k=np.full((nx, ny, nz), 10.0),
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 300.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+        )
+        solver = HeatTransferFDMProcess(method="direct")
+        result = solver.process(inp)
+
+        assert result.converged
+        # 解析解: 線形分布
+        dx = 1.0 / nx
+        x = np.array([(i + 0.5) * dx for i in range(nx)])
+        T_exact = T_left + (T_right - T_left) * x
+        np.testing.assert_allclose(result.T[:, 0, 0], T_exact, rtol=1e-6)
+
+    def test_direct_1d_with_source(self):
+        """直接解法: 1D Dirichlet + 内部発熱."""
+        nx, ny, nz = 30, 1, 1
+        k_val = 50.0
+        q_val = 1e6
+        T_left, T_right = 300.0, 300.0
+        L = 0.01
+        inp = HeatTransferInput(
+            Lx=L,
+            Ly=0.001,
+            Lz=0.001,
+            k=np.full((nx, ny, nz), k_val),
+            C=np.ones((nx, ny, nz)),
+            q=np.full((nx, ny, nz), q_val),
+            T0=np.full((nx, ny, nz), 300.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+        )
+        solver = HeatTransferFDMProcess(method="direct")
+        result = solver.process(inp)
+
+        dx = L / nx
+        x = np.array([(i + 0.5) * dx for i in range(nx)])
+        T_exact = T_left + q_val / (2.0 * k_val) * x * (L - x)
+        np.testing.assert_allclose(result.T[:, 0, 0], T_exact, rtol=0.01)
+
+    def test_direct_robin_boundary(self):
+        """直接解法: 1D Robin BC."""
+        nx, ny, nz = 20, 1, 1
+        k_val = 10.0
+        h_val = 100.0
+        T_inf = 300.0
+        T_left = 500.0
+        L = 0.1
+        inp = HeatTransferInput(
+            Lx=L,
+            Ly=0.01,
+            Lz=0.01,
+            k=np.full((nx, ny, nz), k_val),
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 400.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.ROBIN, h_conv=h_val, T_inf=T_inf),
+        )
+        solver_direct = HeatTransferFDMProcess(method="direct")
+        result_direct = solver_direct.process(inp)
+
+        solver_jacobi = HeatTransferFDMProcess(method="jacobi")
+        result_jacobi = solver_jacobi.process(inp)
+
+        # 直接解法とヤコビ法の結果が一致
+        np.testing.assert_allclose(
+            result_direct.T,
+            result_jacobi.T,
+            rtol=1e-4,
+            err_msg="直接解法とヤコビ法の結果が一致しない",
+        )
+
+    def test_bicgstab_1d_dirichlet(self):
+        """BiCGSTAB: 1D 両端 Dirichlet の線形温度分布."""
+        nx, ny, nz = 20, 1, 1
+        T_left, T_right = 100.0, 500.0
+        inp = HeatTransferInput(
+            Lx=1.0,
+            Ly=0.05,
+            Lz=0.05,
+            k=np.full((nx, ny, nz), 10.0),
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 300.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+        )
+        solver = HeatTransferFDMProcess(method="bicgstab")
+        result = solver.process(inp)
+
+        assert result.converged
+        dx = 1.0 / nx
+        x = np.array([(i + 0.5) * dx for i in range(nx)])
+        T_exact = T_left + (T_right - T_left) * x
+        np.testing.assert_allclose(result.T[:, 0, 0], T_exact, rtol=1e-4)
+
+    def test_bicgstab_heterogeneous(self):
+        """BiCGSTAB: 異種材料（大きな熱伝導率差）でヤコビ法と一致."""
+        nx, ny, nz = 20, 1, 1
+        k_arr = np.ones((nx, ny, nz))
+        k_arr[:10, :, :] = 400.0  # 銅
+        k_arr[10:, :, :] = 0.3  # FR4
+        T_left, T_right = 400.0, 300.0
+        inp = HeatTransferInput(
+            Lx=0.01,
+            Ly=0.001,
+            Lz=0.001,
+            k=k_arr,
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 350.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+            max_iter=50000,
+            tol=1e-8,
+        )
+        solver_bicgstab = HeatTransferFDMProcess(method="bicgstab")
+        result_bicgstab = solver_bicgstab.process(inp)
+
+        solver_jacobi = HeatTransferFDMProcess(method="jacobi")
+        result_jacobi = solver_jacobi.process(inp)
+
+        np.testing.assert_allclose(
+            result_bicgstab.T,
+            result_jacobi.T,
+            rtol=1e-3,
+            err_msg="BiCGSTAB とヤコビ法の結果が一致しない（異種材料）",
+        )
+
+    def test_direct_transient_robin(self):
+        """直接解法: 非定常 Robin BC 冷却で T_inf に収束."""
+        nx, ny, nz = 5, 5, 5
+        T_init = 500.0
+        T_inf = 300.0
+        h = 5000.0
+        robin = BoundarySpec(BoundaryCondition.ROBIN, h_conv=h, T_inf=T_inf)
+        inp = HeatTransferInput(
+            Lx=0.01,
+            Ly=0.01,
+            Lz=0.01,
+            k=np.full((nx, ny, nz), 50.0),
+            C=np.full((nx, ny, nz), 1e5),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), T_init),
+            bc_xm=robin,
+            bc_xp=robin,
+            bc_ym=robin,
+            bc_yp=robin,
+            bc_zm=robin,
+            bc_zp=robin,
+            dt=0.001,
+            t_end=1.0,
+            output_interval=100,
+        )
+        solver = HeatTransferFDMProcess(method="direct")
+        result = solver.process(inp)
+
+        # 長時間冷却で T_inf に近づく
+        assert result.T.max() < T_init, "温度が初期値から下がっていない"
+        np.testing.assert_allclose(
+            result.T.mean(),
+            T_inf,
+            atol=5.0,
+            err_msg="直接解法: 非定常冷却が T_inf に収束しない",
+        )
+
+    def test_invalid_method_raises(self):
+        """未対応の method で ValueError."""
+        import pytest
+
+        with pytest.raises(ValueError):
+            HeatTransferFDMProcess(method="invalid")

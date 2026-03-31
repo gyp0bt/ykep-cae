@@ -19,6 +19,10 @@ from xkep_cae_fluid.heat_transfer.data import (
     HeatTransferInput,
     HeatTransferResult,
 )
+from xkep_cae_fluid.heat_transfer.solver_sparse import (
+    solve_sparse_direct,
+    solve_sparse_iterative,
+)
 from xkep_cae_fluid.heat_transfer.solver_vectorized import (
     solve_jacobi_step_vectorized,
 )
@@ -235,17 +239,30 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
     )
     uses: ClassVar[list[type[AbstractProcess]]] = []
 
-    def __init__(self, *, vectorized: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        vectorized: bool = True,
+        method: str = "jacobi",
+    ) -> None:
         """初期化.
 
         Parameters
         ----------
         vectorized : bool
-            True: NumPy ベクトル化ヤコビ法（高速）
-            False: スカラー版ガウスザイデル法（低速・参照実装）
+            True: NumPy ベクトル化ヤコビ法（method="jacobi" 時のみ有効）
+            False: スカラー版ガウスザイデル法（method="jacobi" 時のみ有効）
+        method : str
+            "jacobi": ヤコビ/ガウスザイデル反復（デフォルト）
+            "direct": SciPy 疎行列直接解法 (SuperLU)
+            "bicgstab": ILU 前処理付き BiCGSTAB
         """
         super().__init__()
         self._vectorized = vectorized
+        if method not in ("jacobi", "direct", "bicgstab"):
+            msg = f"未対応の method: {method!r}。'jacobi', 'direct', 'bicgstab' から選択。"
+            raise ValueError(msg)
+        self._method = method
 
     def process(self, input_data: HeatTransferInput) -> HeatTransferResult:
         """伝熱解析を実行する."""
@@ -268,6 +285,12 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
         t_start: float,
     ) -> HeatTransferResult:
         """定常解析."""
+        if self._method == "direct":
+            return self._solve_steady_sparse_direct(T, inp, t_start)
+        elif self._method == "bicgstab":
+            return self._solve_steady_sparse_iterative(T, inp, t_start)
+
+        # jacobi (default)
         T_dummy = np.zeros_like(T)
         residuals: list[float] = []
 
@@ -295,6 +318,47 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
             elapsed_seconds=elapsed,
         )
 
+    def _solve_steady_sparse_direct(
+        self,
+        T: np.ndarray,
+        inp: HeatTransferInput,
+        t_start: float,
+    ) -> HeatTransferResult:
+        """疎行列直接解法による定常解析."""
+        T_sol, n_iter = solve_sparse_direct(inp, is_transient=False)
+        elapsed = time.perf_counter() - t_start
+        return HeatTransferResult(
+            T=T_sol,
+            converged=True,
+            n_timesteps=0,
+            iteration_counts=(n_iter,),
+            residual_history=((0.0,),),
+            time_history=(),
+            T_history=(),
+            elapsed_seconds=elapsed,
+        )
+
+    def _solve_steady_sparse_iterative(
+        self,
+        T: np.ndarray,
+        inp: HeatTransferInput,
+        t_start: float,
+    ) -> HeatTransferResult:
+        """ILU+BiCGSTAB による定常解析."""
+        T_sol, n_iter, residual = solve_sparse_iterative(inp, T_init=T, is_transient=False)
+        elapsed = time.perf_counter() - t_start
+        converged = residual < inp.tol
+        return HeatTransferResult(
+            T=T_sol,
+            converged=converged,
+            n_timesteps=0,
+            iteration_counts=(n_iter,),
+            residual_history=((residual,),),
+            time_history=(),
+            T_history=(),
+            elapsed_seconds=elapsed,
+        )
+
     def _solve_transient(
         self,
         T: np.ndarray,
@@ -302,6 +366,9 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
         t_start: float,
     ) -> HeatTransferResult:
         """非定常解析."""
+        if self._method in ("direct", "bicgstab"):
+            return self._solve_transient_sparse(T, inp, t_start)
+
         current_time = 0.0
         n_steps = int(np.ceil(inp.t_end / inp.dt))
         iteration_counts: list[int] = []
@@ -334,6 +401,56 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
                 converged = False
 
             # 出力間隔に基づくスナップショット
+            if (step + 1) % inp.output_interval == 0 or step == n_steps - 1:
+                time_history.append(current_time)
+                T_history.append(T.copy())
+
+        elapsed = time.perf_counter() - t_start
+        return HeatTransferResult(
+            T=T,
+            converged=converged,
+            n_timesteps=n_steps,
+            iteration_counts=tuple(iteration_counts),
+            residual_history=tuple(residual_history),
+            time_history=tuple(time_history),
+            T_history=tuple(T_history),
+            elapsed_seconds=elapsed,
+        )
+
+    def _solve_transient_sparse(
+        self,
+        T: np.ndarray,
+        inp: HeatTransferInput,
+        t_start: float,
+    ) -> HeatTransferResult:
+        """疎行列ソルバーによる非定常解析."""
+        current_time = 0.0
+        n_steps = int(np.ceil(inp.t_end / inp.dt))
+        iteration_counts: list[int] = []
+        residual_history: list[tuple[float, ...]] = []
+        time_history: list[float] = []
+        T_history: list[np.ndarray] = []
+        converged = True
+
+        for step in range(n_steps):
+            current_time += inp.dt
+            T_old = T.copy()
+
+            if self._method == "direct":
+                T_sol, n_iter = solve_sparse_direct(inp, T_old_time=T_old, is_transient=True)
+                T[:] = T_sol
+                iteration_counts.append(n_iter)
+                residual_history.append((0.0,))
+            else:
+                T_sol, n_iter, residual = solve_sparse_iterative(
+                    inp, T_old_time=T_old, T_init=T, is_transient=True
+                )
+                T[:] = T_sol
+                iteration_counts.append(n_iter)
+                residual_history.append((residual,))
+                if residual >= inp.tol:
+                    converged = False
+
             if (step + 1) % inp.output_interval == 0 or step == n_steps - 1:
                 time_history.append(current_time)
                 T_history.append(T.copy())
