@@ -1,7 +1,7 @@
-"""3次元非定常伝熱解析ソルバー (FDM, ガウスザイデル法).
+"""3次元非定常伝熱解析ソルバー (FDM).
 
-等間隔直交格子上で陰的オイラー法 + ガウスザイデル反復により
-3次元伝熱方程式を解く。
+等間隔直交格子上で陰的オイラー法 + 反復法により3次元伝熱方程式を解く。
+ベクトル化版（ヤコビ法）とスカラー版（ガウスザイデル法）を選択可能。
 """
 
 from __future__ import annotations
@@ -18,6 +18,9 @@ from xkep_cae_fluid.heat_transfer.data import (
     BoundarySpec,
     HeatTransferInput,
     HeatTransferResult,
+)
+from xkep_cae_fluid.heat_transfer.solver_vectorized import (
+    solve_jacobi_step_vectorized,
 )
 
 
@@ -221,6 +224,18 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
     )
     uses: ClassVar[list[type[AbstractProcess]]] = []
 
+    def __init__(self, *, vectorized: bool = True) -> None:
+        """初期化.
+
+        Parameters
+        ----------
+        vectorized : bool
+            True: NumPy ベクトル化ヤコビ法（高速）
+            False: スカラー版ガウスザイデル法（低速・参照実装）
+        """
+        super().__init__()
+        self._vectorized = vectorized
+
     def process(self, input_data: HeatTransferInput) -> HeatTransferResult:
         """伝熱解析を実行する."""
         t_start = time.perf_counter()
@@ -247,7 +262,11 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
 
         converged = False
         for _iteration in range(inp.max_iter):
-            res = _solve_gauss_seidel_step(T, T_dummy, inp, is_transient=False)
+            if self._vectorized:
+                T_new, res = solve_jacobi_step_vectorized(T, T_dummy, inp, is_transient=False)
+                T[:] = T_new
+            else:
+                res = _solve_gauss_seidel_step(T, T_dummy, inp, is_transient=False)
             residuals.append(res)
             if res < inp.tol:
                 converged = True
@@ -287,7 +306,11 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
             step_residuals: list[float] = []
             step_converged = False
             for _iteration in range(inp.max_iter):
-                res = _solve_gauss_seidel_step(T, T_old, inp, is_transient=True)
+                if self._vectorized:
+                    T_new, res = solve_jacobi_step_vectorized(T, T_old, inp, is_transient=True)
+                    T[:] = T_new
+                else:
+                    res = _solve_gauss_seidel_step(T, T_old, inp, is_transient=True)
                 step_residuals.append(res)
                 if res < inp.tol:
                     step_converged = True

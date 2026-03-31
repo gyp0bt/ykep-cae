@@ -24,6 +24,9 @@ FDM/FVM による非圧縮性 Navier-Stokes ソルバーを Process Architecture
 - [x] 面間熱伝導率の調和平均
 - [x] 不均一材料分布対応
 - [x] APIテスト + 物理テスト（解析解比較5ケース）
+- [x] NumPy ベクトル化ヤコビ法ソルバー（高速化）
+- [x] TemperatureMapProcess（温度マップ可視化 PostProcess）
+- [x] 4層多層シート温度マップ例題
 
 ## Phase 2: メッシュ・離散化（予定）
 

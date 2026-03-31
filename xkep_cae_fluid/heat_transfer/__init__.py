@@ -7,6 +7,11 @@ from xkep_cae_fluid.heat_transfer.data import (
     HeatTransferResult,
 )
 from xkep_cae_fluid.heat_transfer.solver import HeatTransferFDMProcess
+from xkep_cae_fluid.heat_transfer.visualize import (
+    TemperatureMapInput,
+    TemperatureMapOutput,
+    TemperatureMapProcess,
+)
 
 __all__ = [
     "BoundaryCondition",
@@ -14,4 +19,7 @@ __all__ = [
     "HeatTransferFDMProcess",
     "HeatTransferInput",
     "HeatTransferResult",
+    "TemperatureMapInput",
+    "TemperatureMapOutput",
+    "TemperatureMapProcess",
 ]

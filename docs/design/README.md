@@ -12,6 +12,13 @@
 | [benchmark_runner.md](../../xkep_cae_fluid/core/docs/benchmark_runner.md) | `xkep_cae_fluid/core/docs/` | BenchmarkRunner マニフェスト自動記録 | 完了 |
 | [process_diagnostics.md](../../xkep_cae_fluid/core/docs/process_diagnostics.md) | `xkep_cae_fluid/core/docs/` | Process 実行診断 | 完了 |
 
+## 伝熱モジュール設計文書
+
+| 文書 | 配置先 | 内容 | 状態 |
+|------|--------|------|------|
+| [heat-transfer-fdm.md](heat-transfer-fdm.md) | `docs/design/` | 3D FDM 伝熱解析ソルバー | 完了 |
+| [temperature-map.md](temperature-map.md) | `docs/design/` | 温度マップ可視化 PostProcess | 完了 |
+
 ## 流体モジュール設計文書
 
 > 流体モジュールが追加されるに伴い、ここにドキュメントリンクを追加していく。
