@@ -19,7 +19,11 @@ from xkep_cae_fluid.heat_transfer.data import (
     HeatTransferInput,
     HeatTransferResult,
 )
+from xkep_cae_fluid.heat_transfer.solver_numba import (
+    solve_gauss_seidel_step_numba,
+)
 from xkep_cae_fluid.heat_transfer.solver_sparse import (
+    solve_sparse_amg,
     solve_sparse_direct,
     solve_sparse_iterative,
 )
@@ -259,8 +263,11 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
         """
         super().__init__()
         self._vectorized = vectorized
-        if method not in ("jacobi", "direct", "bicgstab"):
-            msg = f"未対応の method: {method!r}。'jacobi', 'direct', 'bicgstab' から選択。"
+        if method not in ("jacobi", "direct", "bicgstab", "amg", "numba"):
+            msg = (
+                f"未対応の method: {method!r}。"
+                "'jacobi', 'direct', 'bicgstab', 'amg', 'numba' から選択。"
+            )
             raise ValueError(msg)
         self._method = method
 
@@ -289,18 +296,16 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
             return self._solve_steady_sparse_direct(T, inp, t_start)
         elif self._method == "bicgstab":
             return self._solve_steady_sparse_iterative(T, inp, t_start)
+        elif self._method == "amg":
+            return self._solve_steady_sparse_amg(T, inp, t_start)
 
-        # jacobi (default)
+        # jacobi / numba (反復法)
         T_dummy = np.zeros_like(T)
         residuals: list[float] = []
 
         converged = False
         for _iteration in range(inp.max_iter):
-            if self._vectorized:
-                T_new, res = solve_jacobi_step_vectorized(T, T_dummy, inp, is_transient=False)
-                T[:] = T_new
-            else:
-                res = _solve_gauss_seidel_step(T, T_dummy, inp, is_transient=False)
+            res = self._iterate_step(T, T_dummy, inp, is_transient=False)
             residuals.append(res)
             if res < inp.tol:
                 converged = True
@@ -359,6 +364,44 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
             elapsed_seconds=elapsed,
         )
 
+    def _solve_steady_sparse_amg(
+        self,
+        T: np.ndarray,
+        inp: HeatTransferInput,
+        t_start: float,
+    ) -> HeatTransferResult:
+        """PyAMG 前処理付き CG による定常解析."""
+        T_sol, n_iter, residual = solve_sparse_amg(inp, T_init=T, is_transient=False)
+        elapsed = time.perf_counter() - t_start
+        converged = residual < inp.tol
+        return HeatTransferResult(
+            T=T_sol,
+            converged=converged,
+            n_timesteps=0,
+            iteration_counts=(n_iter,),
+            residual_history=((residual,),),
+            time_history=(),
+            T_history=(),
+            elapsed_seconds=elapsed,
+        )
+
+    def _iterate_step(
+        self,
+        T: np.ndarray,
+        T_old: np.ndarray,
+        inp: HeatTransferInput,
+        is_transient: bool,
+    ) -> float:
+        """1反復を実行し残差を返す（method に応じたディスパッチ）."""
+        if self._method == "numba":
+            return solve_gauss_seidel_step_numba(T, T_old, inp, is_transient)
+        elif self._vectorized:
+            T_new, res = solve_jacobi_step_vectorized(T, T_old, inp, is_transient=is_transient)
+            T[:] = T_new
+            return res
+        else:
+            return _solve_gauss_seidel_step(T, T_old, inp, is_transient)
+
     def _solve_transient(
         self,
         T: np.ndarray,
@@ -366,7 +409,7 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
         t_start: float,
     ) -> HeatTransferResult:
         """非定常解析."""
-        if self._method in ("direct", "bicgstab"):
+        if self._method in ("direct", "bicgstab", "amg"):
             return self._solve_transient_sparse(T, inp, t_start)
 
         current_time = 0.0
@@ -384,11 +427,7 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
             step_residuals: list[float] = []
             step_converged = False
             for _iteration in range(inp.max_iter):
-                if self._vectorized:
-                    T_new, res = solve_jacobi_step_vectorized(T, T_old, inp, is_transient=True)
-                    T[:] = T_new
-                else:
-                    res = _solve_gauss_seidel_step(T, T_old, inp, is_transient=True)
+                res = self._iterate_step(T, T_old, inp, is_transient=True)
                 step_residuals.append(res)
                 if res < inp.tol:
                     step_converged = True
@@ -441,6 +480,15 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
                 T[:] = T_sol
                 iteration_counts.append(n_iter)
                 residual_history.append((0.0,))
+            elif self._method == "amg":
+                T_sol, n_iter, residual = solve_sparse_amg(
+                    inp, T_old_time=T_old, T_init=T, is_transient=True
+                )
+                T[:] = T_sol
+                iteration_counts.append(n_iter)
+                residual_history.append((residual,))
+                if residual >= inp.tol:
+                    converged = False
             else:
                 T_sol, n_iter, residual = solve_sparse_iterative(
                     inp, T_old_time=T_old, T_init=T, is_transient=True

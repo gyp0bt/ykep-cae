@@ -1041,3 +1041,257 @@ class TestFinArray:
         assert errors[1] < errors[0], (
             f"メッシュ細分化で精度改善されていない: 粗={errors[0]:.4f}, 細={errors[1]:.4f}"
         )
+
+
+# ---------------------------------------------------------------------------
+# PyAMG マルチグリッドソルバーテスト
+# ---------------------------------------------------------------------------
+
+
+class TestAMGSolverPhysics:
+    """PyAMG マルチグリッド前処理付き CG ソルバーの物理テスト."""
+
+    def test_amg_1d_dirichlet(self):
+        """AMG: 1D 両端 Dirichlet の線形温度分布."""
+        nx, ny, nz = 20, 1, 1
+        T_left, T_right = 100.0, 500.0
+        inp = HeatTransferInput(
+            Lx=1.0,
+            Ly=0.05,
+            Lz=0.05,
+            k=np.full((nx, ny, nz), 10.0),
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 300.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+        )
+        solver = HeatTransferFDMProcess(method="amg")
+        result = solver.process(inp)
+
+        assert result.converged
+        dx = 1.0 / nx
+        x = np.array([(i + 0.5) * dx for i in range(nx)])
+        T_exact = T_left + (T_right - T_left) * x
+        np.testing.assert_allclose(result.T[:, 0, 0], T_exact, rtol=1e-4)
+
+    def test_amg_3d_with_source(self):
+        """AMG: 3D 内部発熱 + Dirichlet で直接解法と一致."""
+        nx, ny, nz = 8, 8, 8
+        k_val = 50.0
+        q_val = 1e6
+        T_wall = 300.0
+        dirichlet = BoundarySpec(BoundaryCondition.DIRICHLET, value=T_wall)
+        inp = HeatTransferInput(
+            Lx=0.01,
+            Ly=0.01,
+            Lz=0.01,
+            k=np.full((nx, ny, nz), k_val),
+            C=np.ones((nx, ny, nz)),
+            q=np.full((nx, ny, nz), q_val),
+            T0=np.full((nx, ny, nz), T_wall),
+            bc_xm=dirichlet,
+            bc_xp=dirichlet,
+            bc_ym=dirichlet,
+            bc_yp=dirichlet,
+            bc_zm=dirichlet,
+            bc_zp=dirichlet,
+        )
+        result_amg = HeatTransferFDMProcess(method="amg").process(inp)
+        result_direct = HeatTransferFDMProcess(method="direct").process(inp)
+
+        np.testing.assert_allclose(
+            result_amg.T,
+            result_direct.T,
+            rtol=1e-5,
+            err_msg="AMG と直接解法の結果が一致しない",
+        )
+
+    def test_amg_heterogeneous(self):
+        """AMG: 異種材料でヤコビ法と一致."""
+        nx, ny, nz = 20, 1, 1
+        k_arr = np.ones((nx, ny, nz))
+        k_arr[:10, :, :] = 400.0
+        k_arr[10:, :, :] = 0.3
+        inp = HeatTransferInput(
+            Lx=0.01,
+            Ly=0.001,
+            Lz=0.001,
+            k=k_arr,
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 350.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=400.0),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=300.0),
+            max_iter=50000,
+            tol=1e-8,
+        )
+        result_amg = HeatTransferFDMProcess(method="amg").process(inp)
+        result_jacobi = HeatTransferFDMProcess(method="jacobi").process(inp)
+
+        np.testing.assert_allclose(
+            result_amg.T,
+            result_jacobi.T,
+            rtol=1e-3,
+            err_msg="AMG とヤコビ法の結果が一致しない（異種材料）",
+        )
+
+    def test_amg_transient_robin(self):
+        """AMG: 非定常 Robin BC で T_inf に収束."""
+        nx, ny, nz = 5, 5, 5
+        T_init = 500.0
+        T_inf = 300.0
+        h = 5000.0
+        robin = BoundarySpec(BoundaryCondition.ROBIN, h_conv=h, T_inf=T_inf)
+        inp = HeatTransferInput(
+            Lx=0.01,
+            Ly=0.01,
+            Lz=0.01,
+            k=np.full((nx, ny, nz), 50.0),
+            C=np.full((nx, ny, nz), 1e5),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), T_init),
+            bc_xm=robin,
+            bc_xp=robin,
+            bc_ym=robin,
+            bc_yp=robin,
+            bc_zm=robin,
+            bc_zp=robin,
+            dt=0.001,
+            t_end=1.0,
+            output_interval=100,
+        )
+        result = HeatTransferFDMProcess(method="amg").process(inp)
+
+        assert result.T.max() < T_init
+        np.testing.assert_allclose(
+            result.T.mean(),
+            T_inf,
+            atol=5.0,
+            err_msg="AMG 非定常冷却が T_inf に収束しない",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Numba JIT ソルバーテスト
+# ---------------------------------------------------------------------------
+
+
+class TestNumbaSolverPhysics:
+    """Numba JIT 版ガウスザイデル法の物理テスト."""
+
+    def test_numba_1d_dirichlet(self):
+        """Numba GS: 1D 両端 Dirichlet の線形温度分布."""
+        nx, ny, nz = 20, 1, 1
+        T_left, T_right = 100.0, 500.0
+        inp = HeatTransferInput(
+            Lx=1.0,
+            Ly=0.05,
+            Lz=0.05,
+            k=np.full((nx, ny, nz), 10.0),
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 300.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+            tol=1e-10,
+        )
+        solver = HeatTransferFDMProcess(method="numba")
+        result = solver.process(inp)
+
+        assert result.converged
+        dx = 1.0 / nx
+        x = np.array([(i + 0.5) * dx for i in range(nx)])
+        T_exact = T_left + (T_right - T_left) * x
+        np.testing.assert_allclose(result.T[:, 0, 0], T_exact, rtol=1e-4)
+
+    def test_numba_matches_python_gs(self):
+        """Numba GS がPython版ガウスザイデルと同一結果を返すこと."""
+        nx, ny, nz = 8, 4, 4
+        k_arr = np.random.default_rng(42).uniform(1.0, 100.0, (nx, ny, nz))
+        inp = HeatTransferInput(
+            Lx=0.1,
+            Ly=0.05,
+            Lz=0.05,
+            k=k_arr,
+            C=np.ones((nx, ny, nz)) * 1e3,
+            q=np.random.default_rng(42).uniform(0, 1e4, (nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 350.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=400.0),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=300.0),
+            bc_ym=BoundarySpec(BoundaryCondition.ROBIN, h_conv=50.0, T_inf=290.0),
+            bc_yp=BoundarySpec(BoundaryCondition.NEUMANN, value=100.0),
+            tol=1e-8,
+            max_iter=20000,
+        )
+        result_numba = HeatTransferFDMProcess(method="numba").process(inp)
+        result_python = HeatTransferFDMProcess(vectorized=False).process(inp)
+
+        np.testing.assert_allclose(
+            result_numba.T,
+            result_python.T,
+            rtol=1e-4,
+            err_msg="Numba GS と Python GS の結果が一致しない",
+        )
+
+    def test_numba_with_source(self):
+        """Numba GS: 1D Dirichlet + 内部発熱."""
+        nx, ny, nz = 30, 1, 1
+        k_val = 50.0
+        q_val = 1e6
+        T_left = T_right = 300.0
+        L = 0.01
+        inp = HeatTransferInput(
+            Lx=L,
+            Ly=0.001,
+            Lz=0.001,
+            k=np.full((nx, ny, nz), k_val),
+            C=np.ones((nx, ny, nz)),
+            q=np.full((nx, ny, nz), q_val),
+            T0=np.full((nx, ny, nz), 300.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_left),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=T_right),
+            tol=1e-10,
+        )
+        solver = HeatTransferFDMProcess(method="numba")
+        result = solver.process(inp)
+
+        dx = L / nx
+        x = np.array([(i + 0.5) * dx for i in range(nx)])
+        T_exact = T_left + q_val / (2.0 * k_val) * x * (L - x)
+        np.testing.assert_allclose(result.T[:, 0, 0], T_exact, rtol=0.01)
+
+    def test_numba_transient(self):
+        """Numba GS: 非定常 Robin BC で冷却."""
+        nx, ny, nz = 5, 5, 5
+        T_init = 500.0
+        T_inf = 300.0
+        h = 5000.0
+        robin = BoundarySpec(BoundaryCondition.ROBIN, h_conv=h, T_inf=T_inf)
+        inp = HeatTransferInput(
+            Lx=0.01,
+            Ly=0.01,
+            Lz=0.01,
+            k=np.full((nx, ny, nz), 50.0),
+            C=np.full((nx, ny, nz), 1e5),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), T_init),
+            bc_xm=robin,
+            bc_xp=robin,
+            bc_ym=robin,
+            bc_yp=robin,
+            bc_zm=robin,
+            bc_zp=robin,
+            dt=0.001,
+            t_end=1.0,
+            output_interval=100,
+        )
+        result = HeatTransferFDMProcess(method="numba").process(inp)
+
+        assert result.T.max() < T_init
+        np.testing.assert_allclose(
+            result.T.mean(),
+            T_inf,
+            atol=5.0,
+            err_msg="Numba GS: 非定常冷却が T_inf に収束しない",
+        )

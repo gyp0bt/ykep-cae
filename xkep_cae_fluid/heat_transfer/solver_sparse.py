@@ -261,6 +261,64 @@ def solve_sparse_direct(
     return T, 1
 
 
+def solve_sparse_amg(
+    inp: HeatTransferInput,
+    T_old_time: np.ndarray | None = None,
+    T_init: np.ndarray | None = None,
+    is_transient: bool = False,
+) -> tuple[np.ndarray, int, float]:
+    """PyAMG マルチグリッド前処理付き CG で温度場を求める.
+
+    代数的マルチグリッド (AMG) を前処理に使用し、
+    大規模問題でも効率的に収束する。
+    伝熱方程式の係数行列は SPD（対称正定値）なので CG が使用可能。
+
+    Parameters
+    ----------
+    T_init : np.ndarray | None
+        初期推定値。None の場合はゼロベクトル。
+
+    Returns
+    -------
+    tuple[np.ndarray, int, float]
+        (温度場 (nx,ny,nz), 反復数, 最終残差)
+
+    Raises
+    ------
+    ImportError
+        pyamg がインストールされていない場合
+    """
+    try:
+        import pyamg
+    except ImportError:
+        msg = "PyAMG が必要です。pip install 'xkep-cae-fluid[amg]' でインストールしてください。"
+        raise ImportError(msg) from None
+
+    A, b = build_sparse_system(inp, T_old_time, is_transient)
+
+    # CSR 形式に変換（PyAMG は CSR を想定）
+    A_csr = A.tocsr()
+
+    # AMG ソルバーの構築（Ruge-Stüben法）
+    ml = pyamg.ruge_stuben_solver(A_csr)
+    M = ml.aspreconditioner()
+
+    x0 = T_init.ravel() if T_init is not None else np.zeros(b.shape[0])
+
+    # コールバックで反復数をカウント
+    iter_count = [0]
+
+    def _callback(xk: np.ndarray) -> None:
+        iter_count[0] += 1
+
+    x, info = spla.cg(A_csr, b, x0=x0, M=M, rtol=inp.tol, maxiter=inp.max_iter, callback=_callback)
+
+    T = x.reshape(inp.nx, inp.ny, inp.nz)
+    residual = float(np.linalg.norm(A_csr @ x - b) / max(np.linalg.norm(b), 1e-30))
+
+    return T, iter_count[0], residual
+
+
 def solve_sparse_iterative(
     inp: HeatTransferInput,
     T_old_time: np.ndarray | None = None,
