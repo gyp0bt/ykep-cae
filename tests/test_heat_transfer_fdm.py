@@ -251,6 +251,96 @@ class TestHeatTransferFDMPhysics:
             result.T[:, 0, 0], T_analytical, rtol=0.02, err_msg="1D定常+発熱: 解析解と一致しない"
         )
 
+    def test_1d_steady_robin_boundary(self):
+        """1D定常: 一端Dirichlet、他端Robin → 対流熱伝達の定常解.
+
+        T(x=0) = T_L, h*(T_inf - T_surface) at x=L
+        解析解: q = (T_inf - T_L) / (L/k + 1/h)
+                T(x) = T_L + q * x / k
+        """
+        nx, ny, nz = 20, 1, 1
+        Lx = 1.0
+        T_L = 200.0
+        T_inf = 500.0
+        h_conv = 50.0  # W/(m²·K)
+        k_val = 10.0
+
+        inp = HeatTransferInput(
+            Lx=Lx,
+            Ly=0.1,
+            Lz=0.1,
+            k=np.ones((nx, ny, nz)) * k_val,
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.ones((nx, ny, nz)) * 300.0,
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, T_L),
+            bc_xp=BoundarySpec(BoundaryCondition.ROBIN, h_conv=h_conv, T_inf=T_inf),
+        )
+
+        solver = HeatTransferFDMProcess()
+        result = solver.process(inp)
+
+        assert result.converged
+
+        # 解析解: q = (T_inf - T_L) / (L/k + 1/h)
+        q_flux = (T_inf - T_L) / (Lx / k_val + 1.0 / h_conv)
+        dx = Lx / nx
+        x_cell = np.array([dx * (i + 0.5) for i in range(nx)])
+        T_analytical = T_L + q_flux * x_cell / k_val
+
+        np.testing.assert_allclose(
+            result.T[:, 0, 0],
+            T_analytical,
+            rtol=0.02,
+            err_msg="1D定常Dirichlet-Robin: 解析解と一致しない",
+        )
+
+    def test_1d_steady_robin_both_ends(self):
+        """1D定常: 両端Robin → 対流熱伝達+発熱の定常解.
+
+        両端 h*(T_inf - T_surface) + 均一発熱 q
+        解析解: T(x) = T_inf + q*L/(2h) + q/(2k)*x*(L-x)
+        （両端対称の場合）
+        """
+        nx, ny, nz = 30, 1, 1
+        Lx = 1.0
+        T_inf = 300.0
+        h_conv = 100.0
+        k_val = 10.0
+        q_val = 500.0
+
+        bc_robin = BoundarySpec(BoundaryCondition.ROBIN, h_conv=h_conv, T_inf=T_inf)
+        inp = HeatTransferInput(
+            Lx=Lx,
+            Ly=0.1,
+            Lz=0.1,
+            k=np.ones((nx, ny, nz)) * k_val,
+            C=np.ones((nx, ny, nz)),
+            q=np.ones((nx, ny, nz)) * q_val,
+            T0=np.ones((nx, ny, nz)) * 300.0,
+            bc_xm=bc_robin,
+            bc_xp=bc_robin,
+        )
+
+        solver = HeatTransferFDMProcess()
+        result = solver.process(inp)
+
+        assert result.converged
+
+        # 解析解: T(x) = T_inf + q*L/(2h) + q/(2k) * x * (L - x)
+        dx = Lx / nx
+        x_cell = np.array([dx * (i + 0.5) for i in range(nx)])
+        T_analytical = (
+            T_inf + q_val * Lx / (2 * h_conv) + q_val / (2 * k_val) * x_cell * (Lx - x_cell)
+        )
+
+        np.testing.assert_allclose(
+            result.T[:, 0, 0],
+            T_analytical,
+            rtol=0.02,
+            err_msg="1D定常Robin両端+発熱: 解析解と一致しない",
+        )
+
     def test_heterogeneous_conductivity(self):
         """不均一熱伝導率: 2層構造の定常伝熱.
 

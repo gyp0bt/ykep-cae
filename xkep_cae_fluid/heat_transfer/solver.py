@@ -198,6 +198,17 @@ def _bc_coefficients(
         # 熱流束指定: q_flux [W/m²] がセルに流入
         # ソース項に q_flux / d を加算（体積あたり）
         return 0.0, bc.value / d
+    elif bc.condition == BoundaryCondition.ROBIN:
+        # 対流熱伝達: q = h(T_inf - T_surface)
+        # 熱抵抗の合成: R = d/(2*k_c) + 1/h
+        # 有効熱伝達率: U = 2*k_c*h / (2*k_c + h*d)
+        # 体積あたり: a_bc = U/d, flux = a_bc * T_inf
+        h = bc.h_conv
+        if h <= 0.0:
+            return 0.0, 0.0
+        u_eff = 2.0 * k_c * h / (2.0 * k_c + h * d)
+        coeff = u_eff / d
+        return coeff, coeff * bc.T_inf
     else:
         # 断熱: ∂T/∂n = 0 → 隣接なし（ゼロ勾配）
         return 0.0, 0.0
