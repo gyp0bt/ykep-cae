@@ -17,6 +17,7 @@ from xkep_cae_fluid.heat_transfer import (
     TemperatureMapInput,
     TemperatureMapOutput,
     TemperatureMapProcess,
+    setup_cjk_font,
 )
 
 
@@ -123,6 +124,65 @@ class TestTemperatureMapAPI:
                 layer_boundaries=(0.25e-3,),
                 layer_labels=("Layer 1", "Layer 2"),
                 output_path=tmp_path / "layers.png",
+            )
+        )
+        assert out.saved_path is not None
+        assert out.saved_path.exists()
+
+    def test_mirror_axes(self, tmp_path: Path) -> None:
+        """ミラーリング表示が正しく動作すること."""
+        result, Lx, Ly, Lz = _make_simple_result()
+        viz = TemperatureMapProcess()
+        out = viz.process(
+            TemperatureMapInput(
+                result=result,
+                Lx=Lx,
+                Ly=Ly,
+                Lz=Lz,
+                mirror_axes=("x", "y"),
+                output_path=tmp_path / "mirrored.png",
+            )
+        )
+        assert out.saved_path is not None
+        assert out.saved_path.exists()
+
+    def test_mirror_z_axis(self) -> None:
+        """z方向ミラーリングで温度範囲が維持されること."""
+        result, Lx, Ly, Lz = _make_simple_result()
+        viz = TemperatureMapProcess()
+        out = viz.process(
+            TemperatureMapInput(
+                result=result,
+                Lx=Lx,
+                Ly=Ly,
+                Lz=Lz,
+                mirror_axes=("z",),
+                slice_axis="y",
+            )
+        )
+        # ミラーしても温度範囲は変わらない
+        assert out.T_min >= 299.0
+        assert out.T_max <= 400.0
+
+    def test_cjk_font_setup(self) -> None:
+        """CJKフォント設定が正常に動作すること."""
+        font_name = setup_cjk_font()
+        # フォントが見つかった場合は文字列、見つからない場合は None
+        assert font_name is None or isinstance(font_name, str)
+
+    def test_cjk_font_in_process(self, tmp_path: Path) -> None:
+        """use_cjk_font=True でプロセスが正常動作すること."""
+        result, Lx, Ly, Lz = _make_simple_result()
+        viz = TemperatureMapProcess()
+        out = viz.process(
+            TemperatureMapInput(
+                result=result,
+                Lx=Lx,
+                Ly=Ly,
+                Lz=Lz,
+                use_cjk_font=True,
+                title="温度分布 [K]",
+                output_path=tmp_path / "cjk_test.png",
             )
         )
         assert out.saved_path is not None

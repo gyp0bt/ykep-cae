@@ -17,6 +17,7 @@ from xkep_cae_fluid.heat_transfer.visualize import (
     TemperatureMapInput,
     TemperatureMapOutput,
     TemperatureMapProcess,
+    setup_cjk_font,
 )
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "TemperatureMapInput",
     "TemperatureMapOutput",
     "TemperatureMapProcess",
+    "setup_cjk_font",
 ]
