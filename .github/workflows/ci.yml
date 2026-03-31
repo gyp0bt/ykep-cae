@@ -37,3 +37,28 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v -m "not slow and not external" --timeout=120
+
+  test-optional-deps:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies (with pyamg + numba)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,plot,amg,fast]"
+
+      - name: Run AMG tests
+        run: pytest tests/test_heat_transfer_fdm.py -v -k "AMG" --timeout=120
+
+      - name: Run Numba tests
+        run: pytest tests/test_heat_transfer_fdm.py -v -k "Numba" --timeout=120

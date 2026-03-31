@@ -1,0 +1,67 @@
+benchmark:
+- case: small_10x10x10
+  converged: true
+  elapsed_sec: 1.4268
+  final_residual: 9.72e-07
+  iterations: 336
+  method: Python GS
+  n_cells: 1000
+- case: small_10x10x10
+  converged: true
+  elapsed_sec: 0.0382
+  final_residual: 9.8e-07
+  iterations: 206
+  method: Vectorized Jacobi
+  n_cells: 1000
+- case: small_10x10x10
+  converged: true
+  elapsed_sec: 0.0081
+  final_residual: 9.72e-07
+  iterations: 336
+  method: Numba GS
+  n_cells: 1000
+- case: medium_20x20x20
+  converged: false
+  elapsed_sec: 16.2474
+  final_residual: 0.000223
+  iterations: 500
+  method: Python GS
+  n_cells: 8000
+- case: medium_20x20x20
+  converged: false
+  elapsed_sec: 0.2059
+  final_residual: 8.0e-05
+  iterations: 500
+  method: Vectorized Jacobi
+  n_cells: 8000
+- case: medium_20x20x20
+  converged: false
+  elapsed_sec: 0.0635
+  final_residual: 0.000223
+  iterations: 500
+  method: Numba GS
+  n_cells: 8000
+- case: large_30x30x30
+  converged: false
+  elapsed_sec: 51.9242
+  final_residual: 0.000724
+  iterations: 500
+  method: Python GS
+  n_cells: 27000
+- case: large_30x30x30
+  converged: false
+  elapsed_sec: 1.0116
+  final_residual: 0.00405
+  iterations: 500
+  method: Vectorized Jacobi
+  n_cells: 27000
+- case: large_30x30x30
+  converged: false
+  elapsed_sec: 0.2278
+  final_residual: 0.000724
+  iterations: 500
+  method: Numba GS
+  n_cells: 27000
+settings:
+  max_iter: 500
+  tol: 1.0e-06
