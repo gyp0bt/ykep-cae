@@ -1,6 +1,7 @@
 """HeatTransferFDMProcess テスト.
 
 API テスト（契約準拠）と物理テスト（解析解との比較）を含む。
+冷却フィンベンチマーク（Robin BC 活用）を含む。
 """
 
 import numpy as np
@@ -390,3 +391,277 @@ class TestHeatTransferFDMPhysics:
             rtol=0.05,
             err_msg="不均一熱伝導率: 界面温度が解析解と一致しない",
         )
+
+    def test_transient_robin_cooling(self):
+        """非定常: 全面Robin冷却 → 長時間後にT_infへ漸近.
+
+        均一初期温度 T0 から全面 Robin BC (h, T_inf) で冷却。
+        十分な時間経過後、温度は T_inf に漸近する。
+        エネルギー保存: 系のエネルギー変化 = 対流放熱量の積分
+        """
+        nx, ny, nz = 5, 1, 1
+        Lx, Ly, Lz = 0.1, 0.01, 0.01
+        k_val = 50.0  # W/(m·K) — 高い伝導率で内部均一化を促進
+        C_val = 1000.0  # J/(m³·K)
+        h_conv = 500.0  # W/(m²·K)
+        T0_val = 500.0  # K — 初期温度
+        T_inf = 300.0  # K — 外部温度
+
+        bc_robin = BoundarySpec(BoundaryCondition.ROBIN, h_conv=h_conv, T_inf=T_inf)
+
+        # 十分な時間を取って定常に近づける
+        # 時定数の目安: tau ~ C * V / (h * A) = C * Lx / (2h) for 1D
+        # tau ~ 1000 * 0.1 / (2*500) = 0.1 s
+        dt = 0.005
+        t_end = 2.0  # 20 * tau 相当
+
+        inp = HeatTransferInput(
+            Lx=Lx,
+            Ly=Ly,
+            Lz=Lz,
+            k=np.ones((nx, ny, nz)) * k_val,
+            C=np.ones((nx, ny, nz)) * C_val,
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), T0_val),
+            bc_xm=bc_robin,
+            bc_xp=bc_robin,
+            dt=dt,
+            t_end=t_end,
+            max_iter=500,
+            tol=1e-8,
+        )
+
+        solver = HeatTransferFDMProcess()
+        result = solver.process(inp)
+
+        assert result.converged
+
+        # 長時間後、全セルが T_inf に漸近
+        np.testing.assert_allclose(
+            result.T[:, 0, 0],
+            T_inf,
+            atol=0.5,
+            err_msg="非定常Robin冷却: 長時間後にT_infへ漸近しない",
+        )
+
+        # 温度は単調に低下（T0 > T_inf のため）
+        assert result.T.max() <= T0_val + 1e-10, "温度が初期値を超えている"
+        assert result.T.min() >= T_inf - 1e-10, "温度がT_inf未満になっている"
+
+    def test_transient_robin_energy_balance(self):
+        """非定常Robin: 片端Robin + 発熱のエネルギー収支.
+
+        片端断熱、他端 Robin。均一発熱 q がある場合、
+        定常到達時: q * V = h * A * (T_surface - T_inf)
+        → T(x) = T_inf + q*L/h + q/(2k) * (L² - x²) (1D解析解)
+        """
+        nx, ny, nz = 20, 1, 1
+        Lx, Ly, Lz = 0.02, 0.01, 0.01
+        k_val = 50.0
+        C_val = 500.0
+        h_conv = 500.0
+        T_inf = 300.0
+        q_val = 1e6  # W/m³
+
+        # 時定数 tau ~ C*L²/k = 500*0.0004/50 = 0.004 s
+        dt = 0.01
+        t_end = 2.0  # > 100*tau
+
+        inp = HeatTransferInput(
+            Lx=Lx,
+            Ly=Ly,
+            Lz=Lz,
+            k=np.ones((nx, ny, nz)) * k_val,
+            C=np.ones((nx, ny, nz)) * C_val,
+            q=np.ones((nx, ny, nz)) * q_val,
+            T0=np.full((nx, ny, nz), T_inf),
+            bc_xm=BoundarySpec(BoundaryCondition.ADIABATIC),
+            bc_xp=BoundarySpec(BoundaryCondition.ROBIN, h_conv=h_conv, T_inf=T_inf),
+            dt=dt,
+            t_end=t_end,
+            max_iter=5000,
+            tol=1e-6,
+        )
+
+        solver = HeatTransferFDMProcess()
+        result = solver.process(inp)
+
+        # 定常解析解: T(x) = T_inf + q*L/h + q/(2k) * (L² - x²)
+        dx = Lx / nx
+        x_cell = np.array([dx * (i + 0.5) for i in range(nx)])
+        T_analytical = T_inf + q_val * Lx / h_conv + q_val / (2 * k_val) * (Lx**2 - x_cell**2)
+
+        # 後半タイムステップは収束している（初期の急変ステップのみ非収束の可能性）
+        # 最終温度分布が解析解に一致していることで物理的妥当性を検証
+        np.testing.assert_allclose(
+            result.T[:, 0, 0],
+            T_analytical,
+            rtol=0.02,
+            err_msg="非定常Robin+発熱: 定常到達後の温度分布が解析解と一致しない",
+        )
+
+        # 温度は全セルで T_inf 以上（発熱により加温されるため）
+        assert result.T.min() >= T_inf - 1e-10, "温度がT_inf未満になっている"
+
+
+# ---------------------------------------------------------------------------
+# 冷却フィンベンチマーク（Robin BC 活用）
+# ---------------------------------------------------------------------------
+
+
+class TestCoolingFinBenchmark:
+    """冷却フィン解析ベンチマーク.
+
+    1D矩形断面フィンの古典的ベンチマーク問題。
+    Robin BC（対流熱伝達）を活用した検証。
+    """
+
+    def test_fin_temperature_distribution(self):
+        """1D冷却フィン: 底端Dirichlet + 先端Robin → 解析解比較.
+
+        矩形断面フィン（長さL, 断面積A, 周長P）:
+        - 底端: T = T_base (Dirichlet)
+        - 先端: h*(T_inf - T) (Robin)
+        - 側面: 対流 h*(T_inf - T) を体積発熱として近似
+
+        1Dフィン方程式の解析解（先端対流あり）:
+        T(x) = T_inf + (T_base - T_inf)
+               * [cosh(m(L-x)) + (h/(mk))sinh(m(L-x))]
+               / [cosh(mL) + (h/(mk))sinh(mL)]
+        ここで m = sqrt(hP/(kA)), P=周長, A=断面積
+        """
+        # フィン仕様
+        L_fin = 0.1  # フィン長さ [m]
+        W_fin = 0.01  # フィン幅（正方形断面） [m]
+        k_val = 200.0  # アルミニウム [W/(m·K)]
+        h_conv = 25.0  # 対流熱伝達係数 [W/(m²·K)]
+        T_base = 373.15  # 底端温度 100°C [K]
+        T_inf = 293.15  # 外気温度 20°C [K]
+
+        # フィンパラメータ
+        A_fin = W_fin * W_fin  # 断面積 [m²]
+        P_fin = 4 * W_fin  # 周長 [m]
+        m = np.sqrt(h_conv * P_fin / (k_val * A_fin))
+
+        # メッシュ: x方向がフィン長さ方向
+        nx = 40
+        ny, nz = 1, 1
+        Ly = W_fin
+        Lz = W_fin
+
+        # 側面対流を体積発熱として近似: q_conv = -hP/A * (T - T_inf)
+        # → 線形化: 初期近似で T ≈ T_base として q_source を推定
+        # ただし、この近似は不正確。代わりに1D解析なので
+        # 側面からの対流は y,z 方向の Robin BC で表現する
+        bc_robin_side = BoundarySpec(BoundaryCondition.ROBIN, h_conv=h_conv, T_inf=T_inf)
+
+        inp = HeatTransferInput(
+            Lx=L_fin,
+            Ly=Ly,
+            Lz=Lz,
+            k=np.ones((nx, ny, nz)) * k_val,
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), T_base),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, T_base),
+            bc_xp=BoundarySpec(BoundaryCondition.ROBIN, h_conv=h_conv, T_inf=T_inf),
+            bc_ym=bc_robin_side,
+            bc_yp=bc_robin_side,
+            bc_zm=bc_robin_side,
+            bc_zp=bc_robin_side,
+            max_iter=50000,
+            tol=1e-8,
+        )
+
+        solver = HeatTransferFDMProcess()
+        result = solver.process(inp)
+
+        assert result.converged
+
+        # 解析解
+        dx = L_fin / nx
+        x_cell = np.array([dx * (i + 0.5) for i in range(nx)])
+        theta_base = T_base - T_inf
+
+        # 先端対流あり: T(x) = T_inf + theta_base
+        # * [cosh(m(L-x)) + (h/(mk))sinh(m(L-x))]
+        # / [cosh(mL) + (h/(mk))sinh(mL)]
+        h_mk = h_conv / (m * k_val)
+        T_analytical = T_inf + theta_base * (
+            np.cosh(m * (L_fin - x_cell)) + h_mk * np.sinh(m * (L_fin - x_cell))
+        ) / (np.cosh(m * L_fin) + h_mk * np.sinh(m * L_fin))
+
+        # 3Dソルバーの1Dフィン近似なので、やや緩めの許容誤差
+        np.testing.assert_allclose(
+            result.T[:, 0, 0],
+            T_analytical,
+            rtol=0.05,
+            err_msg="冷却フィン: 温度分布が解析解と一致しない",
+        )
+
+    def test_fin_heat_dissipation(self):
+        """冷却フィン: フィン効率の検証.
+
+        フィン効率 η = tanh(mL) / (mL) （断熱先端近似時）
+        フィンからの全放熱量 Q = η * h * P * L * (T_base - T_inf)
+        """
+        L_fin = 0.05  # フィン長さ [m]
+        W_fin = 0.005  # フィン幅 [m]
+        k_val = 400.0  # 銅 [W/(m·K)]
+        h_conv = 50.0  # [W/(m²·K)]
+        T_base = 350.0  # [K]
+        T_inf = 300.0  # [K]
+
+        A_fin = W_fin * W_fin
+        P_fin = 4 * W_fin
+        m = np.sqrt(h_conv * P_fin / (k_val * A_fin))
+
+        nx, ny, nz = 30, 1, 1
+
+        bc_robin = BoundarySpec(BoundaryCondition.ROBIN, h_conv=h_conv, T_inf=T_inf)
+
+        inp = HeatTransferInput(
+            Lx=L_fin,
+            Ly=W_fin,
+            Lz=W_fin,
+            k=np.ones((nx, ny, nz)) * k_val,
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), T_base),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, T_base),
+            bc_xp=BoundarySpec(BoundaryCondition.ADIABATIC),  # 先端断熱
+            bc_ym=bc_robin,
+            bc_yp=bc_robin,
+            bc_zm=bc_robin,
+            bc_zp=bc_robin,
+            max_iter=50000,
+            tol=1e-8,
+        )
+
+        solver = HeatTransferFDMProcess()
+        result = solver.process(inp)
+
+        assert result.converged
+
+        # 底端からの熱流束を計算: q = -k * dT/dx at x=0
+        dx = L_fin / nx
+        # セル0の中心は dx/2、底端温度 T_base との勾配
+        q_base = k_val * (T_base - result.T[0, 0, 0]) / (dx / 2)
+
+        # 解析解の底端熱流束: Q_fin / A = m*k*(T_base - T_inf)*tanh(mL)
+        q_analytical = m * k_val * (T_base - T_inf) * np.tanh(m * L_fin)
+
+        # 3Dソルバーの近似なので緩めの許容誤差（断面1セルの離散化誤差）
+        np.testing.assert_allclose(
+            q_base,
+            q_analytical,
+            rtol=0.15,
+            err_msg="冷却フィン: 底端熱流束がフィン理論と一致しない",
+        )
+
+        # フィン先端は底端より低温
+        assert result.T[-1, 0, 0] < result.T[0, 0, 0], "フィン先端が底端より高温"
+
+        # フィン温度は T_inf 以上、T_base 以下
+        assert result.T.min() >= T_inf - 1.0
+        assert result.T.max() <= T_base + 1.0

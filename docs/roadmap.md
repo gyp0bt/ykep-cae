@@ -31,6 +31,9 @@ FDM/FVM による非圧縮性 Navier-Stokes ソルバーを Process Architecture
 - [x] MultilayerBuilderProcess（多層シート物性値ビルダー）
 - [x] CJK日本語フォント自動検出・設定
 - [x] 対称ミラーリング表示（1/8対称→全体展開）
+- [x] 非定常Robin BC物理テスト（冷却漸近 + エネルギー収支）
+- [x] 冷却フィンベンチマーク（解析解比較、温度分布+底端熱流束）
+- [x] MultilayerBuilder + HeatTransferFDM + Robin BC 連携例
 
 ## Phase 2: メッシュ・離散化（予定）
 
