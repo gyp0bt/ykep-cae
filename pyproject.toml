@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "xkep-cae-fluid"
+version = "0.1.0"
+description = "FDM/FVM 流体ソルバー基盤 -- xkep-cae 共通 Process Architecture"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+amg = ["pyamg>=5.0"]
+fast = ["numba>=0.57"]
+plot = ["matplotlib>=3.5"]
+dev = [
+    "pytest>=7.0",
+    "pytest-timeout>=2.0",
+    "ruff>=0.4",
+    "pyyaml>=6.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: 大規模メッシュ・長時間計算など時間がかかるテスト",
+    "external: 外部依存が必要なテスト",
+    "cavity: キャビティ流れテスト",
+    "channel: チャネル流れテスト",
+    "cylinder: 円柱まわり流れテスト",
+    "turbulence: 乱流モデルテスト",
+    "transient: 非定常解析テスト",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+]
+ignore = [
+    "E501",  # line length (formatterに任せる)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.hatch.build.targets.wheel]
+packages = ["xkep_cae_fluid"]

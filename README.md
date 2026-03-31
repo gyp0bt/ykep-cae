@@ -1,0 +1,74 @@
+# xkep-cae-fluid
+
+FDM（差分法）・FVM（有限体積法）による流体ソルバー基盤。
+[xkep-cae](https://github.com/gyp0bt/xkep-cae) と共通の Process Architecture を基盤とし、
+流体解析特有の離散化・乱流モデル・圧力-速度連成をモジュール化する。
+
+## xkep-cae との関係
+
+| 項目 | xkep-cae | xkep-cae-fluid |
+|------|----------|----------------|
+| 手法 | FEM（有限要素法） | FDM / FVM |
+| 対象 | 構造解析（撚線曲げ揺動等） | 流体解析（非圧縮性NS等） |
+| 共通基盤 | Process Architecture | Process Architecture |
+| Strategy | Penalty, Friction, ContactForce | Convection, Turbulence, PV-Coupling |
+
+## 現在の状態
+
+**0 テスト** -- 2026-03-31 初期移植 | 契約違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+
+## パッケージ構成
+
+```
+xkep_cae_fluid/
++-- core/              # プロセスアーキテクチャ基盤（xkep-cae共通設計）
+|   +-- base.py        # AbstractProcess + ProcessMeta + ProcessMetaclass
+|   +-- registry.py    # ProcessRegistry
+|   +-- slots.py       # StrategySlot
+|   +-- categories.py  # PreProcess / SolverProcess / PostProcess / VerifyProcess / BatchProcess
+|   +-- data.py        # MeshData / FlowFieldData / SolverInputData / SolverResultData
+|   +-- runner.py      # ProcessRunner
+|   +-- diagnostics.py # 実行診断
+|   +-- benchmark.py   # BenchmarkRunnerProcess
+|   +-- tree.py        # ProcessTree（依存グラフ）
+|   +-- testing.py     # binds_to（テスト紐付け）
+|   +-- strategies/    # Strategy Protocol 定義（流体向け）
+|   +-- docs/          # コアモジュール設計文書
++-- tests/             # テスト（予定）
+```
+
+## ドキュメント
+
+| ドキュメント | 内容 |
+|------------|------|
+| [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
+| [ステータス一覧](docs/status/status-index.md) | 全statusファイル + テスト数推移 |
+| [設計文書一覧](docs/design/README.md) | 設計仕様書リンク集 |
+
+## インストール
+
+```bash
+pip install -e ".[dev]"
+```
+
+## テスト実行
+
+```bash
+pytest tests/ -v -m "not slow and not external"
+```
+
+## Lint / Format
+
+```bash
+ruff check xkep_cae_fluid/ tests/
+ruff format xkep_cae_fluid/ tests/
+```
+
+## ライセンス
+
+[MIT License](LICENSE)
+
+## 運用
+
+本プロジェクトはCodexとClaude Codeの2交代制で運用。
+引き継ぎ情報は [docs/status/](docs/status/status-index.md) を参照。
