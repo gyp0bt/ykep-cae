@@ -6,6 +6,12 @@ from xkep_cae_fluid.heat_transfer.data import (
     HeatTransferInput,
     HeatTransferResult,
 )
+from xkep_cae_fluid.heat_transfer.multilayer import (
+    LayerSpec,
+    MultilayerBuilderProcess,
+    MultilayerInput,
+    MultilayerOutput,
+)
 from xkep_cae_fluid.heat_transfer.solver import HeatTransferFDMProcess
 from xkep_cae_fluid.heat_transfer.visualize import (
     TemperatureMapInput,
@@ -19,6 +25,10 @@ __all__ = [
     "HeatTransferFDMProcess",
     "HeatTransferInput",
     "HeatTransferResult",
+    "LayerSpec",
+    "MultilayerBuilderProcess",
+    "MultilayerInput",
+    "MultilayerOutput",
     "TemperatureMapInput",
     "TemperatureMapOutput",
     "TemperatureMapProcess",
