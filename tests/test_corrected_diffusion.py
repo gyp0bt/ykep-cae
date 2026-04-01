@@ -17,9 +17,11 @@ from xkep_cae_fluid.core.strategies.protocols import DiffusionSchemeStrategy
 
 
 def _make_mesh(nx=4, ny=4, nz=4):
-    return StructuredMeshProcess().process(
-        StructuredMeshInput(Lx=1.0, Ly=1.0, Lz=1.0, nx=nx, ny=ny, nz=nz)
-    ).mesh
+    return (
+        StructuredMeshProcess()
+        .process(StructuredMeshInput(Lx=1.0, Ly=1.0, Lz=1.0, nx=nx, ny=ny, nz=nz))
+        .mesh
+    )
 
 
 class TestCorrectedDiffusionAPI:
@@ -72,9 +74,7 @@ class TestCorrectedDiffusionPhysics:
 
         A_central = central.matrix_coefficients(diff, mesh)
         A_corrected = corrected.matrix_coefficients(diff, mesh)
-        np.testing.assert_allclose(
-            A_corrected.toarray(), A_central.toarray(), rtol=1e-10
-        )
+        np.testing.assert_allclose(A_corrected.toarray(), A_central.toarray(), rtol=1e-10)
 
     def test_uniform_field_zero_flux(self):
         """一様場では拡散フラックスがゼロ."""

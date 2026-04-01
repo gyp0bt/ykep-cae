@@ -549,9 +549,7 @@ class TestBinaryPolyMeshReader:
             r_ascii = PolyMeshReaderProcess().process(PolyMeshInput(str(ascii_dir)))
             r_bin = PolyMeshReaderProcess().process(PolyMeshInput(str(binary_dir)))
             assert r_ascii.mesh.n_cells == r_bin.mesh.n_cells
-            np.testing.assert_allclose(
-                r_ascii.mesh.node_coords, r_bin.mesh.node_coords, atol=1e-10
-            )
+            np.testing.assert_allclose(r_ascii.mesh.node_coords, r_bin.mesh.node_coords, atol=1e-10)
             np.testing.assert_allclose(
                 sum(r_ascii.mesh.cell_volumes),
                 sum(r_bin.mesh.cell_volumes),

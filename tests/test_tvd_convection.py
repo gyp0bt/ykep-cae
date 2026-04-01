@@ -20,9 +20,11 @@ from xkep_cae_fluid.core.strategies.tvd_convection import (
 
 
 def _make_mesh(nx=4, ny=4, nz=4):
-    return StructuredMeshProcess().process(
-        StructuredMeshInput(Lx=1.0, Ly=1.0, Lz=1.0, nx=nx, ny=ny, nz=nz)
-    ).mesh
+    return (
+        StructuredMeshProcess()
+        .process(StructuredMeshInput(Lx=1.0, Ly=1.0, Lz=1.0, nx=nx, ny=ny, nz=nz))
+        .mesh
+    )
 
 
 class TestTVDConvectionAPI:
@@ -69,9 +71,7 @@ class TestTVDConvectionAPI:
     def test_limiter_property(self):
         """リミッタ種別プロパティ."""
         assert TVDConvectionScheme(TVDLimiter.VAN_LEER).limiter == TVDLimiter.VAN_LEER
-        assert (
-            TVDConvectionScheme(TVDLimiter.SUPERBEE).limiter == TVDLimiter.SUPERBEE
-        )
+        assert TVDConvectionScheme(TVDLimiter.SUPERBEE).limiter == TVDLimiter.SUPERBEE
 
 
 class TestTVDLimiterFunctions:

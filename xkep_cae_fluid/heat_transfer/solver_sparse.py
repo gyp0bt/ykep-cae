@@ -494,11 +494,7 @@ class AMGCache:
         indptr_h = hash(A_csr.indptr.data.tobytes())
         indices_h = hash(A_csr.indices.data.tobytes())
 
-        if (
-            self._ml is None
-            or self._indptr_hash != indptr_h
-            or self._indices_hash != indices_h
-        ):
+        if self._ml is None or self._indptr_hash != indptr_h or self._indices_hash != indices_h:
             self._ml = pyamg.ruge_stuben_solver(A_csr)
             self._indptr_hash = indptr_h
             self._indices_hash = indices_h
@@ -566,9 +562,7 @@ def solve_sparse_amg(
     def _callback(xk: np.ndarray) -> None:
         iter_count[0] += 1
 
-    x, info = spla.cg(
-        A_csr, b, x0=x0, M=M, rtol=inp.tol, maxiter=inp.max_iter, callback=_callback
-    )
+    x, info = spla.cg(A_csr, b, x0=x0, M=M, rtol=inp.tol, maxiter=inp.max_iter, callback=_callback)
 
     T = x.reshape(inp.nx, inp.ny, inp.nz)
     residual = float(np.linalg.norm(A_csr @ x - b) / max(np.linalg.norm(b), 1e-30))

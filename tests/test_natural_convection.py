@@ -514,7 +514,7 @@ class TestNaturalConvectionPhysics:
         Nu_ref = 1.118
         assert abs(Nu_avg - Nu_ref) / Nu_ref < 0.20, (
             f"Nu_avg={Nu_avg:.3f}, Nu_ref={Nu_ref:.3f}, "
-            f"相対誤差={abs(Nu_avg - Nu_ref)/Nu_ref*100:.1f}%"
+            f"相対誤差={abs(Nu_avg - Nu_ref) / Nu_ref * 100:.1f}%"
         )
 
 
@@ -588,7 +588,7 @@ class TestCavityBenchmark:
         """Ra=10³: Nu≈1.118 (20%以内)."""
         Nu, result = _run_cavity_benchmark(1000)
         assert abs(Nu - 1.118) / 1.118 < 0.20, (
-            f"Ra=1000: Nu={Nu:.3f} (ref=1.118, err={abs(Nu-1.118)/1.118*100:.1f}%)"
+            f"Ra=1000: Nu={Nu:.3f} (ref=1.118, err={abs(Nu - 1.118) / 1.118 * 100:.1f}%)"
         )
 
     @pytest.mark.slow
@@ -596,7 +596,7 @@ class TestCavityBenchmark:
         """Ra=10⁴: Nu≈2.243 (20%以内)."""
         Nu, result = _run_cavity_benchmark(10000)
         assert abs(Nu - 2.243) / 2.243 < 0.20, (
-            f"Ra=10000: Nu={Nu:.3f} (ref=2.243, err={abs(Nu-2.243)/2.243*100:.1f}%)"
+            f"Ra=10000: Nu={Nu:.3f} (ref=2.243, err={abs(Nu - 2.243) / 2.243 * 100:.1f}%)"
         )
 
     @pytest.mark.slow
