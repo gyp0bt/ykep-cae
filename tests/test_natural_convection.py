@@ -617,3 +617,117 @@ class TestCavityBenchmark:
         u_max = np.abs(result.u).max()
         # 中心面のuは最大値の50%以下
         assert u_mid < 0.5 * u_max or u_max < 1e-10
+
+
+class TestTransientNaturalConvection:
+    """非定常自然対流テスト."""
+
+    def test_transient_temperature_evolution(self):
+        """非定常: 温度場が時間とともに定常解に近づく."""
+        nx, ny, nz = 5, 5, 3
+        T_hot, T_cold = 310.0, 290.0
+        inp = NaturalConvectionInput(
+            Lx=0.1,
+            Ly=0.1,
+            Lz=0.1,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.0,
+            T_ref=300.0,
+            gravity=(0.0, 0.0, 0.0),
+            bc_xm=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_hot,
+            ),
+            bc_xp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_cold,
+            ),
+            dt=0.01,
+            t_end=0.5,
+            max_simple_iter=20,
+            tol_simple=1e-4,
+            alpha_u=0.3,
+            alpha_p=0.1,
+            alpha_T=0.7,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+
+        # 浮力なし → 純粋な伝導 → 温度は境界値範囲内
+        assert not np.any(np.isnan(result.T))
+        assert result.T.min() >= T_cold - 1.0
+        assert result.T.max() <= T_hot + 1.0
+        # タイムステップが進んでいる
+        assert result.n_timesteps >= 10
+
+    def test_transient_buoyancy_onset(self):
+        """非定常: 浮力項がある場合に流れが発生する."""
+        nx, ny, nz = 5, 5, 3
+        T_hot, T_cold = 320.0, 280.0
+        inp = NaturalConvectionInput(
+            Lx=0.1,
+            Ly=0.1,
+            Lz=0.1,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.001,
+            T_ref=300.0,
+            gravity=(0.0, -9.81, 0.0),
+            bc_xm=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_hot,
+            ),
+            bc_xp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_cold,
+            ),
+            dt=0.01,
+            t_end=0.2,
+            max_simple_iter=20,
+            tol_simple=1e-4,
+            alpha_u=0.2,
+            alpha_p=0.05,
+            alpha_T=0.5,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+
+        # 浮力により流れが発生しているはず
+        max_vel = max(np.abs(result.u).max(), np.abs(result.v).max())
+        assert max_vel > 1e-6, f"流れが発生していない: max_vel={max_vel:.2e}"
+
+    def test_transient_residual_history_length(self):
+        """非定常: 残差履歴がタイムステップ×SIMPLE反復分記録される."""
+        nx, ny, nz = 3, 3, 3
+        inp = NaturalConvectionInput(
+            Lx=1.0,
+            Ly=1.0,
+            Lz=1.0,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.0,
+            T_ref=300.0,
+            dt=0.1,
+            t_end=0.5,
+            max_simple_iter=5,
+            tol_simple=1e-10,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+
+        # 5 timesteps × (1以上のSIMPLE反復) = 5以上のエントリ
+        assert len(result.residual_history["u"]) >= 5
+        assert result.n_timesteps == 5
