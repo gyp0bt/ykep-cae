@@ -91,6 +91,9 @@ class NaturalConvectionInput:
     k_solid : np.ndarray | None
         固体領域の熱伝導率 (nx, ny, nz) [W/(m·K)]。
         solid_mask=None の場合は無視。
+    q_vol : np.ndarray | None
+        体積熱生成 (nx, ny, nz) [W/m³]。
+        None の場合は熱生成なし。
     T0 : np.ndarray
         初期温度場 (nx, ny, nz) [K]
     bc_xm, bc_xp, bc_ym, bc_yp, bc_zm, bc_zp : FluidBoundarySpec
@@ -132,6 +135,7 @@ class NaturalConvectionInput:
     gravity: tuple[float, float, float] = (0.0, -9.81, 0.0)
     solid_mask: np.ndarray | None = None
     k_solid: np.ndarray | None = None
+    q_vol: np.ndarray | None = None
     T0: np.ndarray | None = None
     bc_xm: FluidBoundarySpec = field(default_factory=FluidBoundarySpec)
     bc_xp: FluidBoundarySpec = field(default_factory=FluidBoundarySpec)
