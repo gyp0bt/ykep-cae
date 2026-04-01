@@ -14,6 +14,10 @@ from xkep_cae_fluid.core.strategies.protocols import (
     TimeIntegrationStrategy,
     TurbulenceModelStrategy,
 )
+from xkep_cae_fluid.core.strategies.tvd_convection import (
+    TVDConvectionScheme,
+    TVDLimiter,
+)
 
 __all__ = [
     "ConvectionSchemeStrategy",
@@ -23,5 +27,7 @@ __all__ = [
     "PressureVelocityCouplingStrategy",
     "LinearSolverStrategy",
     "CentralDiffusionScheme",
+    "TVDConvectionScheme",
+    "TVDLimiter",
     "UpwindConvectionScheme",
 ]
