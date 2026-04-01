@@ -714,6 +714,7 @@ def build_energy_system(
     v: np.ndarray,
     w: np.ndarray,
     T_old_time: np.ndarray | None = None,
+    rc_face_velocities: (tuple[np.ndarray, np.ndarray, np.ndarray] | None) = None,
 ) -> tuple[sparse.csr_matrix, np.ndarray]:
     """エネルギー方程式の疎行列を組み立てる.
 
@@ -728,6 +729,10 @@ def build_energy_system(
         速度場 (nx, ny, nz)
     T_old_time : np.ndarray | None
         前タイムステップの温度場（非定常時）
+    rc_face_velocities : tuple | None
+        Rhie-Chow 補間済み面速度 (u_face_xp, v_face_yp, w_face_zp)。
+        指定時はこの面速度で対流フラックスを計算し、チェッカーボード抑制。
+        None の場合は従来通りセル中心速度の線形補間を使用。
 
     Returns
     -------
@@ -803,15 +808,37 @@ def build_energy_system(
 
         # 対流（流体セルのみ）
         cell_is_fluid = ~_is_solid(inp.solid_mask, ii_f[mask], jj_f[mask], kk_f[mask])
-        if di != 0:
-            u_face = 0.5 * (u[ii_f[mask], jj_f[mask], kk_f[mask]] + u[nb_i, nb_j, nb_k])
-            face_vel = u_face * di
-        elif dj != 0:
-            v_face = 0.5 * (v[ii_f[mask], jj_f[mask], kk_f[mask]] + v[nb_i, nb_j, nb_k])
-            face_vel = v_face * dj
+
+        # 面速度: RC面速度があればそれを使用（チェッカーボード抑制）
+        if rc_face_velocities is not None:
+            u_rc, v_rc, w_rc = rc_face_velocities
+            if di != 0:
+                # xp面 (di=+1): セルi→i+1, 面index=i
+                # xm面 (di=-1): セルi→i-1, 面index=i-1
+                if di > 0:
+                    face_vel = u_rc[ii_f[mask], jj_f[mask], kk_f[mask]]
+                else:
+                    face_vel = -u_rc[nb_i, nb_j, nb_k]
+            elif dj != 0:
+                if dj > 0:
+                    face_vel = v_rc[ii_f[mask], jj_f[mask], kk_f[mask]]
+                else:
+                    face_vel = -v_rc[nb_i, nb_j, nb_k]
+            else:
+                if dk > 0:
+                    face_vel = w_rc[ii_f[mask], jj_f[mask], kk_f[mask]]
+                else:
+                    face_vel = -w_rc[nb_i, nb_j, nb_k]
         else:
-            w_face = 0.5 * (w[ii_f[mask], jj_f[mask], kk_f[mask]] + w[nb_i, nb_j, nb_k])
-            face_vel = w_face * dk
+            if di != 0:
+                u_face = 0.5 * (u[ii_f[mask], jj_f[mask], kk_f[mask]] + u[nb_i, nb_j, nb_k])
+                face_vel = u_face * di
+            elif dj != 0:
+                v_face = 0.5 * (v[ii_f[mask], jj_f[mask], kk_f[mask]] + v[nb_i, nb_j, nb_k])
+                face_vel = v_face * dj
+            else:
+                w_face = 0.5 * (w[ii_f[mask], jj_f[mask], kk_f[mask]] + w[nb_i, nb_j, nb_k])
+                face_vel = w_face * dk
 
         F = np.where(cell_is_fluid, rho * Cp * face_vel / d, 0.0)
 
