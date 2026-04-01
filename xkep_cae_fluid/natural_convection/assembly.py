@@ -852,6 +852,10 @@ def build_energy_system(
             rhs[bd_idx] += bc.heat_flux / d
         # ADIABATIC: 何もしない
 
+    # 体積熱生成ソース項
+    if inp.q_vol is not None:
+        rhs += inp.q_vol.ravel()
+
     # 時間項
     if inp.is_transient and T_old_time is not None:
         # 流体セル: ρCp/dt、固体セル: ρ_s*Cp_s/dt（ここでは同じρCpを仮定）

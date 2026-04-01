@@ -100,6 +100,24 @@ class TestNaturalConvectionAPI:
         with pytest.raises(AttributeError):
             result.converged = False  # type: ignore[misc]
 
+    def test_q_vol_field_default_none(self):
+        """q_vol のデフォルト値が None であること."""
+        inp = NaturalConvectionInput(
+            Lx=1.0,
+            Ly=1.0,
+            Lz=1.0,
+            nx=3,
+            ny=3,
+            nz=3,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.001,
+            T_ref=300.0,
+        )
+        assert inp.q_vol is None
+
     def test_execute_input_immutability(self):
         """execute() が入力データを変更しないこと (C9)."""
         nx, ny, nz = 3, 3, 3
@@ -345,6 +363,79 @@ class TestNaturalConvectionPhysics:
         margin = 15.0
         assert np.min(result.T) > T_cold - margin, f"T_min={np.min(result.T):.1f}"
         assert np.max(result.T) < T_hot + margin, f"T_max={np.max(result.T):.1f}"
+
+    def test_q_vol_raises_temperature(self):
+        """体積熱生成で温度が上昇すること."""
+        nx, ny, nz = 5, 5, 3
+        T_ref = 300.0
+        q_vol = np.zeros((nx, ny, nz))
+        q_vol[2, 2, :] = 10000.0  # 中心に発熱
+
+        inp = NaturalConvectionInput(
+            Lx=0.1,
+            Ly=0.1,
+            Lz=0.1,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.0,
+            T_ref=T_ref,
+            gravity=(0.0, 0.0, 0.0),
+            q_vol=q_vol,
+            bc_xm=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_ref,
+            ),
+            bc_xp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_ref,
+            ),
+            bc_ym=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_ref,
+            ),
+            bc_yp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_ref,
+            ),
+            max_simple_iter=100,
+            tol_simple=1e-4,
+        )
+        solver = NaturalConvectionFDMProcess()
+        result = solver.process(inp)
+
+        # 中心セルの温度が基準温度より高いこと
+        T_center = result.T[2, 2, nz // 2]
+        assert T_center > T_ref + 0.1, f"T_center={T_center:.2f}: q_volによる温度上昇がない"
+
+    def test_q_vol_none_backward_compatible(self):
+        """q_vol=None で既存動作に影響がないこと."""
+        nx, ny, nz = 3, 3, 3
+        inp_no_q = NaturalConvectionInput(
+            Lx=1.0,
+            Ly=1.0,
+            Lz=1.0,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.0,
+            T_ref=300.0,
+            max_simple_iter=10,
+        )
+        solver = NaturalConvectionFDMProcess()
+        result = solver.process(inp_no_q)
+
+        # q_vol=None でも正常動作
+        assert isinstance(result, NaturalConvectionResult)
+        assert not np.any(np.isnan(result.T))
 
     def test_residual_history_populated(self):
         """残差履歴が記録されること."""
