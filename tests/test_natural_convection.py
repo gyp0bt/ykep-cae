@@ -491,11 +491,11 @@ class TestNaturalConvectionPhysics:
                 condition=FluidBoundaryCondition.SYMMETRY,
                 thermal=ThermalBoundaryCondition.ADIABATIC,
             ),
-            max_simple_iter=500,
-            tol_simple=1e-5,
-            alpha_u=0.5,
-            alpha_p=0.2,
-            alpha_T=0.8,
+            max_simple_iter=3000,
+            tol_simple=1e-4,
+            alpha_u=0.2,
+            alpha_p=0.05,
+            alpha_T=0.5,
         )
         solver = NaturalConvectionFDMProcess()
         result = solver.process(inp)

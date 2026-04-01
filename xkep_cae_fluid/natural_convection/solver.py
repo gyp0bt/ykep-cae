@@ -19,7 +19,7 @@ from xkep_cae_fluid.core.categories import SolverProcess
 from xkep_cae_fluid.natural_convection.assembly import (
     build_energy_system,
     build_momentum_system,
-    build_pressure_correction_system,
+    build_pressure_correction_system_rc,
 )
 from xkep_cae_fluid.natural_convection.data import (
     NaturalConvectionInput,
@@ -210,8 +210,10 @@ def _simple_iteration(
         v_star[inp.solid_mask] = 0.0
         w_star[inp.solid_mask] = 0.0
 
-    # 2. 圧力補正方程式を解く → p'
-    A_pp, b_pp = build_pressure_correction_system(inp, u_star, v_star, w_star, a_P_u, a_P_v, a_P_w)
+    # 2. 圧力補正方程式を解く → p'（Rhie-Chow 補間付き）
+    A_pp, b_pp = build_pressure_correction_system_rc(
+        inp, u_star, v_star, w_star, p, a_P_u, a_P_v, a_P_w
+    )
     p_prime_flat = _solve_linear(A_pp, b_pp, tol=inp.tol_inner, maxiter=inp.max_inner_iter)
     residuals["p"] = _compute_residual_norm(A_pp, p_prime_flat, b_pp)
 
