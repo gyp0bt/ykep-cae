@@ -5,6 +5,7 @@ Protocol で規定する。
 """
 
 from xkep_cae_fluid.core.strategies.convection import UpwindConvectionScheme
+from xkep_cae_fluid.core.strategies.corrected_diffusion import CorrectedDiffusionScheme
 from xkep_cae_fluid.core.strategies.diffusion import CentralDiffusionScheme
 from xkep_cae_fluid.core.strategies.protocols import (
     ConvectionSchemeStrategy,
@@ -27,6 +28,7 @@ __all__ = [
     "PressureVelocityCouplingStrategy",
     "LinearSolverStrategy",
     "CentralDiffusionScheme",
+    "CorrectedDiffusionScheme",
     "TVDConvectionScheme",
     "TVDLimiter",
     "UpwindConvectionScheme",
