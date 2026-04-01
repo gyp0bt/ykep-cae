@@ -280,6 +280,285 @@ def build_momentum_system(
     return A, rhs, diag
 
 
+def _cell_pressure_gradient(
+    p: np.ndarray,
+    nx: int,
+    ny: int,
+    nz: int,
+    dx: float,
+    dy: float,
+    dz: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """セル中心の圧力勾配を中心差分で計算."""
+    dp_dx = np.zeros((nx, ny, nz))
+    if nx > 2:
+        dp_dx[1:-1, :, :] = (p[2:, :, :] - p[:-2, :, :]) / (2.0 * dx)
+    if nx > 1:
+        dp_dx[0, :, :] = (p[1, :, :] - p[0, :, :]) / dx
+        dp_dx[-1, :, :] = (p[-1, :, :] - p[-2, :, :]) / dx
+
+    dp_dy = np.zeros((nx, ny, nz))
+    if ny > 2:
+        dp_dy[:, 1:-1, :] = (p[:, 2:, :] - p[:, :-2, :]) / (2.0 * dy)
+    if ny > 1:
+        dp_dy[:, 0, :] = (p[:, 1, :] - p[:, 0, :]) / dy
+        dp_dy[:, -1, :] = (p[:, -1, :] - p[:, -2, :]) / dy
+
+    dp_dz = np.zeros((nx, ny, nz))
+    if nz > 2:
+        dp_dz[:, :, 1:-1] = (p[:, :, 2:] - p[:, :, :-2]) / (2.0 * dz)
+    if nz > 1:
+        dp_dz[:, :, 0] = (p[:, :, 1] - p[:, :, 0]) / dz
+        dp_dz[:, :, -1] = (p[:, :, -1] - p[:, :, -2]) / dz
+
+    return dp_dx, dp_dy, dp_dz
+
+
+def compute_rhie_chow_face_velocity(
+    inp: NaturalConvectionInput,
+    u_star: np.ndarray,
+    v_star: np.ndarray,
+    w_star: np.ndarray,
+    p: np.ndarray,
+    a_P_u: np.ndarray,
+    a_P_v: np.ndarray,
+    a_P_w: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Rhie-Chow 補間による面速度を計算.
+
+    コロケーション格子のチェッカーボード圧力振動を抑制するため、
+    面速度に圧力勾配の補正項を追加する。
+
+    u_f = (u_P + u_N)/2 - d_f * [(p_N - p_P)/d - (grad_p_P + grad_p_N)/2]
+
+    Parameters
+    ----------
+    u_star, v_star, w_star : np.ndarray
+        予測速度場 (nx, ny, nz)
+    p : np.ndarray
+        圧力場 (nx, ny, nz)
+    a_P_u, a_P_v, a_P_w : np.ndarray
+        各運動量方程式の対角係数 (n,)
+
+    Returns
+    -------
+    tuple of 6 np.ndarray
+        (u_face_xp, v_face_yp, w_face_zp,
+         u_face_xm, v_face_ym, w_face_zm)
+        各方向 +/- 面の Rhie-Chow 補間速度
+        xp: i+1/2 面 (shape: nx-1, ny, nz)
+        xm: i-1/2 面 (同形状、反転参照用)
+    """
+    nx, ny, nz = inp.nx, inp.ny, inp.nz
+    dx, dy, dz = inp.dx, inp.dy, inp.dz
+    rho = inp.rho
+
+    a_P_u_3d = a_P_u.reshape(nx, ny, nz)
+    a_P_v_3d = a_P_v.reshape(nx, ny, nz)
+    a_P_w_3d = a_P_w.reshape(nx, ny, nz)
+
+    # セル中心圧力勾配
+    dp_dx, dp_dy, dp_dz = _cell_pressure_gradient(p, nx, ny, nz, dx, dy, dz)
+
+    # --- x方向面 (i と i+1 の間) ---
+    if nx > 1:
+        # d_f = rho * 0.5 * (1/a_P_i + 1/a_P_{i+1})
+        safe_u_l = np.where(a_P_u_3d[:-1] > 0, a_P_u_3d[:-1], 1.0)
+        safe_u_r = np.where(a_P_u_3d[1:] > 0, a_P_u_3d[1:], 1.0)
+        d_f_x = rho * 0.5 * (1.0 / safe_u_l + 1.0 / safe_u_r)
+
+        # 面速度 = 線形補間 - Rhie-Chow 補正
+        u_interp = 0.5 * (u_star[:-1] + u_star[1:])
+        # コンパクト勾配: (p_{i+1} - p_i) / dx
+        dp_compact = (p[1:] - p[:-1]) / dx
+        # 補間勾配: 0.5*(grad_p_i + grad_p_{i+1})
+        dp_interp = 0.5 * (dp_dx[:-1] + dp_dx[1:])
+        # Rhie-Chow 補正
+        u_face_xp = u_interp - d_f_x * (dp_compact - dp_interp)
+    else:
+        u_face_xp = np.zeros((0, ny, nz))
+
+    # --- y方向面 (j と j+1 の間) ---
+    if ny > 1:
+        safe_v_l = np.where(a_P_v_3d[:, :-1] > 0, a_P_v_3d[:, :-1], 1.0)
+        safe_v_r = np.where(a_P_v_3d[:, 1:] > 0, a_P_v_3d[:, 1:], 1.0)
+        d_f_y = rho * 0.5 * (1.0 / safe_v_l + 1.0 / safe_v_r)
+
+        v_interp = 0.5 * (v_star[:, :-1] + v_star[:, 1:])
+        dp_compact = (p[:, 1:] - p[:, :-1]) / dy
+        dp_interp = 0.5 * (dp_dy[:, :-1] + dp_dy[:, 1:])
+        v_face_yp = v_interp - d_f_y * (dp_compact - dp_interp)
+    else:
+        v_face_yp = np.zeros((nx, 0, nz))
+
+    # --- z方向面 (k と k+1 の間) ---
+    if nz > 1:
+        safe_w_l = np.where(a_P_w_3d[:, :, :-1] > 0, a_P_w_3d[:, :, :-1], 1.0)
+        safe_w_r = np.where(a_P_w_3d[:, :, 1:] > 0, a_P_w_3d[:, :, 1:], 1.0)
+        d_f_z = rho * 0.5 * (1.0 / safe_w_l + 1.0 / safe_w_r)
+
+        w_interp = 0.5 * (w_star[:, :, :-1] + w_star[:, :, 1:])
+        dp_compact = (p[:, :, 1:] - p[:, :, :-1]) / dz
+        dp_interp = 0.5 * (dp_dz[:, :, :-1] + dp_dz[:, :, 1:])
+        w_face_zp = w_interp - d_f_z * (dp_compact - dp_interp)
+    else:
+        w_face_zp = np.zeros((nx, ny, 0))
+
+    return u_face_xp, v_face_yp, w_face_zp
+
+
+def build_pressure_correction_system_rc(
+    inp: NaturalConvectionInput,
+    u_star: np.ndarray,
+    v_star: np.ndarray,
+    w_star: np.ndarray,
+    p: np.ndarray,
+    a_P_u: np.ndarray,
+    a_P_v: np.ndarray,
+    a_P_w: np.ndarray,
+) -> tuple[sparse.csr_matrix, np.ndarray]:
+    """Rhie-Chow 補間付き圧力補正方程式の疎行列を組み立てる.
+
+    従来の中心差分による発散計算の代わりに、Rhie-Chow 面速度を使い
+    面ごとの質量流束から発散を計算する。チェッカーボード圧力振動を抑制。
+
+    Parameters
+    ----------
+    u_star, v_star, w_star : np.ndarray
+        予測速度場 (nx, ny, nz)
+    p : np.ndarray
+        現在の圧力場 (nx, ny, nz)
+    a_P_u, a_P_v, a_P_w : np.ndarray
+        各運動量方程式の対角係数 (n,)
+
+    Returns
+    -------
+    tuple[sparse.csr_matrix, np.ndarray]
+        (係数行列 A, 右辺ベクトル b)
+    """
+    nx, ny, nz = inp.nx, inp.ny, inp.nz
+    n = nx * ny * nz
+    dx, dy, dz = inp.dx, inp.dy, inp.dz
+    rho = inp.rho
+
+    ii_f, jj_f, kk_f = _build_meshgrid(nx, ny, nz)
+    flat_idx = _flat_index(ii_f, jj_f, kk_f, ny, nz)
+
+    rows: list[np.ndarray] = []
+    cols: list[np.ndarray] = []
+    vals: list[np.ndarray] = []
+    diag = np.zeros(n)
+
+    is_solid_cell = _is_solid(inp.solid_mask, ii_f, jj_f, kk_f)
+
+    # d係数
+    d_u = np.where(a_P_u > 0, rho / a_P_u, 0.0)
+    d_v = np.where(a_P_v > 0, rho / a_P_v, 0.0)
+    d_w = np.where(a_P_w > 0, rho / a_P_w, 0.0)
+
+    # Rhie-Chow 面速度で質量残差を計算
+    u_face_xp, v_face_yp, w_face_zp = compute_rhie_chow_face_velocity(
+        inp, u_star, v_star, w_star, p, a_P_u, a_P_v, a_P_w
+    )
+
+    # 面ベースの発散 (面積は dy*dz, dx*dz, dx*dy で等間隔格子)
+    div_3d = np.zeros((nx, ny, nz))
+
+    # x方向面
+    if nx > 1:
+        # i+1/2 面の質量流束 → cell i に +、cell i+1 に -
+        flux_x = rho * u_face_xp  # (nx-1, ny, nz)
+        div_3d[:-1] += flux_x / dx
+        div_3d[1:] -= flux_x / dx
+
+    # y方向面
+    if ny > 1:
+        flux_y = rho * v_face_yp  # (nx, ny-1, nz)
+        div_3d[:, :-1] += flux_y / dy
+        div_3d[:, 1:] -= flux_y / dy
+
+    # z方向面
+    if nz > 1:
+        flux_z = rho * w_face_zp  # (nx, ny, nz-1)
+        div_3d[:, :, :-1] += flux_z / dz
+        div_3d[:, :, 1:] -= flux_z / dz
+
+    rhs = -div_3d.ravel()
+
+    # 圧力補正方程式のラプラシアン: Σ d_face * (p'_nb - p'_P) / d²
+    directions_info = [
+        (1, 0, 0, dx, d_u),
+        (-1, 0, 0, dx, d_u),
+        (0, 1, 0, dy, d_v),
+        (0, -1, 0, dy, d_v),
+        (0, 0, 1, dz, d_w),
+        (0, 0, -1, dz, d_w),
+    ]
+
+    for di, dj, dk, d, d_coeff in directions_info:
+        if di != 0:
+            if di > 0:
+                mask = ii_f < nx - 1
+            else:
+                mask = ii_f > 0
+            nb_i = ii_f[mask] + di
+            nb_j = jj_f[mask]
+            nb_k = kk_f[mask]
+        elif dj != 0:
+            if dj > 0:
+                mask = jj_f < ny - 1
+            else:
+                mask = jj_f > 0
+            nb_i = ii_f[mask]
+            nb_j = jj_f[mask] + dj
+            nb_k = kk_f[mask]
+        else:
+            if dk > 0:
+                mask = kk_f < nz - 1
+            else:
+                mask = kk_f > 0
+            nb_i = ii_f[mask]
+            nb_j = jj_f[mask]
+            nb_k = kk_f[mask] + dk
+
+        i_c = flat_idx[mask]
+        i_nb = _flat_index(nb_i, nb_j, nb_k, ny, nz)
+
+        d_face = 0.5 * (d_coeff[i_c] + d_coeff[i_nb])
+        coeff = d_face / (d * d)
+
+        diag[i_c] += coeff
+        rows.append(i_c)
+        cols.append(i_nb)
+        vals.append(-coeff)
+
+    # 固体セル: 圧力補正=0
+    if np.any(is_solid_cell):
+        solid_idx = flat_idx[is_solid_cell]
+        big = 1e30
+        diag[solid_idx] = big
+        rhs[solid_idx] = 0.0
+
+    # 圧力の基準点固定
+    fluid_cells = ~is_solid_cell
+    if np.any(fluid_cells):
+        ref_idx = flat_idx[fluid_cells][0]
+        diag[ref_idx] = 1e30
+        rhs[ref_idx] = 0.0
+
+    # 行列組み立て
+    rows.append(np.arange(n))
+    cols.append(np.arange(n))
+    vals.append(diag)
+
+    all_rows = np.concatenate(rows)
+    all_cols = np.concatenate(cols)
+    all_vals = np.concatenate(vals)
+
+    A = sparse.coo_matrix((all_vals, (all_rows, all_cols)), shape=(n, n)).tocsr()
+    return A, rhs
+
+
 def build_pressure_correction_system(
     inp: NaturalConvectionInput,
     u_star: np.ndarray,

@@ -2,11 +2,12 @@
 
 OpenFOAM の constant/polyMesh/ ディレクトリから
 points, faces, owner, neighbour, boundary を読み込み、
-MeshData として返す。
+MeshData として返す。ASCII / バイナリ両形式に対応。
 """
 
 from __future__ import annotations
 
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -54,6 +55,147 @@ class PolyMeshResult:
 # ---------------------------------------------------------------------------
 # OpenFOAM ファイルパーサ
 # ---------------------------------------------------------------------------
+
+
+def _is_binary_format(raw: bytes) -> bool:
+    """FoamFile ヘッダの format フィールドが 'binary' かどうか判定."""
+    # ヘッダ部分だけテキストとして解釈（最初の 512 バイト程度）
+    header = raw[: min(len(raw), 1024)].decode("ascii", errors="replace")
+    for line in header.splitlines():
+        stripped = line.strip().rstrip(";")
+        parts = stripped.split()
+        if len(parts) == 2 and parts[0] == "format" and parts[1] == "binary":
+            return True
+    return False
+
+
+def _find_binary_data_offset(raw: bytes) -> int:
+    """バイナリファイルにおけるデータ本体の開始オフセットを返す.
+
+    ヘッダの後の件数 + '(' の次のバイトを返す。
+    """
+    # テキスト部分を読んでヘッダ＋件数をスキップ
+    # '(' のバイト位置を見つける（FoamFile ヘッダの }  の後にある）
+    header_end = raw.find(b"}")
+    if header_end < 0:
+        header_end = 0
+    # 件数の後の '(' を探す
+    paren = raw.find(b"(", header_end)
+    if paren < 0:
+        msg = "バイナリ polyMesh ファイルに '(' が見つかりません"
+        raise ValueError(msg)
+    return paren + 1
+
+
+def _read_count_from_bytes(raw: bytes) -> int:
+    """バイナリファイルからデータ件数を読み取る."""
+    header = raw[: min(len(raw), 1024)].decode("ascii", errors="replace")
+    lines = header.splitlines()
+    i = 0
+    n = len(lines)
+    # ヘッダスキップ
+    while i < n:
+        if lines[i].strip().startswith("FoamFile"):
+            while i < n and "}" not in lines[i]:
+                i += 1
+            i += 1
+            break
+        i += 1
+    # 件数を探す
+    while i < n:
+        stripped = lines[i].strip()
+        if stripped and not stripped.startswith("//"):
+            try:
+                return int(stripped)
+            except ValueError:
+                pass
+        i += 1
+    msg = "バイナリ polyMesh ファイルからデータ件数を読み取れません"
+    raise ValueError(msg)
+
+
+def parse_points_binary(raw: bytes) -> np.ndarray:
+    """バイナリ形式の points ファイルを解析."""
+    n_points = _read_count_from_bytes(raw)
+    offset = _find_binary_data_offset(raw)
+    data = np.frombuffer(raw, dtype=np.float64, count=n_points * 3, offset=offset)
+    return data.reshape(n_points, 3).copy()
+
+
+def parse_label_list_binary(raw: bytes) -> np.ndarray:
+    """バイナリ形式の owner/neighbour ファイルを解析.
+
+    OpenFOAM は 32bit int (label) をデフォルトで使用。
+    """
+    n_items = _read_count_from_bytes(raw)
+    offset = _find_binary_data_offset(raw)
+    # 32bit int を試行し、データ範囲が妥当か確認
+    remaining = len(raw) - offset
+    if remaining >= n_items * 4:
+        data32 = np.frombuffer(raw, dtype=np.int32, count=n_items, offset=offset)
+        if n_items == 0 or (data32.min() >= 0 and data32.max() < 10_000_000):
+            return data32.astype(np.int64).copy()
+    # 64bit int にフォールバック
+    if remaining >= n_items * 8:
+        data64 = np.frombuffer(raw, dtype=np.int64, count=n_items, offset=offset)
+        return data64.copy()
+    msg = f"バイナリ label リストのサイズ不整合: {remaining} bytes, {n_items} items"
+    raise ValueError(msg)
+
+
+def parse_faces_binary(raw: bytes) -> list[list[int]]:
+    """バイナリ形式の faces ファイルを解析.
+
+    OpenFOAM の compactListList 形式:
+    n_faces 個のインデックスリスト + 合計ノード数分のラベル。
+    形式: [n_faces]([indices of size n_faces+1])([labels])
+    """
+    n_faces = _read_count_from_bytes(raw)
+    offset = _find_binary_data_offset(raw)
+    remaining = raw[offset:]
+
+    # compactListList: まず (n_faces+1) 個のオフセット配列、次にラベル配列
+    # ただし OpenFOAM のバイナリ faces は単純に連続して
+    # n_nodes_per_face, node0, node1, ... の繰り返しの場合もある
+
+    # 方式1: n_face 個のオフセットテーブル + ラベルデータ（compactListList）
+    # 最初のバイトを int32 として読んで妥当性を確認
+    idx_size = (n_faces + 1) * 4
+    if len(remaining) >= idx_size:
+        offsets = np.frombuffer(remaining[:idx_size], dtype=np.int32)
+        total_nodes = int(offsets[-1])
+        label_start = idx_size
+        label_bytes = total_nodes * 4
+        if (
+            len(remaining) >= label_start + label_bytes
+            and offsets[0] == 0
+            and np.all(np.diff(offsets) >= 0)
+        ):
+            labels = np.frombuffer(
+                remaining[label_start : label_start + label_bytes],
+                dtype=np.int32,
+            )
+            faces: list[list[int]] = []
+            for i in range(n_faces):
+                start = int(offsets[i])
+                end = int(offsets[i + 1])
+                faces.append(labels[start:end].tolist())
+            return faces
+
+    # 方式2: 各面が [n_nodes, node0, node1, ...] として連続格納
+    faces2: list[list[int]] = []
+    pos = 0
+    for _ in range(n_faces):
+        if pos + 4 > len(remaining):
+            break
+        (n_nodes,) = struct.unpack_from("<i", remaining, pos)
+        pos += 4
+        if pos + n_nodes * 4 > len(remaining):
+            break
+        nodes = struct.unpack_from(f"<{n_nodes}i", remaining, pos)
+        pos += n_nodes * 4
+        faces2.append(list(nodes))
+    return faces2
 
 
 def _skip_header(lines: list[str]) -> int:
@@ -308,14 +450,36 @@ class PolyMeshReaderProcess(PreProcess["PolyMeshInput", "PolyMeshResult"]):
     uses: ClassVar[list[type[AbstractProcess]]] = []
 
     def process(self, input_data: PolyMeshInput) -> PolyMeshResult:
-        """polyMesh ディレクトリからメッシュを読み込む."""
+        """polyMesh ディレクトリからメッシュを読み込む（ASCII/バイナリ自動判定）."""
         mesh_dir = Path(input_data.mesh_dir)
 
-        # ファイル読み込み
-        points = parse_points((mesh_dir / "points").read_text())
-        faces_list = parse_faces((mesh_dir / "faces").read_text())
-        owner = parse_label_list((mesh_dir / "owner").read_text())
-        neighbour = parse_label_list((mesh_dir / "neighbour").read_text())
+        # ファイル読み込み（バイナリ/ASCII 自動判定）
+        points_raw = (mesh_dir / "points").read_bytes()
+        faces_raw = (mesh_dir / "faces").read_bytes()
+        owner_raw = (mesh_dir / "owner").read_bytes()
+        neighbour_raw = (mesh_dir / "neighbour").read_bytes()
+
+        if _is_binary_format(points_raw):
+            points = parse_points_binary(points_raw)
+        else:
+            points = parse_points(points_raw.decode())
+
+        if _is_binary_format(faces_raw):
+            faces_list = parse_faces_binary(faces_raw)
+        else:
+            faces_list = parse_faces(faces_raw.decode())
+
+        if _is_binary_format(owner_raw):
+            owner = parse_label_list_binary(owner_raw)
+        else:
+            owner = parse_label_list(owner_raw.decode())
+
+        if _is_binary_format(neighbour_raw):
+            neighbour = parse_label_list_binary(neighbour_raw)
+        else:
+            neighbour = parse_label_list(neighbour_raw.decode())
+
+        # boundary は常に ASCII（OpenFOAM 仕様）
         boundary_patches = parse_boundary((mesh_dir / "boundary").read_text())
 
         n_cells = int(owner.max()) + 1

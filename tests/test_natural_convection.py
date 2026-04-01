@@ -491,11 +491,11 @@ class TestNaturalConvectionPhysics:
                 condition=FluidBoundaryCondition.SYMMETRY,
                 thermal=ThermalBoundaryCondition.ADIABATIC,
             ),
-            max_simple_iter=500,
-            tol_simple=1e-5,
-            alpha_u=0.5,
-            alpha_p=0.2,
-            alpha_T=0.8,
+            max_simple_iter=3000,
+            tol_simple=1e-4,
+            alpha_u=0.2,
+            alpha_p=0.05,
+            alpha_T=0.5,
         )
         solver = NaturalConvectionFDMProcess()
         result = solver.process(inp)
@@ -510,8 +510,224 @@ class TestNaturalConvectionPhysics:
         Nu_avg = np.mean(Nu_local)
 
         # de Vahl Davis (1983): Ra=1000 → Nu ≈ 1.118
-        # 粗いメッシュ・FDM なので許容誤差は大きめ
+        # 粗いメッシュ・FDM なので許容誤差は大きめ（20%以内）
         Nu_ref = 1.118
-        assert abs(Nu_avg - Nu_ref) < 1.0, (
-            f"Nu_avg={Nu_avg:.3f}, Nu_ref={Nu_ref:.3f}, 差={abs(Nu_avg - Nu_ref):.3f}"
+        assert abs(Nu_avg - Nu_ref) / Nu_ref < 0.20, (
+            f"Nu_avg={Nu_avg:.3f}, Nu_ref={Nu_ref:.3f}, "
+            f"相対誤差={abs(Nu_avg - Nu_ref) / Nu_ref * 100:.1f}%"
         )
+
+
+def _run_cavity_benchmark(Ra, nx=12, ny=12, nz=3, max_iter=3000):
+    """差分加熱キャビティのベンチマーク実行ヘルパー."""
+    L = 0.1
+    T_hot, T_cold = 310.0, 290.0
+    delta_T = T_hot - T_cold
+    T_ref = 300.0
+    rho, mu = 1.0, 0.01
+    Cp, k_fluid = 1000.0, 1.0
+    nu = mu / rho
+    alpha_th = k_fluid / (rho * Cp)
+    g = 9.81
+    beta = Ra * nu * alpha_th / (g * delta_T * L**3)
+
+    inp = NaturalConvectionInput(
+        Lx=L,
+        Ly=L,
+        Lz=L,
+        nx=nx,
+        ny=ny,
+        nz=nz,
+        rho=rho,
+        mu=mu,
+        Cp=Cp,
+        k_fluid=k_fluid,
+        beta=beta,
+        T_ref=T_ref,
+        gravity=(0.0, -g, 0.0),
+        bc_xm=FluidBoundarySpec(
+            thermal=ThermalBoundaryCondition.DIRICHLET,
+            temperature=T_hot,
+        ),
+        bc_xp=FluidBoundarySpec(
+            thermal=ThermalBoundaryCondition.DIRICHLET,
+            temperature=T_cold,
+        ),
+        bc_ym=FluidBoundarySpec(
+            thermal=ThermalBoundaryCondition.ADIABATIC,
+        ),
+        bc_yp=FluidBoundarySpec(
+            thermal=ThermalBoundaryCondition.ADIABATIC,
+        ),
+        bc_zm=FluidBoundarySpec(
+            condition=FluidBoundaryCondition.SYMMETRY,
+            thermal=ThermalBoundaryCondition.ADIABATIC,
+        ),
+        bc_zp=FluidBoundarySpec(
+            condition=FluidBoundaryCondition.SYMMETRY,
+            thermal=ThermalBoundaryCondition.ADIABATIC,
+        ),
+        max_simple_iter=max_iter,
+        tol_simple=1e-5,
+        alpha_u=0.15,
+        alpha_p=0.05,
+        alpha_T=0.5,
+    )
+    result = NaturalConvectionFDMProcess().process(inp)
+    dx = inp.dx
+    dTdx_hot = (result.T[0, :, :] - T_hot) / (dx / 2.0)
+    Nu_local = -dTdx_hot * L / delta_T
+    return float(np.mean(Nu_local)), result
+
+
+class TestCavityBenchmark:
+    """差分加熱キャビティベンチマーク（de Vahl Davis 1983）の定量検証."""
+
+    @pytest.mark.slow
+    def test_ra_1e3_nusselt(self):
+        """Ra=10³: Nu≈1.118 (20%以内)."""
+        Nu, result = _run_cavity_benchmark(1000)
+        assert abs(Nu - 1.118) / 1.118 < 0.20, (
+            f"Ra=1000: Nu={Nu:.3f} (ref=1.118, err={abs(Nu - 1.118) / 1.118 * 100:.1f}%)"
+        )
+
+    @pytest.mark.slow
+    def test_ra_1e4_nusselt(self):
+        """Ra=10⁴: Nu≈2.243 (20%以内)."""
+        Nu, result = _run_cavity_benchmark(10000)
+        assert abs(Nu - 2.243) / 2.243 < 0.20, (
+            f"Ra=10000: Nu={Nu:.3f} (ref=2.243, err={abs(Nu - 2.243) / 2.243 * 100:.1f}%)"
+        )
+
+    @pytest.mark.slow
+    def test_ra_1e3_temperature_bounded(self):
+        """Ra=10³: 温度が境界値範囲内."""
+        Nu, result = _run_cavity_benchmark(1000)
+        assert result.T.min() >= 290.0 - 5.0
+        assert result.T.max() <= 310.0 + 5.0
+
+    @pytest.mark.slow
+    def test_ra_1e4_flow_symmetry(self):
+        """Ra=10⁴: 流れ場が概ね反対称."""
+        _, result = _run_cavity_benchmark(10000)
+        nx, ny, nz = result.u.shape
+        # x方向速度は中心面(x=L/2)で概ねゼロ付近
+        mid_x = nx // 2
+        u_mid = np.abs(result.u[mid_x, :, :]).mean()
+        u_max = np.abs(result.u).max()
+        # 中心面のuは最大値の50%以下
+        assert u_mid < 0.5 * u_max or u_max < 1e-10
+
+
+class TestTransientNaturalConvection:
+    """非定常自然対流テスト."""
+
+    def test_transient_temperature_evolution(self):
+        """非定常: 温度場が時間とともに定常解に近づく."""
+        nx, ny, nz = 5, 5, 3
+        T_hot, T_cold = 310.0, 290.0
+        inp = NaturalConvectionInput(
+            Lx=0.1,
+            Ly=0.1,
+            Lz=0.1,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.0,
+            T_ref=300.0,
+            gravity=(0.0, 0.0, 0.0),
+            bc_xm=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_hot,
+            ),
+            bc_xp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_cold,
+            ),
+            dt=0.01,
+            t_end=0.5,
+            max_simple_iter=20,
+            tol_simple=1e-4,
+            alpha_u=0.3,
+            alpha_p=0.1,
+            alpha_T=0.7,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+
+        # 浮力なし → 純粋な伝導 → 温度は境界値範囲内
+        assert not np.any(np.isnan(result.T))
+        assert result.T.min() >= T_cold - 1.0
+        assert result.T.max() <= T_hot + 1.0
+        # タイムステップが進んでいる
+        assert result.n_timesteps >= 10
+
+    def test_transient_buoyancy_onset(self):
+        """非定常: 浮力項がある場合に流れが発生する."""
+        nx, ny, nz = 5, 5, 3
+        T_hot, T_cold = 320.0, 280.0
+        inp = NaturalConvectionInput(
+            Lx=0.1,
+            Ly=0.1,
+            Lz=0.1,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.001,
+            T_ref=300.0,
+            gravity=(0.0, -9.81, 0.0),
+            bc_xm=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_hot,
+            ),
+            bc_xp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_cold,
+            ),
+            dt=0.01,
+            t_end=0.2,
+            max_simple_iter=20,
+            tol_simple=1e-4,
+            alpha_u=0.2,
+            alpha_p=0.05,
+            alpha_T=0.5,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+
+        # 浮力により流れが発生しているはず
+        max_vel = max(np.abs(result.u).max(), np.abs(result.v).max())
+        assert max_vel > 1e-6, f"流れが発生していない: max_vel={max_vel:.2e}"
+
+    def test_transient_residual_history_length(self):
+        """非定常: 残差履歴がタイムステップ×SIMPLE反復分記録される."""
+        nx, ny, nz = 3, 3, 3
+        inp = NaturalConvectionInput(
+            Lx=1.0,
+            Ly=1.0,
+            Lz=1.0,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.0,
+            T_ref=300.0,
+            dt=0.1,
+            t_end=0.5,
+            max_simple_iter=5,
+            tol_simple=1e-10,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+
+        # 5 timesteps × (1以上のSIMPLE反復) = 5以上のエントリ
+        assert len(result.residual_history["u"]) >= 5
+        assert result.n_timesteps == 5

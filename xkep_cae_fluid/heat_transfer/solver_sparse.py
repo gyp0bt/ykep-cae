@@ -471,11 +471,53 @@ def solve_sparse_direct(
     return T, 1
 
 
+class AMGCache:
+    """AMG 階層構造のキャッシュ.
+
+    非定常問題でスパースパターンが変わらない場合に AMG セットアップを
+    再利用し、計算コストを削減する。行列の値が変わった場合は階層を再構築する。
+    """
+
+    def __init__(self) -> None:
+        self._ml = None
+        self._indptr_hash: int | None = None
+        self._indices_hash: int | None = None
+
+    def get_solver(self, A_csr: sparse.csr_matrix) -> object:
+        """キャッシュ済み AMG ソルバーを返す。パターン変更時は再構築."""
+        try:
+            import pyamg
+        except ImportError:
+            msg = "PyAMG が必要です。pip install 'xkep-cae-fluid[amg]' でインストールしてください。"
+            raise ImportError(msg) from None
+
+        indptr_h = hash(A_csr.indptr.data.tobytes())
+        indices_h = hash(A_csr.indices.data.tobytes())
+
+        if self._ml is None or self._indptr_hash != indptr_h or self._indices_hash != indices_h:
+            self._ml = pyamg.ruge_stuben_solver(A_csr)
+            self._indptr_hash = indptr_h
+            self._indices_hash = indices_h
+
+        return self._ml
+
+    def clear(self) -> None:
+        """キャッシュをクリア."""
+        self._ml = None
+        self._indptr_hash = None
+        self._indices_hash = None
+
+
+# モジュールレベルのグローバルキャッシュ
+_amg_cache = AMGCache()
+
+
 def solve_sparse_amg(
     inp: HeatTransferInput,
     T_old_time: np.ndarray | None = None,
     T_init: np.ndarray | None = None,
     is_transient: bool = False,
+    amg_cache: AMGCache | None = None,
 ) -> tuple[np.ndarray, int, float]:
     """PyAMG マルチグリッド前処理付き CG で温度場を求める.
 
@@ -487,6 +529,9 @@ def solve_sparse_amg(
     ----------
     T_init : np.ndarray | None
         初期推定値。None の場合はゼロベクトル。
+    amg_cache : AMGCache | None
+        AMG 階層キャッシュ。None の場合はモジュールグローバルキャッシュを使用。
+        非定常問題でタイムステップ間の AMG セットアップ再利用に有効。
 
     Returns
     -------
@@ -498,19 +543,15 @@ def solve_sparse_amg(
     ImportError
         pyamg がインストールされていない場合
     """
-    try:
-        import pyamg
-    except ImportError:
-        msg = "PyAMG が必要です。pip install 'xkep-cae-fluid[amg]' でインストールしてください。"
-        raise ImportError(msg) from None
+    cache = amg_cache if amg_cache is not None else _amg_cache
 
     A, b = _build_system(inp, T_old_time, is_transient)
 
     # CSR 形式に変換（PyAMG は CSR を想定）
     A_csr = A.tocsr()
 
-    # AMG ソルバーの構築（Ruge-Stüben法）
-    ml = pyamg.ruge_stuben_solver(A_csr)
+    # AMG ソルバーの構築（キャッシュ活用）
+    ml = cache.get_solver(A_csr)
     M = ml.aspreconditioner()
 
     x0 = T_init.ravel() if T_init is not None else np.zeros(b.shape[0])

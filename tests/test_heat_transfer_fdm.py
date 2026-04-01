@@ -1171,6 +1171,45 @@ class TestAMGSolverPhysics:
             err_msg="AMG 非定常冷却が T_inf に収束しない",
         )
 
+    def test_amg_cache_reuse(self):
+        """AMG: キャッシュが再利用され、同じ結果を返す."""
+        from xkep_cae_fluid.heat_transfer.solver_sparse import AMGCache
+
+        nx, ny, nz = 10, 1, 1
+        inp = HeatTransferInput(
+            Lx=1.0,
+            Ly=0.05,
+            Lz=0.05,
+            k=np.full((nx, ny, nz), 10.0),
+            C=np.ones((nx, ny, nz)),
+            q=np.zeros((nx, ny, nz)),
+            T0=np.full((nx, ny, nz), 300.0),
+            bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, value=100.0),
+            bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, value=500.0),
+        )
+        cache = AMGCache()
+        from xkep_cae_fluid.heat_transfer.solver_sparse import solve_sparse_amg
+
+        T1, n1, r1 = solve_sparse_amg(inp, amg_cache=cache)
+        # キャッシュが構築されていることを確認
+        assert cache._ml is not None
+        ml_id = id(cache._ml)
+
+        # 同じ入力で再実行 → キャッシュ再利用
+        T2, n2, r2 = solve_sparse_amg(inp, amg_cache=cache)
+        assert id(cache._ml) == ml_id  # 同一オブジェクト
+        np.testing.assert_allclose(T1, T2, rtol=1e-10)
+
+    def test_amg_cache_clear(self):
+        """AMG: キャッシュクリアが動作する."""
+        from xkep_cae_fluid.heat_transfer.solver_sparse import AMGCache
+
+        cache = AMGCache()
+        assert cache._ml is None
+        # clear は空でもエラーにならない
+        cache.clear()
+        assert cache._ml is None
+
 
 # ---------------------------------------------------------------------------
 # Numba JIT ソルバーテスト
