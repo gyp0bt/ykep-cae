@@ -1,0 +1,439 @@
+"""3次元自然対流ソルバー (FDM + SIMPLE法).
+
+等間隔直交格子上で SIMPLE 法による圧力-速度連成と
+Boussinesq 近似による浮力項を使い、自然対流問題を解く。
+固体-流体練成伝熱（Conjugate Heat Transfer）に対応。
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from typing import ClassVar
+
+import numpy as np
+from scipy.sparse import linalg as spla
+
+from xkep_cae_fluid.core.base import AbstractProcess, ProcessMeta
+from xkep_cae_fluid.core.categories import SolverProcess
+from xkep_cae_fluid.natural_convection.assembly import (
+    build_energy_system,
+    build_momentum_system,
+    build_pressure_correction_system,
+)
+from xkep_cae_fluid.natural_convection.data import (
+    NaturalConvectionInput,
+    NaturalConvectionResult,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _solve_linear(A, b, x0=None, tol=1e-6, maxiter=50):
+    """BiCGSTAB + ILU前処理で線形方程式を解く."""
+    try:
+        ilu = spla.spilu(A.tocsc(), drop_tol=1e-4)
+        M = spla.LinearOperator(A.shape, matvec=ilu.solve)
+    except Exception:
+        M = None
+
+    if x0 is None:
+        x0 = np.zeros(b.shape[0])
+
+    x, info = spla.bicgstab(A, b, x0=x0, M=M, rtol=tol, maxiter=maxiter)
+    return x
+
+
+def _compute_residual_norm(A, x, b):
+    """残差ノルムを計算."""
+    r = b - A @ x
+    b_norm = np.linalg.norm(b)
+    if b_norm < 1e-30:
+        return np.linalg.norm(r)
+    return np.linalg.norm(r) / b_norm
+
+
+def _correct_velocity(
+    inp: NaturalConvectionInput,
+    u_star: np.ndarray,
+    v_star: np.ndarray,
+    w_star: np.ndarray,
+    p_prime: np.ndarray,
+    a_P_u: np.ndarray,
+    a_P_v: np.ndarray,
+    a_P_w: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """速度場を圧力補正で更新.
+
+    u = u* - (V/a_P) * ∂p'/∂x
+    """
+    nx, ny, nz = inp.nx, inp.ny, inp.nz
+    dx, dy, dz = inp.dx, inp.dy, inp.dz
+    rho = inp.rho
+
+    p_prime_3d = p_prime.reshape(nx, ny, nz)
+    a_P_u_3d = a_P_u.reshape(nx, ny, nz)
+    a_P_v_3d = a_P_v.reshape(nx, ny, nz)
+    a_P_w_3d = a_P_w.reshape(nx, ny, nz)
+
+    u_corr = u_star.copy()
+    v_corr = v_star.copy()
+    w_corr = w_star.copy()
+
+    # ∂p'/∂x — 中心差分
+    dp_dx = np.zeros((nx, ny, nz))
+    if nx > 2:
+        dp_dx[1:-1, :, :] = (p_prime_3d[2:, :, :] - p_prime_3d[:-2, :, :]) / (2.0 * dx)
+    if nx > 1:
+        dp_dx[0, :, :] = (p_prime_3d[1, :, :] - p_prime_3d[0, :, :]) / dx
+        dp_dx[-1, :, :] = (p_prime_3d[-1, :, :] - p_prime_3d[-2, :, :]) / dx
+
+    dp_dy = np.zeros((nx, ny, nz))
+    if ny > 2:
+        dp_dy[:, 1:-1, :] = (p_prime_3d[:, 2:, :] - p_prime_3d[:, :-2, :]) / (2.0 * dy)
+    if ny > 1:
+        dp_dy[:, 0, :] = (p_prime_3d[:, 1, :] - p_prime_3d[:, 0, :]) / dy
+        dp_dy[:, -1, :] = (p_prime_3d[:, -1, :] - p_prime_3d[:, -2, :]) / dy
+
+    dp_dz = np.zeros((nx, ny, nz))
+    if nz > 2:
+        dp_dz[:, :, 1:-1] = (p_prime_3d[:, :, 2:] - p_prime_3d[:, :, :-2]) / (2.0 * dz)
+    if nz > 1:
+        dp_dz[:, :, 0] = (p_prime_3d[:, :, 1] - p_prime_3d[:, :, 0]) / dz
+        dp_dz[:, :, -1] = (p_prime_3d[:, :, -1] - p_prime_3d[:, :, -2]) / dz
+
+    # d = rho / a_P
+    safe_aP_u = np.where(a_P_u_3d > 0, a_P_u_3d, 1.0)
+    safe_aP_v = np.where(a_P_v_3d > 0, a_P_v_3d, 1.0)
+    safe_aP_w = np.where(a_P_w_3d > 0, a_P_w_3d, 1.0)
+
+    u_corr -= (rho / safe_aP_u) * dp_dx
+    v_corr -= (rho / safe_aP_v) * dp_dy
+    w_corr -= (rho / safe_aP_w) * dp_dz
+
+    # 固体セル: 速度=0
+    if inp.solid_mask is not None:
+        u_corr[inp.solid_mask] = 0.0
+        v_corr[inp.solid_mask] = 0.0
+        w_corr[inp.solid_mask] = 0.0
+
+    return u_corr, v_corr, w_corr
+
+
+def _compute_mass_residual(
+    inp: NaturalConvectionInput,
+    u: np.ndarray,
+    v: np.ndarray,
+    w: np.ndarray,
+) -> float:
+    """質量残差（連続の式の不整合）を計算."""
+    nx, ny, nz = inp.nx, inp.ny, inp.nz
+    dx, dy, dz = inp.dx, inp.dy, inp.dz
+
+    # ∂u/∂x + ∂v/∂y + ∂w/∂z の各セルの値
+    div = np.zeros((nx, ny, nz))
+
+    # 中心差分
+    if nx > 2:
+        div[1:-1, :, :] += (u[2:, :, :] - u[:-2, :, :]) / (2.0 * dx)
+    if nx > 1:
+        div[0, :, :] += (u[1, :, :] - u[0, :, :]) / dx
+        div[-1, :, :] += (u[-1, :, :] - u[-2, :, :]) / dx
+
+    if ny > 2:
+        div[:, 1:-1, :] += (v[:, 2:, :] - v[:, :-2, :]) / (2.0 * dy)
+    if ny > 1:
+        div[:, 0, :] += (v[:, 1, :] - v[:, 0, :]) / dy
+        div[:, -1, :] += (v[:, -1, :] - v[:, -2, :]) / dy
+
+    if nz > 2:
+        div[:, :, 1:-1] += (w[:, :, 2:] - w[:, :, :-2]) / (2.0 * dz)
+    if nz > 1:
+        div[:, :, 0] += (w[:, :, 1] - w[:, :, 0]) / dz
+        div[:, :, -1] += (w[:, :, -1] - w[:, :, -2]) / dz
+
+    if inp.solid_mask is not None:
+        div[inp.solid_mask] = 0.0
+
+    return float(np.linalg.norm(div.ravel()))
+
+
+def _simple_iteration(
+    inp: NaturalConvectionInput,
+    u: np.ndarray,
+    v: np.ndarray,
+    w: np.ndarray,
+    p: np.ndarray,
+    T: np.ndarray,
+    u_old_time: np.ndarray | None = None,
+    v_old_time: np.ndarray | None = None,
+    w_old_time: np.ndarray | None = None,
+    T_old_time: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, float]]:
+    """SIMPLE法の1反復を実行.
+
+    Returns
+    -------
+    tuple
+        (u_new, v_new, w_new, p_new, T_new, residuals)
+    """
+    nx, ny, nz = inp.nx, inp.ny, inp.nz
+
+    residuals: dict[str, float] = {}
+
+    # 1. 運動量方程式を解く → u*, v*, w*
+    A_u, b_u, a_P_u = build_momentum_system(
+        inp, u, v, w, p, T, "u", u_old_time, v_old_time, w_old_time
+    )
+    u_star_flat = _solve_linear(A_u, b_u, u.ravel(), inp.tol_inner, inp.max_inner_iter)
+    residuals["u"] = _compute_residual_norm(A_u, u_star_flat, b_u)
+
+    A_v, b_v, a_P_v = build_momentum_system(
+        inp, u, v, w, p, T, "v", u_old_time, v_old_time, w_old_time
+    )
+    v_star_flat = _solve_linear(A_v, b_v, v.ravel(), inp.tol_inner, inp.max_inner_iter)
+    residuals["v"] = _compute_residual_norm(A_v, v_star_flat, b_v)
+
+    A_w, b_w, a_P_w = build_momentum_system(
+        inp, u, v, w, p, T, "w", u_old_time, v_old_time, w_old_time
+    )
+    w_star_flat = _solve_linear(A_w, b_w, w.ravel(), inp.tol_inner, inp.max_inner_iter)
+    residuals["w"] = _compute_residual_norm(A_w, w_star_flat, b_w)
+
+    u_star = u_star_flat.reshape(nx, ny, nz)
+    v_star = v_star_flat.reshape(nx, ny, nz)
+    w_star = w_star_flat.reshape(nx, ny, nz)
+
+    # 固体セル: 速度=0 強制
+    if inp.solid_mask is not None:
+        u_star[inp.solid_mask] = 0.0
+        v_star[inp.solid_mask] = 0.0
+        w_star[inp.solid_mask] = 0.0
+
+    # 2. 圧力補正方程式を解く → p'
+    A_pp, b_pp = build_pressure_correction_system(inp, u_star, v_star, w_star, a_P_u, a_P_v, a_P_w)
+    p_prime_flat = _solve_linear(A_pp, b_pp, tol=inp.tol_inner, maxiter=inp.max_inner_iter)
+    residuals["p"] = _compute_residual_norm(A_pp, p_prime_flat, b_pp)
+
+    # 3. 速度を補正
+    u_new, v_new, w_new = _correct_velocity(
+        inp,
+        u_star,
+        v_star,
+        w_star,
+        p_prime_flat,
+        a_P_u,
+        a_P_v,
+        a_P_w,
+    )
+
+    # 4. 圧力を更新（緩和付き）
+    p_new = p + inp.alpha_p * p_prime_flat.reshape(nx, ny, nz)
+
+    # 速度に緩和を適用
+    u_new = inp.alpha_u * u_new + (1.0 - inp.alpha_u) * u
+    v_new = inp.alpha_u * v_new + (1.0 - inp.alpha_u) * v
+    w_new = inp.alpha_u * w_new + (1.0 - inp.alpha_u) * w
+
+    # 5. エネルギー方程式を解く → T
+    A_T, b_T = build_energy_system(inp, u_new, v_new, w_new, T_old_time)
+    T_new_flat = _solve_linear(A_T, b_T, T.ravel(), inp.tol_inner, inp.max_inner_iter)
+    residuals["T"] = _compute_residual_norm(A_T, T_new_flat, b_T)
+    T_new = T_new_flat.reshape(nx, ny, nz)
+
+    # 温度に緩和を適用
+    T_new = inp.alpha_T * T_new + (1.0 - inp.alpha_T) * T
+
+    # 6. 質量残差
+    residuals["mass"] = _compute_mass_residual(inp, u_new, v_new, w_new)
+
+    return u_new, v_new, w_new, p_new, T_new, residuals
+
+
+class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalConvectionResult]):
+    """3次元自然対流ソルバー (FDM + SIMPLE法).
+
+    Boussinesq近似による非圧縮性自然対流を、等間隔直交格子上の
+    FDM + SIMPLE法で解く。固体-流体練成伝熱に対応。
+    """
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="NaturalConvectionFDMProcess",
+        module="solve",
+        version="0.1.0",
+        document_path="../../docs/design/natural-convection-fdm.md",
+    )
+    uses: ClassVar[list[type[AbstractProcess]]] = []
+
+    def process(self, input_data: NaturalConvectionInput) -> NaturalConvectionResult:
+        """SIMPLE法で自然対流問題を解く."""
+        t_start = time.perf_counter()
+
+        inp = input_data
+        nx, ny, nz = inp.nx, inp.ny, inp.nz
+
+        # 初期化
+        u = np.zeros((nx, ny, nz))
+        v = np.zeros((nx, ny, nz))
+        w = np.zeros((nx, ny, nz))
+        p = np.zeros((nx, ny, nz))
+        T = inp.T0.copy() if inp.T0 is not None else np.full((nx, ny, nz), inp.T_ref)
+
+        residual_history: dict[str, list[float]] = {
+            "u": [],
+            "v": [],
+            "w": [],
+            "p": [],
+            "T": [],
+            "mass": [],
+        }
+
+        if inp.is_transient:
+            return self._solve_transient(inp, u, v, w, p, T, residual_history, t_start)
+        else:
+            return self._solve_steady(inp, u, v, w, p, T, residual_history, t_start)
+
+    def _solve_steady(
+        self,
+        inp: NaturalConvectionInput,
+        u: np.ndarray,
+        v: np.ndarray,
+        w: np.ndarray,
+        p: np.ndarray,
+        T: np.ndarray,
+        residual_history: dict[str, list[float]],
+        t_start: float,
+    ) -> NaturalConvectionResult:
+        """定常解析."""
+        converged = False
+        n_iter = 0
+
+        for outer in range(inp.max_simple_iter):
+            n_iter = outer + 1
+            u, v, w, p, T, residuals = _simple_iteration(inp, u, v, w, p, T)
+
+            for key in residuals:
+                residual_history[key].append(residuals[key])
+
+            # 収束判定
+            max_res = max(residuals.values())
+            if n_iter % 10 == 0 or n_iter <= 5:
+                logger.info(
+                    "SIMPLE iter %d: mass=%.2e, u=%.2e, v=%.2e, w=%.2e, p=%.2e, T=%.2e",
+                    n_iter,
+                    residuals["mass"],
+                    residuals["u"],
+                    residuals["v"],
+                    residuals["w"],
+                    residuals["p"],
+                    residuals["T"],
+                )
+
+            # 発散検出
+            if np.isnan(max_res) or max_res > 1e20:
+                logger.warning("SIMPLE 発散: iter %d, max_residual=%.2e", n_iter, max_res)
+                break
+
+            # 最低3反復は実行（初期の偽収束を防ぐ）
+            if n_iter >= 3 and max_res < inp.tol_simple:
+                converged = True
+                logger.info("SIMPLE 収束: %d 反復, max_residual=%.2e", n_iter, max_res)
+                break
+
+        elapsed = time.perf_counter() - t_start
+
+        return NaturalConvectionResult(
+            u=u,
+            v=v,
+            w=w,
+            p=p,
+            T=T,
+            converged=converged,
+            n_outer_iterations=n_iter,
+            residual_history=residual_history,
+            elapsed_seconds=elapsed,
+        )
+
+    def _solve_transient(
+        self,
+        inp: NaturalConvectionInput,
+        u: np.ndarray,
+        v: np.ndarray,
+        w: np.ndarray,
+        p: np.ndarray,
+        T: np.ndarray,
+        residual_history: dict[str, list[float]],
+        t_start: float,
+    ) -> NaturalConvectionResult:
+        """非定常解析."""
+        t_current = 0.0
+        n_timesteps = 0
+        total_outer = 0
+        converged = True
+
+        while t_current < inp.t_end - 1e-12 * inp.dt:
+            n_timesteps += 1
+            t_current += inp.dt
+
+            u_old = u.copy()
+            v_old = v.copy()
+            w_old = w.copy()
+            T_old = T.copy()
+
+            step_converged = False
+            n_inner = 0
+            for _outer in range(inp.max_simple_iter):
+                total_outer += 1
+                n_inner += 1
+                u, v, w, p, T, residuals = _simple_iteration(
+                    inp,
+                    u,
+                    v,
+                    w,
+                    p,
+                    T,
+                    u_old,
+                    v_old,
+                    w_old,
+                    T_old,
+                )
+
+                for key in residuals:
+                    residual_history[key].append(residuals[key])
+
+                max_res = max(residuals.values())
+                if max_res < inp.tol_simple:
+                    step_converged = True
+                    break
+
+            if not step_converged:
+                converged = False
+                logger.warning(
+                    "タイムステップ %d (t=%.4f): SIMPLE未収束 (max_res=%.2e)",
+                    n_timesteps,
+                    t_current,
+                    max_res,
+                )
+
+            if n_timesteps % max(inp.output_interval, 1) == 0:
+                logger.info(
+                    "t=%.4f: SIMPLE %d iter, mass=%.2e",
+                    t_current,
+                    n_inner,
+                    residuals["mass"],
+                )
+
+        elapsed = time.perf_counter() - t_start
+
+        return NaturalConvectionResult(
+            u=u,
+            v=v,
+            w=w,
+            p=p,
+            T=T,
+            converged=converged,
+            n_outer_iterations=total_outer,
+            residual_history=residual_history,
+            elapsed_seconds=elapsed,
+            n_timesteps=n_timesteps,
+        )
