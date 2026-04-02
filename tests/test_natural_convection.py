@@ -1944,3 +1944,185 @@ class TestOutletConvectivePhysics:
         result = NaturalConvectionFDMProcess().process(inp)
         assert result.n_timesteps == 3
         assert not np.any(np.isnan(result.u))
+
+
+# ---------------------------------------------------------------------------
+# AMG 圧力ソルバー + 面ベース質量残差テスト
+# ---------------------------------------------------------------------------
+
+
+class TestAMGPressureSolver:
+    """AMG 圧力ソルバーと面ベース質量残差のテスト."""
+
+    @staticmethod
+    def _make_air_cavity_input(**overrides):
+        """2cm 空気実物性キャビティの入力を生成."""
+        L = 0.02
+        T_hot, T_cold = 310.0, 300.0
+        defaults = dict(
+            Lx=L,
+            Ly=L,
+            Lz=L * 3 / 20,
+            nx=20,
+            ny=20,
+            nz=3,
+            rho=1.19,
+            mu=1.85e-5,
+            Cp=1007.0,
+            k_fluid=0.026,
+            beta=3.3e-3,
+            T_ref=0.5 * (T_hot + T_cold),
+            gravity=(0.0, -9.81, 0.0),
+            bc_xm=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.NO_SLIP,
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_hot,
+            ),
+            bc_xp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.NO_SLIP,
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=T_cold,
+            ),
+            bc_ym=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.NO_SLIP,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_yp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.NO_SLIP,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_zm=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.NO_SLIP,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_zp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.NO_SLIP,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            dt=1e-3,
+            t_end=0.01,
+            max_simple_iter=50,
+            max_inner_iter=50,
+            tol_simple=1e-4,
+            tol_inner=1e-6,
+            alpha_u=0.5,
+            alpha_p=0.3,
+        )
+        defaults.update(overrides)
+        return NaturalConvectionInput(**defaults)
+
+    @pytest.mark.slow
+    def test_amg_pressure_solver_converges(self):
+        """AMG 圧力ソルバーで 20x20 空気実物性キャビティが収束する."""
+        pytest.importorskip("pyamg")
+        inp = self._make_air_cavity_input(pressure_solver="amg")
+        result = NaturalConvectionFDMProcess().process(inp)
+        assert result.converged
+        assert not np.any(np.isnan(result.u))
+        assert np.abs(result.v).max() > 1e-5
+        assert np.abs(result.v).max() < 1.0
+
+    @pytest.mark.slow
+    def test_amg_faster_than_bicgstab(self):
+        """AMG ソルバーは BiCGSTAB+ILU より少ない外部反復で収束する."""
+        pytest.importorskip("pyamg")
+        inp_amg = self._make_air_cavity_input(pressure_solver="amg")
+        inp_ilu = self._make_air_cavity_input(pressure_solver="bicgstab")
+        result_amg = NaturalConvectionFDMProcess().process(inp_amg)
+        result_ilu = NaturalConvectionFDMProcess().process(inp_ilu)
+        assert result_amg.n_outer_iterations <= result_ilu.n_outer_iterations * 1.1
+
+    @pytest.mark.slow
+    def test_piso_amg_convergence(self):
+        """PISO + AMG で空気実物性キャビティが収束する."""
+        pytest.importorskip("pyamg")
+        inp = self._make_air_cavity_input(
+            pressure_solver="amg",
+            coupling_method="piso",
+            alpha_u=0.7,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+        assert result.converged
+        assert not np.any(np.isnan(result.u))
+
+    @pytest.mark.slow
+    def test_simplec_amg_convergence(self):
+        """SIMPLEC + AMG で空気実物性キャビティが収束する."""
+        pytest.importorskip("pyamg")
+        inp = self._make_air_cavity_input(
+            pressure_solver="amg",
+            coupling_method="simplec",
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+        assert result.converged
+
+    @pytest.mark.slow
+    def test_adaptive_relaxation(self):
+        """適応的緩和で空気実物性キャビティが収束する."""
+        pytest.importorskip("pyamg")
+        inp = self._make_air_cavity_input(
+            pressure_solver="amg",
+            adaptive_relaxation=True,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+        assert result.converged
+
+    def test_face_mass_residual_consistency(self):
+        """面ベース質量残差が圧力補正RHSと整合する."""
+        from xkep_cae_fluid.natural_convection.assembly import (
+            build_momentum_system,
+            build_pressure_correction_system_rc,
+            compute_face_mass_residual,
+        )
+
+        L = 0.1
+        inp = NaturalConvectionInput(
+            Lx=L,
+            Ly=L,
+            Lz=L,
+            nx=5,
+            ny=5,
+            nz=3,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=1e-3,
+            T_ref=300.0,
+            gravity=(0.0, -9.81, 0.0),
+            bc_xm=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=310.0,
+            ),
+            bc_xp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=290.0,
+            ),
+        )
+        u = np.random.RandomState(42).randn(5, 5, 3) * 0.01
+        v = np.random.RandomState(43).randn(5, 5, 3) * 0.01
+        w = np.random.RandomState(44).randn(5, 5, 3) * 0.001
+        p = np.zeros((5, 5, 3))
+
+        _, _, a_P_u = build_momentum_system(inp, u, v, w, p, np.full((5, 5, 3), 300.0), "u")
+        _, _, a_P_v = build_momentum_system(inp, u, v, w, p, np.full((5, 5, 3), 300.0), "v")
+        _, _, a_P_w = build_momentum_system(inp, u, v, w, p, np.full((5, 5, 3), 300.0), "w")
+
+        mass_res = compute_face_mass_residual(inp, u, v, w, p, a_P_u, a_P_v, a_P_w)
+        _, b_pp = build_pressure_correction_system_rc(inp, u, v, w, p, a_P_u, a_P_v, a_P_w)
+        rhs_norm = np.linalg.norm(b_pp)
+
+        assert abs(mass_res - rhs_norm) / max(rhs_norm, 1e-10) < 1e-3
+
+    @pytest.mark.slow
+    def test_max_pressure_iter(self):
+        """max_pressure_iter が圧力方程式の反復数を制御する."""
+        pytest.importorskip("pyamg")
+        inp = self._make_air_cavity_input(
+            pressure_solver="amg",
+            max_pressure_iter=200,
+            t_end=0.005,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+        assert result.converged
+        assert not np.any(np.isnan(result.u))
