@@ -319,12 +319,12 @@ def _simple_iteration(
                 a_P_w_eff,
             )
             p_new = p_new + p_prime2_flat.reshape(nx, ny, nz)
-        # PISO では速度の under-relaxation は不要（複数補正で質量保存を満たす）
-    else:
-        # SIMPLE/SIMPLEC: 速度に緩和を適用
-        u_new = inp.alpha_u * u_new + (1.0 - inp.alpha_u) * u
-        v_new = inp.alpha_u * v_new + (1.0 - inp.alpha_u) * v
-        w_new = inp.alpha_u * w_new + (1.0 - inp.alpha_u) * w
+
+    # 速度に緩和を適用（PISO含む全手法で適用）
+    # PISO の outer=1 回なら alpha_u=1.0 で実質無効化できる
+    u_new = inp.alpha_u * u_new + (1.0 - inp.alpha_u) * u
+    v_new = inp.alpha_u * v_new + (1.0 - inp.alpha_u) * v
+    w_new = inp.alpha_u * w_new + (1.0 - inp.alpha_u) * w
 
     # 5. エネルギー方程式を解く → T
     #    Rhie-Chow 面速度を使って対流フラックスを計算（チェッカーボード抑制）
