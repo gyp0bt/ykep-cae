@@ -20,6 +20,7 @@ from xkep_cae_fluid.natural_convection.assembly import (
     build_energy_system,
     build_momentum_system,
     build_pressure_correction_system_rc,
+    compute_rhie_chow_face_velocity,
 )
 from xkep_cae_fluid.natural_convection.data import (
     NaturalConvectionInput,
@@ -51,6 +52,16 @@ def _compute_residual_norm(A, x, b):
     if b_norm < 1e-30:
         return np.linalg.norm(r)
     return np.linalg.norm(r) / b_norm
+
+
+def _simple_convergence_residual(residuals: dict[str, float]) -> float:
+    """SIMPLE 収束判定用の残差を返す.
+
+    温度 (T) はエネルギー方程式の RHS が ρCp/dt × T_old で支配されるため
+    相対残差が不当に大きくなる。SIMPLE の収束判定には速度・圧力・質量のみを使う。
+    """
+    keys = ["u", "v", "w", "p", "mass"]
+    return max(residuals.get(k, 0.0) for k in keys)
 
 
 def _correct_velocity(
@@ -238,7 +249,11 @@ def _simple_iteration(
     w_new = inp.alpha_u * w_new + (1.0 - inp.alpha_u) * w
 
     # 5. エネルギー方程式を解く → T
-    A_T, b_T = build_energy_system(inp, u_new, v_new, w_new, T_old_time)
+    #    Rhie-Chow 面速度を使って対流フラックスを計算（チェッカーボード抑制）
+    rc_faces = compute_rhie_chow_face_velocity(inp, u_new, v_new, w_new, p_new, a_P_u, a_P_v, a_P_w)
+    A_T, b_T = build_energy_system(
+        inp, u_new, v_new, w_new, T_old_time, rc_face_velocities=rc_faces
+    )
     T_new_flat = _solve_linear(A_T, b_T, T.ravel(), inp.tol_inner, inp.max_inner_iter)
     residuals["T"] = _compute_residual_norm(A_T, T_new_flat, b_T)
     T_new = T_new_flat.reshape(nx, ny, nz)
@@ -317,8 +332,8 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             for key in residuals:
                 residual_history[key].append(residuals[key])
 
-            # 収束判定
-            max_res = max(residuals.values())
+            # 収束判定（温度は除外 — RHSが時間項で支配されるため）
+            max_res = _simple_convergence_residual(residuals)
             if n_iter % 10 == 0 or n_iter <= 5:
                 logger.info(
                     "SIMPLE iter %d: mass=%.2e, u=%.2e, v=%.2e, w=%.2e, p=%.2e, T=%.2e",
@@ -356,6 +371,37 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             elapsed_seconds=elapsed,
         )
 
+    @staticmethod
+    def _adaptive_dt(
+        inp: NaturalConvectionInput,
+        u: np.ndarray,
+        v: np.ndarray,
+        w: np.ndarray,
+        cfl_max: float = 0.5,
+    ) -> float:
+        """CFL 制約に基づく適応的時間刻みを計算.
+
+        dt = min(dt_user, cfl_max * dx / v_max) を各方向で評価し、
+        最も厳しい制約を採用する。速度がゼロの場合は dt_user を返す。
+        """
+        dt = inp.dt
+        dx, dy, dz = inp.dx, inp.dy, inp.dz
+
+        u_max = float(np.abs(u).max())
+        v_max = float(np.abs(v).max())
+        w_max = float(np.abs(w).max())
+
+        if u_max > 1e-30:
+            dt = min(dt, cfl_max * dx / u_max)
+        if v_max > 1e-30:
+            dt = min(dt, cfl_max * dy / v_max)
+        if w_max > 1e-30:
+            dt = min(dt, cfl_max * dz / w_max)
+
+        # 最小 dt 下限（ユーザ指定の 1/100）
+        dt = max(dt, inp.dt * 0.01)
+        return dt
+
     def _solve_transient(
         self,
         inp: NaturalConvectionInput,
@@ -375,7 +421,57 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
 
         while t_current < inp.t_end - 1e-12 * inp.dt:
             n_timesteps += 1
-            t_current += inp.dt
+
+            # CFL 制約に基づく適応的時間刻み
+            dt_actual = self._adaptive_dt(inp, u, v, w)
+            # t_end を超えないように調整
+            dt_actual = min(dt_actual, inp.t_end - t_current)
+            t_current += dt_actual
+
+            # dt_actual を使う一時的な入力を生成
+            if dt_actual != inp.dt:
+                # frozen dataclass なので object.__setattr__ で一時変更
+                inp_step = inp
+                # NaturalConvectionInput は frozen なので直接変更できない
+                # _simple_iteration 内で inp.dt を参照するため、
+                # 一時的に dt を差し替えた入力を使う
+                inp_step = NaturalConvectionInput(
+                    Lx=inp.Lx,
+                    Ly=inp.Ly,
+                    Lz=inp.Lz,
+                    nx=inp.nx,
+                    ny=inp.ny,
+                    nz=inp.nz,
+                    rho=inp.rho,
+                    mu=inp.mu,
+                    Cp=inp.Cp,
+                    k_fluid=inp.k_fluid,
+                    beta=inp.beta,
+                    T_ref=inp.T_ref,
+                    gravity=inp.gravity,
+                    solid_mask=inp.solid_mask,
+                    k_solid=inp.k_solid,
+                    q_vol=inp.q_vol,
+                    T0=inp.T0,
+                    bc_xm=inp.bc_xm,
+                    bc_xp=inp.bc_xp,
+                    bc_ym=inp.bc_ym,
+                    bc_yp=inp.bc_yp,
+                    bc_zm=inp.bc_zm,
+                    bc_zp=inp.bc_zp,
+                    dt=dt_actual,
+                    t_end=inp.t_end,
+                    max_simple_iter=inp.max_simple_iter,
+                    max_inner_iter=inp.max_inner_iter,
+                    tol_simple=inp.tol_simple,
+                    tol_inner=inp.tol_inner,
+                    alpha_u=inp.alpha_u,
+                    alpha_p=inp.alpha_p,
+                    alpha_T=inp.alpha_T,
+                    output_interval=inp.output_interval,
+                )
+            else:
+                inp_step = inp
 
             u_old = u.copy()
             v_old = v.copy()
@@ -384,11 +480,11 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
 
             step_converged = False
             n_inner = 0
-            for _outer in range(inp.max_simple_iter):
+            for _outer in range(inp_step.max_simple_iter):
                 total_outer += 1
                 n_inner += 1
                 u, v, w, p, T, residuals = _simple_iteration(
-                    inp,
+                    inp_step,
                     u,
                     v,
                     w,
@@ -403,24 +499,26 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
                 for key in residuals:
                     residual_history[key].append(residuals[key])
 
-                max_res = max(residuals.values())
-                if max_res < inp.tol_simple:
+                max_res = _simple_convergence_residual(residuals)
+                if max_res < inp_step.tol_simple:
                     step_converged = True
                     break
 
             if not step_converged:
                 converged = False
                 logger.warning(
-                    "タイムステップ %d (t=%.4f): SIMPLE未収束 (max_res=%.2e)",
+                    "タイムステップ %d (t=%.4f, dt=%.4e): SIMPLE未収束 (max_res=%.2e)",
                     n_timesteps,
                     t_current,
+                    dt_actual,
                     max_res,
                 )
 
             if n_timesteps % max(inp.output_interval, 1) == 0:
                 logger.info(
-                    "t=%.4f: SIMPLE %d iter, mass=%.2e",
+                    "t=%.4f (dt=%.3e): SIMPLE %d iter, mass=%.2e",
                     t_current,
+                    dt_actual,
                     n_inner,
                     residuals["mass"],
                 )
