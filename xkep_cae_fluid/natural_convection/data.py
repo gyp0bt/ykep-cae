@@ -119,9 +119,11 @@ class NaturalConvectionInput:
     output_interval : int
         結果出力間隔
     coupling_method : str
-        圧力-速度連成手法。"simple" または "simplec"。
-        SIMPLEC は圧力補正のd係数を行列行和で計算し、
-        alpha_p=1.0 が使用可能になり収束が高速化する。
+        圧力-速度連成手法。"simple", "simplec", "piso" のいずれか。
+        SIMPLEC は圧力補正のd係数を行列行和で計算し alpha_p=1.0 が使用可能。
+        PISO は複数回の圧力補正で質量保存を大幅改善（非定常向け）。
+    n_piso_correctors : int
+        PISO の圧力補正回数（デフォルト2）。coupling_method="piso" 時のみ有効。
     time_scheme : str
         時間積分スキーム。"euler"（1次後退Euler）または "bdf2"（2次BDF）。
         BDF2 は2次精度で、最初のステップは自動的にEulerで実行される。
@@ -161,6 +163,7 @@ class NaturalConvectionInput:
     alpha_T: float = 0.9
     output_interval: int = 1
     coupling_method: str = "simple"
+    n_piso_correctors: int = 2
     time_scheme: str = "euler"
 
     @property

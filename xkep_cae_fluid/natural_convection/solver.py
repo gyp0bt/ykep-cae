@@ -261,10 +261,10 @@ def _simple_iteration(
         v_star[inp.solid_mask] = 0.0
         w_star[inp.solid_mask] = 0.0
 
-    # SIMPLEC: d係数を行列行和ベースで計算（Van Doormaal-Raithby, 1984）
+    # d係数の計算方法を連成手法に応じて選択
     # SIMPLE:  d = rho / a_P（対角のみ）
-    # SIMPLEC: d = rho / (a_P - Σ|a_nb|) = rho / row_sum(A)
-    #          → 圧力補正の影響が大きくなり alpha_p ≈ 1.0 が使用可能
+    # SIMPLEC: d = rho / row_sum(A)（Van Doormaal-Raithby, 1984）
+    # PISO:    d = rho / a_P + 複数回圧力補正（Issa, 1986）
     if inp.coupling_method == "simplec":
         a_P_u_eff = np.maximum(np.array(A_u.sum(axis=1)).ravel(), 1.0)
         a_P_v_eff = np.maximum(np.array(A_v.sum(axis=1)).ravel(), 1.0)
@@ -274,7 +274,7 @@ def _simple_iteration(
         a_P_u_eff = a_P_u
         a_P_v_eff = a_P_v
         a_P_w_eff = a_P_w
-        alpha_p_eff = inp.alpha_p
+        alpha_p_eff = 1.0 if inp.coupling_method == "piso" else inp.alpha_p
 
     # 2. 圧力補正方程式を解く → p'（Rhie-Chow 補間付き）
     A_pp, b_pp = build_pressure_correction_system_rc(
@@ -295,13 +295,36 @@ def _simple_iteration(
         a_P_w_eff,
     )
 
-    # 4. 圧力を更新（SIMPLEC: alpha_p=1.0, SIMPLE: alpha_p=ユーザ指定）
+    # 4. 圧力を更新
     p_new = p + alpha_p_eff * p_prime_flat.reshape(nx, ny, nz)
 
-    # 速度に緩和を適用
-    u_new = inp.alpha_u * u_new + (1.0 - inp.alpha_u) * u
-    v_new = inp.alpha_u * v_new + (1.0 - inp.alpha_u) * v
-    w_new = inp.alpha_u * w_new + (1.0 - inp.alpha_u) * w
+    # PISO: 追加の圧力補正ステップ（Issa, 1986）
+    # 補正済み速度の質量残差を再計算し、圧力を再補正する
+    if inp.coupling_method == "piso":
+        for _corr in range(inp.n_piso_correctors - 1):
+            A_pp2, b_pp2 = build_pressure_correction_system_rc(
+                inp, u_new, v_new, w_new, p_new, a_P_u_eff, a_P_v_eff, a_P_w_eff
+            )
+            p_prime2_flat = _solve_linear(
+                A_pp2, b_pp2, tol=inp.tol_inner, maxiter=inp.max_inner_iter
+            )
+            u_new, v_new, w_new = _correct_velocity(
+                inp,
+                u_new,
+                v_new,
+                w_new,
+                p_prime2_flat,
+                a_P_u_eff,
+                a_P_v_eff,
+                a_P_w_eff,
+            )
+            p_new = p_new + p_prime2_flat.reshape(nx, ny, nz)
+        # PISO では速度の under-relaxation は不要（複数補正で質量保存を満たす）
+    else:
+        # SIMPLE/SIMPLEC: 速度に緩和を適用
+        u_new = inp.alpha_u * u_new + (1.0 - inp.alpha_u) * u
+        v_new = inp.alpha_u * v_new + (1.0 - inp.alpha_u) * v
+        w_new = inp.alpha_u * w_new + (1.0 - inp.alpha_u) * w
 
     # 5. エネルギー方程式を解く → T
     #    Rhie-Chow 面速度を使って対流フラックスを計算（チェッカーボード抑制）
@@ -539,6 +562,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
                     alpha_T=inp.alpha_T,
                     output_interval=inp.output_interval,
                     coupling_method=inp.coupling_method,
+                    n_piso_correctors=inp.n_piso_correctors,
                     time_scheme=inp.time_scheme,
                 )
             else:

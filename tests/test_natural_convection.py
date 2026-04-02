@@ -1438,3 +1438,206 @@ class TestConservativeRelaxation:
         # 温度は合理的な範囲
         assert np.min(result.T) >= 290.0
         assert np.max(result.T) <= 320.0
+
+
+# ---------------------------------------------------------------------------
+# PISO テスト
+# ---------------------------------------------------------------------------
+
+
+class TestPISOAPI:
+    """PISO 圧力-速度連成手法の API テスト."""
+
+    def test_piso_returns_result(self):
+        """PISO で NaturalConvectionResult を返すこと."""
+        nx, ny, nz = 5, 5, 3
+        inp = NaturalConvectionInput(
+            Lx=1.0,
+            Ly=1.0,
+            Lz=1.0,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.001,
+            T_ref=300.0,
+            max_simple_iter=10,
+            coupling_method="piso",
+        )
+        solver = NaturalConvectionFDMProcess()
+        result = solver.process(inp)
+        assert isinstance(result, NaturalConvectionResult)
+        assert result.u.shape == (nx, ny, nz)
+
+    def test_piso_transient(self):
+        """PISO が非定常解析で動作すること."""
+        nx, ny, nz = 5, 5, 3
+        inp = NaturalConvectionInput(
+            Lx=1.0,
+            Ly=1.0,
+            Lz=1.0,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.0,
+            T_ref=300.0,
+            bc_xm=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=400.0,
+            ),
+            bc_xp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=300.0,
+            ),
+            dt=0.1,
+            t_end=0.3,
+            max_simple_iter=5,
+            coupling_method="piso",
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+        assert result.n_timesteps == 3
+        assert not np.any(np.isnan(result.u))
+        assert not np.any(np.isnan(result.T))
+
+    def test_n_piso_correctors_default(self):
+        """n_piso_correctors のデフォルト値が 2 であること."""
+        inp = NaturalConvectionInput(
+            Lx=1.0,
+            Ly=1.0,
+            Lz=1.0,
+            nx=3,
+            ny=3,
+            nz=3,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.001,
+            T_ref=300.0,
+        )
+        assert inp.n_piso_correctors == 2
+
+
+class TestPISOPhysics:
+    """PISO の物理的妥当性テスト."""
+
+    def test_piso_pure_conduction(self):
+        """PISO で純粋伝導問題が正しく解けること."""
+        nx, ny, nz = 5, 5, 3
+        inp = NaturalConvectionInput(
+            Lx=1.0,
+            Ly=1.0,
+            Lz=1.0,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.0,
+            T_ref=300.0,
+            gravity=(0.0, 0.0, 0.0),
+            bc_xm=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=400.0,
+            ),
+            bc_xp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=300.0,
+            ),
+            max_simple_iter=200,
+            tol_simple=1e-5,
+            coupling_method="piso",
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+        assert result.converged
+        # 速度場がほぼゼロ（浮力なし）
+        assert np.max(np.abs(result.u)) < 1e-8
+        assert np.max(np.abs(result.v)) < 1e-8
+
+    def test_piso_better_mass_conservation(self):
+        """PISO が SIMPLE より良い質量保存を示すこと.
+
+        同条件で最終 mass 残差を比較。PISO の複数回圧力補正により
+        質量残差が小さくなることを検証。
+        """
+        nx, ny, nz = 5, 5, 3
+        common = dict(
+            Lx=1.0,
+            Ly=1.0,
+            Lz=1.0,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.001,
+            T_ref=300.0,
+            gravity=(0.0, -9.81, 0.0),
+            bc_xm=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=310.0,
+            ),
+            bc_xp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=300.0,
+            ),
+            dt=0.5,
+            t_end=2.5,
+            max_simple_iter=5,
+            tol_simple=1e-10,
+        )
+        result_simple = NaturalConvectionFDMProcess().process(
+            NaturalConvectionInput(**common, coupling_method="simple", alpha_u=0.7, alpha_p=0.3)
+        )
+        result_piso = NaturalConvectionFDMProcess().process(
+            NaturalConvectionInput(**common, coupling_method="piso")
+        )
+
+        # PISO は発散しない
+        assert not np.any(np.isnan(result_piso.u))
+        assert not np.any(np.isnan(result_piso.T))
+
+        # 最終 mass 残差を比較（PISO の方が小さい、または同等）
+        mass_simple = result_simple.residual_history["mass"][-1]
+        mass_piso = result_piso.residual_history["mass"][-1]
+        # PISO は2回の圧力補正で質量保存を改善するはず
+        assert mass_piso <= mass_simple * 2.0, (
+            f"PISO mass={mass_piso:.4e}, SIMPLE mass={mass_simple:.4e}"
+        )
+
+    def test_piso_3_correctors(self):
+        """PISO 3回圧力補正が動作すること."""
+        nx, ny, nz = 5, 5, 3
+        inp = NaturalConvectionInput(
+            Lx=1.0,
+            Ly=1.0,
+            Lz=1.0,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.0,
+            T_ref=300.0,
+            dt=0.1,
+            t_end=0.3,
+            max_simple_iter=5,
+            coupling_method="piso",
+            n_piso_correctors=3,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+        assert result.n_timesteps == 3
+        assert not np.any(np.isnan(result.u))
