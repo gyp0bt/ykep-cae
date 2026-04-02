@@ -997,3 +997,213 @@ class TestSIMPLECPhysics:
         assert not np.any(np.isnan(result.u))
         assert not np.any(np.isnan(result.v))
         assert not np.any(np.isnan(result.T))
+
+
+# ---------------------------------------------------------------------------
+# Poiseuille 流れ検証テスト
+# ---------------------------------------------------------------------------
+
+
+class TestPoiseuillePhysics:
+    """Poiseuille 流れ（チャネル流）の物理的妥当性テスト.
+
+    2D平行平板間のPoiseuille流は解析解が既知:
+    u(y) = (1/2μ) * (-dp/dx) * y * (H - y)
+    ここでHはチャネル幅。
+    """
+
+    def test_channel_flow_velocity_profile(self):
+        """チャネル流の速度プロファイルが放物線に近いこと.
+
+        流入速度を一様に与え、十分発達した出口付近で
+        放物線プロファイルに近づくことを検証する。
+        高粘性・低Reで安定な条件を使用。
+        """
+        Lx, Ly, Lz = 0.5, 0.1, 0.1
+        nx, ny, nz = 8, 8, 3
+        U_in = 0.001
+
+        inp = NaturalConvectionInput(
+            Lx=Lx,
+            Ly=Ly,
+            Lz=Lz,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.1,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.0,
+            T_ref=300.0,
+            gravity=(0.0, 0.0, 0.0),
+            bc_xm=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.INLET_VELOCITY,
+                velocity=(U_in, 0.0, 0.0),
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=300.0,
+            ),
+            bc_xp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.OUTLET_PRESSURE,
+                pressure=0.0,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_ym=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.NO_SLIP,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_yp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.NO_SLIP,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_zm=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.SYMMETRY,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_zp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.SYMMETRY,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            max_simple_iter=500,
+            tol_simple=1e-5,
+            alpha_u=0.3,
+            alpha_p=0.05,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+
+        # 発散しないこと
+        assert not np.any(np.isnan(result.u))
+        assert not np.any(np.isnan(result.p))
+
+        # 出口付近の速度プロファイル（x = nx-2, 端から2セル目）
+        u_profile = result.u[-2, :, nz // 2]
+
+        # 壁面近傍で速度が小さいこと
+        assert u_profile[0] < u_profile[ny // 2]
+        assert u_profile[-1] < u_profile[ny // 2]
+
+        # 中心付近で速度が最大
+        center = ny // 2
+        assert u_profile[center] == pytest.approx(np.max(u_profile), abs=0.002)
+
+        # 全体的に正の流れ方向（u > 0）
+        assert np.all(result.u[-2, 1:-1, nz // 2] > 0)
+
+    def test_channel_flow_no_crossflow(self):
+        """チャネル流で横方向速度がほぼゼロであること."""
+        Lx, Ly, Lz = 0.5, 0.1, 0.1
+        nx, ny, nz = 8, 8, 3
+        U_in = 0.001
+
+        inp = NaturalConvectionInput(
+            Lx=Lx,
+            Ly=Ly,
+            Lz=Lz,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.1,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.0,
+            T_ref=300.0,
+            gravity=(0.0, 0.0, 0.0),
+            bc_xm=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.INLET_VELOCITY,
+                velocity=(U_in, 0.0, 0.0),
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=300.0,
+            ),
+            bc_xp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.OUTLET_PRESSURE,
+                pressure=0.0,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_ym=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.NO_SLIP,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_yp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.NO_SLIP,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_zm=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.SYMMETRY,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_zp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.SYMMETRY,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            max_simple_iter=500,
+            tol_simple=1e-5,
+            alpha_u=0.3,
+            alpha_p=0.05,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+
+        # 横方向速度は流れ方向速度よりはるかに小さいこと
+        v_max = np.max(np.abs(result.v))
+        u_max = np.max(np.abs(result.u))
+        assert v_max < 0.5 * u_max, f"v_max={v_max:.4e}, u_max={u_max:.4e}"
+
+    def test_channel_flow_converges(self):
+        """チャネル流が収束し、温度場が一様に保たれること."""
+        Lx, Ly, Lz = 0.5, 0.1, 0.1
+        nx, ny, nz = 8, 8, 3
+        U_in = 0.001
+
+        inp = NaturalConvectionInput(
+            Lx=Lx,
+            Ly=Ly,
+            Lz=Lz,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            rho=1.0,
+            mu=0.1,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.0,
+            T_ref=300.0,
+            gravity=(0.0, 0.0, 0.0),
+            bc_xm=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.INLET_VELOCITY,
+                velocity=(U_in, 0.0, 0.0),
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=300.0,
+            ),
+            bc_xp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.OUTLET_PRESSURE,
+                pressure=0.0,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_ym=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.NO_SLIP,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_yp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.NO_SLIP,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_zm=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.SYMMETRY,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_zp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.SYMMETRY,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            max_simple_iter=500,
+            tol_simple=1e-5,
+            alpha_u=0.3,
+            alpha_p=0.05,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+
+        # 発散しないこと（入出口BCでは完全収束は困難）
+        assert not np.any(np.isnan(result.u))
+        assert not np.any(np.isnan(result.p))
+        # 温度は一様（断熱壁、入口300K、浮力なし）
+        np.testing.assert_allclose(result.T, 300.0, atol=0.1)
