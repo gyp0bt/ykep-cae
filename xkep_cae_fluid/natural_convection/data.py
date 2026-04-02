@@ -131,6 +131,15 @@ class NaturalConvectionInput:
     time_scheme : str
         時間積分スキーム。"euler"（1次後退Euler）または "bdf2"（2次BDF）。
         BDF2 は2次精度で、最初のステップは自動的にEulerで実行される。
+    pressure_solver : str
+        圧力方程式の線形ソルバー。"bicgstab"（BiCGSTAB+ILU）または "amg"（PyAMG前処理+CG）。
+        AMGはラプラシアン型の圧力補正方程式に最適で、大幅な高速化が期待できる。
+    adaptive_relaxation : bool
+        適応的緩和係数の有効化。残差の減少率に応じて alpha_u, alpha_p を
+        自動調整し、収束を加速する。
+    max_pressure_iter : int
+        圧力方程式の最大内部反復数。圧力補正は収束が遅いため、
+        運動量方程式より多めの反復数が有効。0の場合はmax_inner_iterを使用。
     """
 
     Lx: float
@@ -170,6 +179,9 @@ class NaturalConvectionInput:
     n_piso_correctors: int = 2
     convection_scheme: str = "upwind"
     time_scheme: str = "euler"
+    pressure_solver: str = "bicgstab"
+    adaptive_relaxation: bool = False
+    max_pressure_iter: int = 0
 
     @property
     def dx(self) -> float:

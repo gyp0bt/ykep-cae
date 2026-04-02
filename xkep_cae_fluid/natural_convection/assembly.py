@@ -1110,3 +1110,49 @@ def build_energy_system(
 
     A = sparse.coo_matrix((all_vals, (all_rows, all_cols)), shape=(n, n)).tocsr()
     return A, rhs
+
+
+def compute_face_mass_residual(
+    inp: NaturalConvectionInput,
+    u: np.ndarray,
+    v: np.ndarray,
+    w: np.ndarray,
+    p: np.ndarray,
+    a_P_u: np.ndarray,
+    a_P_v: np.ndarray,
+    a_P_w: np.ndarray,
+) -> float:
+    """Rhie-Chow 面速度による質量残差を計算.
+
+    圧力補正方程式のRHSと同じ面ベース発散を使うことで、
+    SIMPLE反復の収束を正しく評価する。
+    """
+    nx, ny, nz = inp.nx, inp.ny, inp.nz
+    dx, dy, dz = inp.dx, inp.dy, inp.dz
+    rho = inp.rho
+
+    u_face_xp, v_face_yp, w_face_zp = compute_rhie_chow_face_velocity(
+        inp, u, v, w, p, a_P_u, a_P_v, a_P_w
+    )
+
+    div_3d = np.zeros((nx, ny, nz))
+
+    if nx > 1:
+        flux_x = rho * u_face_xp
+        div_3d[:-1] += flux_x / dx
+        div_3d[1:] -= flux_x / dx
+
+    if ny > 1:
+        flux_y = rho * v_face_yp
+        div_3d[:, :-1] += flux_y / dy
+        div_3d[:, 1:] -= flux_y / dy
+
+    if nz > 1:
+        flux_z = rho * w_face_zp
+        div_3d[:, :, :-1] += flux_z / dz
+        div_3d[:, :, 1:] -= flux_z / dz
+
+    if inp.solid_mask is not None:
+        div_3d[inp.solid_mask] = 0.0
+
+    return float(np.linalg.norm(div_3d.ravel()))

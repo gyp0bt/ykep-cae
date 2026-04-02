@@ -20,6 +20,7 @@ from xkep_cae_fluid.natural_convection.assembly import (
     build_energy_system,
     build_momentum_system,
     build_pressure_correction_system_rc,
+    compute_face_mass_residual,
     compute_rhie_chow_face_velocity,
 )
 from xkep_cae_fluid.natural_convection.data import (
@@ -28,6 +29,42 @@ from xkep_cae_fluid.natural_convection.data import (
 )
 
 logger = logging.getLogger(__name__)
+
+# --- AMG キャッシュ（圧力方程式用） ---
+
+
+class _PressureAMGCache:
+    """圧力補正方程式用 AMG 階層キャッシュ.
+
+    スパースパターンが不変の間は AMG セットアップを再利用する。
+    """
+
+    def __init__(self) -> None:
+        self._ml = None
+        self._indptr_hash: int | None = None
+        self._indices_hash: int | None = None
+
+    def get_solver(self, A_csr):
+        """キャッシュ済み AMG ソルバーを返す."""
+        import pyamg
+
+        indptr_h = hash(A_csr.indptr.data.tobytes())
+        indices_h = hash(A_csr.indices.data.tobytes())
+
+        if self._ml is None or self._indptr_hash != indptr_h or self._indices_hash != indices_h:
+            self._ml = pyamg.ruge_stuben_solver(A_csr)
+            self._indptr_hash = indptr_h
+            self._indices_hash = indices_h
+
+        return self._ml
+
+    def clear(self) -> None:
+        self._ml = None
+        self._indptr_hash = None
+        self._indices_hash = None
+
+
+_pressure_amg_cache = _PressureAMGCache()
 
 
 def _solve_linear(A, b, x0=None, tol=1e-6, maxiter=50):
@@ -42,6 +79,23 @@ def _solve_linear(A, b, x0=None, tol=1e-6, maxiter=50):
         x0 = np.zeros(b.shape[0])
 
     x, info = spla.bicgstab(A, b, x0=x0, M=M, rtol=tol, maxiter=maxiter)
+    return x
+
+
+def _solve_pressure_amg(A, b, x0=None, tol=1e-6, maxiter=100):
+    """AMG前処理 + BiCGSTAB で圧力補正方程式を解く.
+
+    圧力補正方程式はラプラシアン型で AMG が非常に有効。
+    対角優位だが非対称成分があり得るため BiCGSTAB を使用。
+    """
+    A_csr = A.tocsr()
+    ml = _pressure_amg_cache.get_solver(A_csr)
+    M = ml.aspreconditioner()
+
+    if x0 is None:
+        x0 = np.zeros(b.shape[0])
+
+    x, info = spla.bicgstab(A_csr, b, x0=x0, M=M, rtol=tol, maxiter=maxiter)
     return x
 
 
@@ -197,6 +251,8 @@ def _simple_iteration(
     residuals: dict[str, float] = {}
 
     # 1. 運動量方程式を解く → u*, v*, w*
+    #    残差は「初期残差」(解く前の残差) を使用 — OpenFOAM 方式。
+    #    ||b - A*x_old|| / ||b|| が各反復の収束を正しく評価する。
     A_u, b_u, a_P_u = build_momentum_system(
         inp,
         u,
@@ -212,8 +268,8 @@ def _simple_iteration(
         v_old_old_time,
         w_old_old_time,
     )
+    residuals["u"] = _compute_residual_norm(A_u, u.ravel(), b_u)
     u_star_flat = _solve_linear(A_u, b_u, u.ravel(), inp.tol_inner, inp.max_inner_iter)
-    residuals["u"] = _compute_residual_norm(A_u, u_star_flat, b_u)
 
     A_v, b_v, a_P_v = build_momentum_system(
         inp,
@@ -230,8 +286,8 @@ def _simple_iteration(
         v_old_old_time,
         w_old_old_time,
     )
+    residuals["v"] = _compute_residual_norm(A_v, v.ravel(), b_v)
     v_star_flat = _solve_linear(A_v, b_v, v.ravel(), inp.tol_inner, inp.max_inner_iter)
-    residuals["v"] = _compute_residual_norm(A_v, v_star_flat, b_v)
 
     A_w, b_w, a_P_w = build_momentum_system(
         inp,
@@ -248,8 +304,8 @@ def _simple_iteration(
         v_old_old_time,
         w_old_old_time,
     )
+    residuals["w"] = _compute_residual_norm(A_w, w.ravel(), b_w)
     w_star_flat = _solve_linear(A_w, b_w, w.ravel(), inp.tol_inner, inp.max_inner_iter)
-    residuals["w"] = _compute_residual_norm(A_w, w_star_flat, b_w)
 
     u_star = u_star_flat.reshape(nx, ny, nz)
     v_star = v_star_flat.reshape(nx, ny, nz)
@@ -280,8 +336,15 @@ def _simple_iteration(
     A_pp, b_pp = build_pressure_correction_system_rc(
         inp, u_star, v_star, w_star, p, a_P_u_eff, a_P_v_eff, a_P_w_eff
     )
-    p_prime_flat = _solve_linear(A_pp, b_pp, tol=inp.tol_inner, maxiter=inp.max_inner_iter)
-    residuals["p"] = _compute_residual_norm(A_pp, p_prime_flat, b_pp)
+    p_maxiter = inp.max_pressure_iter if inp.max_pressure_iter > 0 else inp.max_inner_iter
+    # 圧力補正の初期残差 = ||b_pp|| / ||b_pp|| = RHS norm が指標
+    # （p'の初期推定はゼロなので、初期残差 = ||b_pp - A_pp*0|| / ||b_pp|| = 1.0）
+    # 代わりに RHS norm を使う（質量不整合の絶対値）
+    residuals["p"] = float(np.linalg.norm(b_pp))
+    if inp.pressure_solver == "amg":
+        p_prime_flat = _solve_pressure_amg(A_pp, b_pp, tol=inp.tol_inner, maxiter=p_maxiter)
+    else:
+        p_prime_flat = _solve_linear(A_pp, b_pp, tol=inp.tol_inner, maxiter=p_maxiter)
 
     # 3. 速度を補正
     u_new, v_new, w_new = _correct_velocity(
@@ -305,9 +368,12 @@ def _simple_iteration(
             A_pp2, b_pp2 = build_pressure_correction_system_rc(
                 inp, u_new, v_new, w_new, p_new, a_P_u_eff, a_P_v_eff, a_P_w_eff
             )
-            p_prime2_flat = _solve_linear(
-                A_pp2, b_pp2, tol=inp.tol_inner, maxiter=inp.max_inner_iter
-            )
+            if inp.pressure_solver == "amg":
+                p_prime2_flat = _solve_pressure_amg(
+                    A_pp2, b_pp2, tol=inp.tol_inner, maxiter=p_maxiter
+                )
+            else:
+                p_prime2_flat = _solve_linear(A_pp2, b_pp2, tol=inp.tol_inner, maxiter=p_maxiter)
             u_new, v_new, w_new = _correct_velocity(
                 inp,
                 u_new,
@@ -340,15 +406,17 @@ def _simple_iteration(
         rc_face_velocities=rc_faces,
         T_old_old_time=T_old_old_time,
     )
+    residuals["T"] = _compute_residual_norm(A_T, T.ravel(), b_T)
     T_new_flat = _solve_linear(A_T, b_T, T.ravel(), inp.tol_inner, inp.max_inner_iter)
-    residuals["T"] = _compute_residual_norm(A_T, T_new_flat, b_T)
     T_new = T_new_flat.reshape(nx, ny, nz)
 
     # 温度に緩和を適用
     T_new = inp.alpha_T * T_new + (1.0 - inp.alpha_T) * T
 
-    # 6. 質量残差
-    residuals["mass"] = _compute_mass_residual(inp, u_new, v_new, w_new)
+    # 6. 質量残差（Rhie-Chow 面速度ベース — 圧力補正と整合的）
+    residuals["mass"] = compute_face_mass_residual(
+        inp, u_new, v_new, w_new, p_new, a_P_u_eff, a_P_v_eff, a_P_w_eff
+    )
 
     return u_new, v_new, w_new, p_new, T_new, residuals
 
@@ -396,6 +464,80 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
         else:
             return self._solve_steady(inp, u, v, w, p, T, residual_history, t_start)
 
+    @staticmethod
+    def _adapt_relaxation(
+        inp: NaturalConvectionInput,
+        residuals: dict[str, float],
+        prev_max_res: float,
+    ) -> NaturalConvectionInput:
+        """残差に応じて緩和係数を適応的に調整.
+
+        残差が減少 → 緩和を積極化（alpha_u↑, alpha_p↑）
+        残差が増大 → 緩和を保守化（alpha_u↓, alpha_p↓）
+        """
+        max_res = _simple_convergence_residual(residuals)
+
+        if prev_max_res > 0 and max_res > 0:
+            ratio = max_res / prev_max_res  # < 1 なら改善
+            if ratio < 0.8:
+                # 順調に収束 → 緩和を積極化
+                new_alpha_u = min(inp.alpha_u * 1.1, 0.9)
+                new_alpha_p = min(inp.alpha_p * 1.1, 0.5)
+            elif ratio > 1.2:
+                # 残差増大 → 緩和を保守化
+                new_alpha_u = max(inp.alpha_u * 0.8, 0.1)
+                new_alpha_p = max(inp.alpha_p * 0.8, 0.05)
+            else:
+                return inp
+        else:
+            return inp
+
+        if new_alpha_u == inp.alpha_u and new_alpha_p == inp.alpha_p:
+            return inp
+
+        return NaturalConvectionInput(
+            Lx=inp.Lx,
+            Ly=inp.Ly,
+            Lz=inp.Lz,
+            nx=inp.nx,
+            ny=inp.ny,
+            nz=inp.nz,
+            rho=inp.rho,
+            mu=inp.mu,
+            Cp=inp.Cp,
+            k_fluid=inp.k_fluid,
+            beta=inp.beta,
+            T_ref=inp.T_ref,
+            gravity=inp.gravity,
+            solid_mask=inp.solid_mask,
+            k_solid=inp.k_solid,
+            q_vol=inp.q_vol,
+            T0=inp.T0,
+            bc_xm=inp.bc_xm,
+            bc_xp=inp.bc_xp,
+            bc_ym=inp.bc_ym,
+            bc_yp=inp.bc_yp,
+            bc_zm=inp.bc_zm,
+            bc_zp=inp.bc_zp,
+            dt=inp.dt,
+            t_end=inp.t_end,
+            max_simple_iter=inp.max_simple_iter,
+            max_inner_iter=inp.max_inner_iter,
+            tol_simple=inp.tol_simple,
+            tol_inner=inp.tol_inner,
+            alpha_u=new_alpha_u,
+            alpha_p=new_alpha_p,
+            alpha_T=inp.alpha_T,
+            output_interval=inp.output_interval,
+            coupling_method=inp.coupling_method,
+            n_piso_correctors=inp.n_piso_correctors,
+            convection_scheme=inp.convection_scheme,
+            time_scheme=inp.time_scheme,
+            pressure_solver=inp.pressure_solver,
+            adaptive_relaxation=inp.adaptive_relaxation,
+            max_pressure_iter=inp.max_pressure_iter,
+        )
+
     def _solve_steady(
         self,
         inp: NaturalConvectionInput,
@@ -410,6 +552,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
         """定常解析."""
         converged = False
         n_iter = 0
+        prev_max_res = 0.0
 
         for outer in range(inp.max_simple_iter):
             n_iter = outer + 1
@@ -431,6 +574,11 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
                     residuals["p"],
                     residuals["T"],
                 )
+
+            # 適応的緩和
+            if inp.adaptive_relaxation:
+                inp = self._adapt_relaxation(inp, residuals, prev_max_res)
+            prev_max_res = max_res
 
             # 発散検出
             if np.isnan(max_res) or max_res > 1e20:
@@ -565,6 +713,9 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
                     n_piso_correctors=inp.n_piso_correctors,
                     convection_scheme=inp.convection_scheme,
                     time_scheme=inp.time_scheme,
+                    pressure_solver=inp.pressure_solver,
+                    adaptive_relaxation=inp.adaptive_relaxation,
+                    max_pressure_iter=inp.max_pressure_iter,
                 )
             else:
                 inp_step = inp
@@ -582,6 +733,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
 
             step_converged = False
             n_inner = 0
+            prev_max_res_step = 0.0
             for _outer in range(inp_step.max_simple_iter):
                 total_outer += 1
                 n_inner += 1
@@ -606,6 +758,12 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
                     residual_history[key].append(residuals[key])
 
                 max_res = _simple_convergence_residual(residuals)
+
+                # 適応的緩和
+                if inp_step.adaptive_relaxation:
+                    inp_step = self._adapt_relaxation(inp_step, residuals, prev_max_res_step)
+                prev_max_res_step = max_res
+
                 if max_res < inp_step.tol_simple:
                     step_converged = True
                     break
