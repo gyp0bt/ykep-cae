@@ -609,8 +609,8 @@ class TestNaturalConvectionPhysics:
         )
 
 
-def _run_cavity_benchmark(Ra, nx=12, ny=12, nz=3, max_iter=3000):
-    """差分加熱キャビティのベンチマーク実行ヘルパー."""
+def _cavity_benchmark_params(Ra, nx=12, ny=12, nz=3):
+    """差分加熱キャビティのベンチマーク共通パラメータを返す."""
     L = 0.1
     T_hot, T_cold = 310.0, 290.0
     delta_T = T_hot - T_cold
@@ -621,6 +621,21 @@ def _run_cavity_benchmark(Ra, nx=12, ny=12, nz=3, max_iter=3000):
     alpha_th = k_fluid / (rho * Cp)
     g = 9.81
     beta = Ra * nu * alpha_th / (g * delta_T * L**3)
+    return L, T_hot, T_cold, delta_T, T_ref, rho, mu, Cp, k_fluid, beta, g, nx, ny, nz
+
+
+def _compute_nusselt(result, T_hot, dx, L, delta_T):
+    """熱壁側のヌセルト数を計算."""
+    dTdx_hot = (result.T[0, :, :] - T_hot) / (dx / 2.0)
+    Nu_local = -dTdx_hot * L / delta_T
+    return float(np.mean(Nu_local))
+
+
+def _run_cavity_benchmark(Ra, nx=12, ny=12, nz=3, max_iter=3000):
+    """差分加熱キャビティのベンチマーク実行ヘルパー（定常SIMPLE法）."""
+    L, T_hot, T_cold, delta_T, T_ref, rho, mu, Cp, k_fluid, beta, g, nx, ny, nz = (
+        _cavity_benchmark_params(Ra, nx, ny, nz)
+    )
 
     inp = NaturalConvectionInput(
         Lx=L,
@@ -666,9 +681,70 @@ def _run_cavity_benchmark(Ra, nx=12, ny=12, nz=3, max_iter=3000):
     )
     result = NaturalConvectionFDMProcess().process(inp)
     dx = inp.dx
-    dTdx_hot = (result.T[0, :, :] - T_hot) / (dx / 2.0)
-    Nu_local = -dTdx_hot * L / delta_T
-    return float(np.mean(Nu_local)), result
+    Nu = _compute_nusselt(result, T_hot, dx, L, delta_T)
+    return Nu, result
+
+
+def _run_cavity_benchmark_transient(Ra, nx=12, ny=12, nz=3, dt=0.01, t_end=2.0):
+    """差分加熱キャビティのベンチマーク実行ヘルパー（偽時間進行法）.
+
+    高 Ra 数では定常 SIMPLE 法が収束しにくいため、
+    非定常計算で十分な時間まで時間進行して定常解を得る。
+    """
+    L, T_hot, T_cold, delta_T, T_ref, rho, mu, Cp, k_fluid, beta, g, nx, ny, nz = (
+        _cavity_benchmark_params(Ra, nx, ny, nz)
+    )
+
+    inp = NaturalConvectionInput(
+        Lx=L,
+        Ly=L,
+        Lz=L,
+        nx=nx,
+        ny=ny,
+        nz=nz,
+        rho=rho,
+        mu=mu,
+        Cp=Cp,
+        k_fluid=k_fluid,
+        beta=beta,
+        T_ref=T_ref,
+        gravity=(0.0, -g, 0.0),
+        bc_xm=FluidBoundarySpec(
+            thermal=ThermalBoundaryCondition.DIRICHLET,
+            temperature=T_hot,
+        ),
+        bc_xp=FluidBoundarySpec(
+            thermal=ThermalBoundaryCondition.DIRICHLET,
+            temperature=T_cold,
+        ),
+        bc_ym=FluidBoundarySpec(
+            thermal=ThermalBoundaryCondition.ADIABATIC,
+        ),
+        bc_yp=FluidBoundarySpec(
+            thermal=ThermalBoundaryCondition.ADIABATIC,
+        ),
+        bc_zm=FluidBoundarySpec(
+            condition=FluidBoundaryCondition.SYMMETRY,
+            thermal=ThermalBoundaryCondition.ADIABATIC,
+        ),
+        bc_zp=FluidBoundarySpec(
+            condition=FluidBoundaryCondition.SYMMETRY,
+            thermal=ThermalBoundaryCondition.ADIABATIC,
+        ),
+        dt=dt,
+        t_end=t_end,
+        max_simple_iter=20,
+        tol_simple=1e-5,
+        alpha_u=0.3,
+        alpha_p=0.1,
+        alpha_T=0.7,
+        coupling_method="simple",
+        pressure_solver="amg",
+    )
+    result = NaturalConvectionFDMProcess().process(inp)
+    dx = inp.dx
+    Nu = _compute_nusselt(result, T_hot, dx, L, delta_T)
+    return Nu, result
 
 
 class TestCavityBenchmark:
@@ -684,8 +760,12 @@ class TestCavityBenchmark:
 
     @pytest.mark.slow
     def test_ra_1e4_nusselt(self):
-        """Ra=10⁴: Nu≈2.243 (20%以内)."""
-        Nu, result = _run_cavity_benchmark(10000)
+        """Ra=10⁴: Nu≈2.243 (20%以内).
+
+        Ra=10⁴では定常SIMPLE法が収束しにくいため、
+        偽時間進行法（非定常で十分な時間進行）で定常解を得る。
+        """
+        Nu, result = _run_cavity_benchmark_transient(10000, dt=0.01, t_end=2.0)
         assert abs(Nu - 2.243) / 2.243 < 0.20, (
             f"Ra=10000: Nu={Nu:.3f} (ref=2.243, err={abs(Nu - 2.243) / 2.243 * 100:.1f}%)"
         )
@@ -2126,3 +2206,121 @@ class TestAMGPressureSolver:
         result = NaturalConvectionFDMProcess().process(inp)
         assert result.converged
         assert not np.any(np.isnan(result.u))
+
+
+class TestLongTimeStability:
+    """長時間計算の安定性検証."""
+
+    @pytest.mark.slow
+    def test_air_cavity_long_time(self):
+        """空気実物性キャビティ 20×20×3 で t=1.0s まで安定に計算できる."""
+        pytest.importorskip("pyamg")
+        L = 0.02
+        inp = NaturalConvectionInput(
+            Lx=L,
+            Ly=L,
+            Lz=L,
+            nx=20,
+            ny=20,
+            nz=3,
+            rho=1.177,
+            mu=1.85e-5,
+            Cp=1006.0,
+            k_fluid=0.0262,
+            beta=0.00328,
+            T_ref=305.0,
+            gravity=(0.0, -9.81, 0.0),
+            bc_xm=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=310.0,
+            ),
+            bc_xp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=300.0,
+            ),
+            bc_ym=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_yp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_zm=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.SYMMETRY,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_zp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.SYMMETRY,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            dt=0.01,
+            t_end=1.0,
+            max_simple_iter=5,
+            tol_simple=1e-5,
+            alpha_u=0.7,
+            alpha_p=0.3,
+            alpha_T=0.9,
+            coupling_method="simple",
+            pressure_solver="amg",
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+        # NaN なし（安定）
+        assert not np.any(np.isnan(result.u)), "速度場に NaN が発生"
+        assert not np.any(np.isnan(result.T)), "温度場に NaN が発生"
+        # 温度は境界値の範囲内
+        assert result.T.min() >= 299.0, f"温度下限異常: {result.T.min():.1f}"
+        assert result.T.max() <= 311.0, f"温度上限異常: {result.T.max():.1f}"
+
+    @pytest.mark.slow
+    def test_cg_amg_pressure_solver(self):
+        """CG+AMG 圧力ソルバーが正しく動作する."""
+        pytest.importorskip("pyamg")
+        L = 0.02
+        inp = NaturalConvectionInput(
+            Lx=L,
+            Ly=L,
+            Lz=L,
+            nx=10,
+            ny=10,
+            nz=3,
+            rho=1.177,
+            mu=1.85e-5,
+            Cp=1006.0,
+            k_fluid=0.0262,
+            beta=0.00328,
+            T_ref=305.0,
+            gravity=(0.0, -9.81, 0.0),
+            bc_xm=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=310.0,
+            ),
+            bc_xp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.DIRICHLET,
+                temperature=300.0,
+            ),
+            bc_ym=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_yp=FluidBoundarySpec(
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_zm=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.SYMMETRY,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            bc_zp=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.SYMMETRY,
+                thermal=ThermalBoundaryCondition.ADIABATIC,
+            ),
+            dt=0.005,
+            t_end=0.02,
+            max_simple_iter=5,
+            tol_simple=1e-5,
+            alpha_u=0.7,
+            alpha_p=0.3,
+            alpha_T=0.9,
+            coupling_method="simple",
+            pressure_solver="amg",
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+        assert not np.any(np.isnan(result.u)), "CG+AMG で NaN 発生"
+        assert result.n_timesteps >= 3
