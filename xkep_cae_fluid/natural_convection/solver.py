@@ -83,10 +83,10 @@ def _solve_linear(A, b, x0=None, tol=1e-6, maxiter=50):
 
 
 def _solve_pressure_amg(A, b, x0=None, tol=1e-6, maxiter=100):
-    """AMG前処理 + BiCGSTAB で圧力補正方程式を解く.
+    """AMG前処理 + CG で圧力補正方程式を解く.
 
-    圧力補正方程式はラプラシアン型で AMG が非常に有効。
-    対角優位だが非対称成分があり得るため BiCGSTAB を使用。
+    圧力補正方程式はラプラシアン型の対称正定値行列なので
+    CG（共役勾配法）が最適。AMG を前処理に使う。
     """
     A_csr = A.tocsr()
     ml = _pressure_amg_cache.get_solver(A_csr)
@@ -95,7 +95,7 @@ def _solve_pressure_amg(A, b, x0=None, tol=1e-6, maxiter=100):
     if x0 is None:
         x0 = np.zeros(b.shape[0])
 
-    x, info = spla.bicgstab(A_csr, b, x0=x0, M=M, rtol=tol, maxiter=maxiter)
+    x, info = spla.cg(A_csr, b, x0=x0, M=M, rtol=tol, maxiter=maxiter)
     return x
 
 

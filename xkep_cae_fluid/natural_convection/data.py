@@ -133,7 +133,7 @@ class NaturalConvectionInput:
         BDF2 は2次精度で、最初のステップは自動的にEulerで実行される。
     pressure_solver : str
         圧力方程式の線形ソルバー。"bicgstab"（BiCGSTAB+ILU）または "amg"（PyAMG前処理+CG）。
-        AMGはラプラシアン型の圧力補正方程式に最適で、大幅な高速化が期待できる。
+        圧力補正方程式は対称正定値ラプラシアンなので、AMG+CGが最適。
     adaptive_relaxation : bool
         適応的緩和係数の有効化。残差の減少率に応じて alpha_u, alpha_p を
         自動調整し、収束を加速する。
