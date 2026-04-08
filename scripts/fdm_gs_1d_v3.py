@@ -267,24 +267,6 @@ if __name__ == "__main__":
         k=67.0, density=8900.0, c=377.0, rho=1.92e-7, alpha=8.0e-8, epsilon=0.1
     )
 
-    area_list = [
-        LineArea(
-            current=current,
-            length=3.0e-3,
-            A0=0.26e-3 * 0.2e-3,
-            A1=0.26e-3 * 0.2e-3,
-            **mat_data,
-        ),
-        LineArea(
-            current=current,
-            # length=1000.0e-3,
-            length=3.0e-3,
-            A0=0.26e-3 * 0.2e-3,
-            A1=0.26e-3 * 0.2e-3,
-            **mat_data,
-        ),
-    ]
-
     """溶断温度まで加熱する過渡解析 — 10分割 vs 40分割"""
     print("=" * 70)
     print("Test 4: 過渡解析 (溶断温度 1000K まで) — メッシュ依存性チェック")
