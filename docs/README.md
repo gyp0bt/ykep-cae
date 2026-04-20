@@ -7,6 +7,7 @@
 | ドキュメント | 内容 |
 |------------|------|
 | [ロードマップ](roadmap.md) | 全体計画・マイルストーン・TODO |
+| [水槽設計ロードマップ](roadmap-aquarium.md) | Phase 6 持続的水槽設計 CAE 詳細計画 |
 | [設計文書一覧](design/README.md) | 設計仕様書リンク集（コロケーション方式） |
 | [ステータス一覧](status/status-index.md) | 全statusファイル + テスト数推移 |
 
