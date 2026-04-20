@@ -32,6 +32,7 @@
 | 文書 | 配置先 | 内容 | 状態 |
 |------|--------|------|------|
 | [natural-convection-fdm.md](natural-convection-fdm.md) | `docs/design/` | 3D自然対流ソルバー (SIMPLE法+Boussinesq+練成) | 完了 |
+| [scalar-transport-fdm.md](scalar-transport-fdm.md) | `docs/design/` | 汎用スカラー輸送ソルバー (Phase 6.1a 水槽 CAE 基盤) | 完了 |
 | (未作成) | - | 乱流モデル Strategy 設計 | 予定 |
 
 ---
