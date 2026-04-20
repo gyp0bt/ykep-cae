@@ -63,6 +63,7 @@ xkep_cae_fluid/
 | [Process Architecture](docs/process-architecture.md) | 共通アーキテクチャ設計仕様 |
 | [データスキーマ](docs/data-schemas.md) | MeshData / FlowFieldData 等の仕様 |
 | [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
+| [水槽設計ロードマップ](docs/roadmap-aquarium.md) | Phase 6 持続的水槽設計 CAE 詳細計画 |
 | [設計文書一覧](docs/design/README.md) | 設計仕様書リンク集（コロケーション方式） |
 | [ステータス一覧](docs/status/status-index.md) | 全statusファイル + テスト数推移 |
 
