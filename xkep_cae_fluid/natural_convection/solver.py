@@ -27,6 +27,12 @@ from xkep_cae_fluid.natural_convection.data import (
     NaturalConvectionInput,
     NaturalConvectionResult,
 )
+from xkep_cae_fluid.scalar_transport.assembly import build_scalar_system
+from xkep_cae_fluid.scalar_transport.data import (
+    ExtraScalarSpec,
+    ScalarFieldSpec,
+    ScalarTransportInput,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -223,6 +229,107 @@ def _compute_mass_residual(
     return float(np.linalg.norm(div.ravel()))
 
 
+def _make_scalar_transport_input(
+    inp: NaturalConvectionInput,
+    spec: ExtraScalarSpec,
+    phi0: np.ndarray,
+    u: np.ndarray,
+    v: np.ndarray,
+    w: np.ndarray,
+) -> ScalarTransportInput:
+    """ExtraScalarSpec から ScalarTransportInput を組み立てる.
+
+    natural convection ソルバーが各 SIMPLE 反復で scalar_transport の
+    アセンブリを再利用するためのアダプタ。境界条件・拡散係数・ソースは
+    spec から、格子・密度・速度場は natural convection 側から供給する。
+    dt/t_end は外部ループで制御するため 0 を設定し、RC 面速度を介して
+    対流フラックスを渡すので u, v, w の線形補間は使われない。
+    """
+    return ScalarTransportInput(
+        Lx=inp.Lx,
+        Ly=inp.Ly,
+        Lz=inp.Lz,
+        nx=inp.nx,
+        ny=inp.ny,
+        nz=inp.nz,
+        rho=inp.rho,
+        u=u,
+        v=v,
+        w=w,
+        field=ScalarFieldSpec(
+            name=spec.field.name,
+            diffusivity=spec.field.diffusivity,
+            phi0=phi0,
+            source=spec.field.source,
+        ),
+        solid_mask=inp.solid_mask,
+        bc_xm=spec.bc_xm,
+        bc_xp=spec.bc_xp,
+        bc_ym=spec.bc_ym,
+        bc_yp=spec.bc_yp,
+        bc_zm=spec.bc_zm,
+        bc_zp=spec.bc_zp,
+        dt=inp.dt,
+        t_end=inp.t_end,
+        max_iter=inp.max_inner_iter,
+        tol=inp.tol_inner,
+    )
+
+
+def _solve_extra_scalars(
+    inp: NaturalConvectionInput,
+    phi_state: dict[str, np.ndarray],
+    phi_old_time: dict[str, np.ndarray] | None,
+    u: np.ndarray,
+    v: np.ndarray,
+    w: np.ndarray,
+    rc_faces: tuple[np.ndarray, np.ndarray, np.ndarray],
+    residuals: dict[str, float],
+) -> dict[str, np.ndarray]:
+    """各 ExtraScalarSpec を RC 面速度で輸送し、緩和と固体ゼロ化を適用.
+
+    Parameters
+    ----------
+    phi_state : dict
+        現在のスカラー状態 {name: (nx, ny, nz)}。ソルバーの初期推定に使う。
+    phi_old_time : dict | None
+        前タイムステップのスカラー状態（非定常時のみ）。
+    rc_faces : tuple
+        Rhie-Chow 面速度 (u_face_xp, v_face_yp, w_face_zp)。
+    residuals : dict
+        残差辞書（`phi_<name>` キーで線形求解残差を格納）。
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        緩和・固体ゼロ化後のスカラー状態。
+    """
+    new_state: dict[str, np.ndarray] = {}
+    for spec in inp.extra_scalars:
+        name = spec.field.name
+        phi_curr = phi_state[name]
+        phi_old = phi_old_time[name] if phi_old_time is not None else None
+        st_inp = _make_scalar_transport_input(inp, spec, phi_curr, u, v, w)
+        A_phi, b_phi = build_scalar_system(
+            st_inp, phi_old_time=phi_old, rc_face_velocities=rc_faces
+        )
+        residuals[f"phi_{name}"] = _compute_residual_norm(A_phi, phi_curr.ravel(), b_phi)
+        x = _solve_linear(
+            A_phi,
+            b_phi,
+            phi_curr.ravel(),
+            inp.tol_inner,
+            inp.max_inner_iter,
+        )
+        phi_new = x.reshape(inp.nx, inp.ny, inp.nz)
+        # 緩和
+        alpha = spec.alpha
+        phi_new = alpha * phi_new + (1.0 - alpha) * phi_curr
+        # 固体セルはスカラーを据え置き（対流・拡散はアセンブリでゼロ化済み）
+        new_state[name] = phi_new
+    return new_state
+
+
 def _simple_iteration(
     inp: NaturalConvectionInput,
     u: np.ndarray,
@@ -238,13 +345,23 @@ def _simple_iteration(
     v_old_old_time: np.ndarray | None = None,
     w_old_old_time: np.ndarray | None = None,
     T_old_old_time: np.ndarray | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, float]]:
+    phi_state: dict[str, np.ndarray] | None = None,
+    phi_old_time: dict[str, np.ndarray] | None = None,
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    dict[str, np.ndarray],
+    dict[str, float],
+]:
     """SIMPLE法の1反復を実行.
 
     Returns
     -------
     tuple
-        (u_new, v_new, w_new, p_new, T_new, residuals)
+        (u_new, v_new, w_new, p_new, T_new, phi_state_new, residuals)
     """
     nx, ny, nz = inp.nx, inp.ny, inp.nz
 
@@ -413,12 +530,20 @@ def _simple_iteration(
     # 温度に緩和を適用
     T_new = inp.alpha_T * T_new + (1.0 - inp.alpha_T) * T
 
-    # 6. 質量残差（Rhie-Chow 面速度ベース — 圧力補正と整合的）
+    # 6. 追加スカラーを RC 面速度で同時輸送（Phase 6.1b）
+    if inp.extra_scalars and phi_state is not None:
+        phi_state_new = _solve_extra_scalars(
+            inp, phi_state, phi_old_time, u_new, v_new, w_new, rc_faces, residuals
+        )
+    else:
+        phi_state_new = phi_state if phi_state is not None else {}
+
+    # 7. 質量残差（Rhie-Chow 面速度ベース — 圧力補正と整合的）
     residuals["mass"] = compute_face_mass_residual(
         inp, u_new, v_new, w_new, p_new, a_P_u_eff, a_P_v_eff, a_P_w_eff
     )
 
-    return u_new, v_new, w_new, p_new, T_new, residuals
+    return u_new, v_new, w_new, p_new, T_new, phi_state_new, residuals
 
 
 class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalConvectionResult]):
@@ -458,11 +583,18 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             "T": [],
             "mass": [],
         }
+        for spec in inp.extra_scalars:
+            residual_history[f"phi_{spec.field.name}"] = []
+
+        # 追加スカラーの初期化（extra_scalars が空なら空 dict）
+        phi_state: dict[str, np.ndarray] = {
+            spec.field.name: spec.field.phi0.astype(np.float64).copy() for spec in inp.extra_scalars
+        }
 
         if inp.is_transient:
-            return self._solve_transient(inp, u, v, w, p, T, residual_history, t_start)
+            return self._solve_transient(inp, u, v, w, p, T, phi_state, residual_history, t_start)
         else:
-            return self._solve_steady(inp, u, v, w, p, T, residual_history, t_start)
+            return self._solve_steady(inp, u, v, w, p, T, phi_state, residual_history, t_start)
 
     @staticmethod
     def _adapt_relaxation(
@@ -536,6 +668,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             pressure_solver=inp.pressure_solver,
             adaptive_relaxation=inp.adaptive_relaxation,
             max_pressure_iter=inp.max_pressure_iter,
+            extra_scalars=inp.extra_scalars,
         )
 
     def _solve_steady(
@@ -546,6 +679,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
         w: np.ndarray,
         p: np.ndarray,
         T: np.ndarray,
+        phi_state: dict[str, np.ndarray],
         residual_history: dict[str, list[float]],
         t_start: float,
     ) -> NaturalConvectionResult:
@@ -556,10 +690,13 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
 
         for outer in range(inp.max_simple_iter):
             n_iter = outer + 1
-            u, v, w, p, T, residuals = _simple_iteration(inp, u, v, w, p, T)
+            u, v, w, p, T, phi_state, residuals = _simple_iteration(
+                inp, u, v, w, p, T, phi_state=phi_state
+            )
 
             for key in residuals:
-                residual_history[key].append(residuals[key])
+                if key in residual_history:
+                    residual_history[key].append(residuals[key])
 
             # 収束判定（温度は除外 — RHSが時間項で支配されるため）
             max_res = _simple_convergence_residual(residuals)
@@ -603,6 +740,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             n_outer_iterations=n_iter,
             residual_history=residual_history,
             elapsed_seconds=elapsed,
+            extra_scalars=phi_state,
         )
 
     @staticmethod
@@ -644,6 +782,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
         w: np.ndarray,
         p: np.ndarray,
         T: np.ndarray,
+        phi_state: dict[str, np.ndarray],
         residual_history: dict[str, list[float]],
         t_start: float,
     ) -> NaturalConvectionResult:
@@ -716,6 +855,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
                     pressure_solver=inp.pressure_solver,
                     adaptive_relaxation=inp.adaptive_relaxation,
                     max_pressure_iter=inp.max_pressure_iter,
+                    extra_scalars=inp.extra_scalars,
                 )
             else:
                 inp_step = inp
@@ -730,6 +870,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             v_old = v.copy()
             w_old = w.copy()
             T_old = T.copy()
+            phi_old_time = {name: arr.copy() for name, arr in phi_state.items()}
 
             step_converged = False
             n_inner = 0
@@ -737,7 +878,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             for _outer in range(inp_step.max_simple_iter):
                 total_outer += 1
                 n_inner += 1
-                u, v, w, p, T, residuals = _simple_iteration(
+                u, v, w, p, T, phi_state, residuals = _simple_iteration(
                     inp_step,
                     u,
                     v,
@@ -752,10 +893,13 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
                     v_old_old_step,
                     w_old_old_step,
                     T_old_old_step,
+                    phi_state=phi_state,
+                    phi_old_time=phi_old_time,
                 )
 
                 for key in residuals:
-                    residual_history[key].append(residuals[key])
+                    if key in residual_history:
+                        residual_history[key].append(residuals[key])
 
                 max_res = _simple_convergence_residual(residuals)
 
@@ -806,4 +950,5 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             residual_history=residual_history,
             elapsed_seconds=elapsed,
             n_timesteps=n_timesteps,
+            extra_scalars=phi_state,
         )

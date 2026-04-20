@@ -11,6 +11,8 @@ from enum import Enum
 
 import numpy as np
 
+from xkep_cae_fluid.scalar_transport.data import ExtraScalarSpec
+
 
 class FluidBoundaryCondition(Enum):
     """流体境界条件の種別."""
@@ -140,6 +142,10 @@ class NaturalConvectionInput:
     max_pressure_iter : int
         圧力方程式の最大内部反復数。圧力補正は収束が遅いため、
         運動量方程式より多めの反復数が有効。0の場合はmax_inner_iterを使用。
+    extra_scalars : tuple[ExtraScalarSpec, ...]
+        SIMPLE 外部反復内で同時輸送する追加スカラー（CO2/O2/トレーサー等）。
+        エネルギー方程式と同じ Rhie-Chow 面速度で対流フラックスを組む。
+        デフォルトは空 tuple（追加スカラーなし）。
     """
 
     Lx: float
@@ -182,6 +188,7 @@ class NaturalConvectionInput:
     pressure_solver: str = "bicgstab"
     adaptive_relaxation: bool = False
     max_pressure_iter: int = 0
+    extra_scalars: tuple[ExtraScalarSpec, ...] = ()
 
     @property
     def dx(self) -> float:
@@ -237,6 +244,9 @@ class NaturalConvectionResult:
         計算時間 [s]
     n_timesteps : int
         実行タイムステップ数（非定常時）
+    extra_scalars : dict[str, np.ndarray]
+        追加スカラーの最終値 {name: (nx, ny, nz) 配列}。
+        入力の `extra_scalars` が空の場合は空 dict。
     """
 
     u: np.ndarray
@@ -249,3 +259,4 @@ class NaturalConvectionResult:
     residual_history: dict[str, list[float]] = field(default_factory=dict)
     elapsed_seconds: float = 0.0
     n_timesteps: int = 0
+    extra_scalars: dict[str, np.ndarray] = field(default_factory=dict)

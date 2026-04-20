@@ -7,6 +7,7 @@ Phase 6.1a（水槽 CAE ロードマップ）で新設。
 """
 
 from xkep_cae_fluid.scalar_transport.data import (
+    ExtraScalarSpec,
     ScalarBoundaryCondition,
     ScalarBoundarySpec,
     ScalarFieldSpec,
@@ -16,6 +17,7 @@ from xkep_cae_fluid.scalar_transport.data import (
 from xkep_cae_fluid.scalar_transport.solver import ScalarTransportProcess
 
 __all__ = [
+    "ExtraScalarSpec",
     "ScalarBoundaryCondition",
     "ScalarBoundarySpec",
     "ScalarFieldSpec",
