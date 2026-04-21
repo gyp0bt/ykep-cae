@@ -41,5 +41,6 @@
 |------|--------|------|------|
 | [aquarium-geometry.md](aquarium-geometry.md) | `docs/design/` | AquariumGeometryProcess（90×30×45 cm + 底床/ガラス/水マスク） | 完了 |
 | [aquarium-heater.md](aquarium-heater.md) | `docs/design/` | HeaterProcess（定熱流束 + 定温ヒステリシス） | 完了 |
+| [aquarium-filter.md](aquarium-filter.md) | `docs/design/` | AquariumFilterProcess + InternalFaceBC（外部フィルター循環） | 完了 |
 
 ---
