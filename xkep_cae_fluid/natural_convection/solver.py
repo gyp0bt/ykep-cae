@@ -24,6 +24,7 @@ from xkep_cae_fluid.natural_convection.assembly import (
     compute_rhie_chow_face_velocity,
 )
 from xkep_cae_fluid.natural_convection.data import (
+    InternalFaceBCKind,
     NaturalConvectionInput,
     NaturalConvectionResult,
 )
@@ -187,6 +188,14 @@ def _correct_velocity(
         u_corr[inp.solid_mask] = 0.0
         v_corr[inp.solid_mask] = 0.0
         w_corr[inp.solid_mask] = 0.0
+
+    # 内部 INLET BC: 圧力勾配補正を打ち消して指定速度を再確定
+    for bc in inp.internal_face_bcs:
+        if bc.kind != InternalFaceBCKind.INLET or bc.mask is None or not np.any(bc.mask):
+            continue
+        u_corr[bc.mask] = bc.velocity[0]
+        v_corr[bc.mask] = bc.velocity[1]
+        w_corr[bc.mask] = bc.velocity[2]
 
     return u_corr, v_corr, w_corr
 
@@ -509,6 +518,14 @@ def _simple_iteration(
     v_new = inp.alpha_u * v_new + (1.0 - inp.alpha_u) * v
     w_new = inp.alpha_u * w_new + (1.0 - inp.alpha_u) * w
 
+    # 内部 INLET BC: 緩和後に再度指定速度を強制
+    for bc in inp.internal_face_bcs:
+        if bc.kind != InternalFaceBCKind.INLET or bc.mask is None or not np.any(bc.mask):
+            continue
+        u_new[bc.mask] = bc.velocity[0]
+        v_new[bc.mask] = bc.velocity[1]
+        w_new[bc.mask] = bc.velocity[2]
+
     # 5. エネルギー方程式を解く → T
     #    Rhie-Chow 面速度を使って対流フラックスを計算（チェッカーボード抑制）
     rc_faces = compute_rhie_chow_face_velocity(
@@ -529,6 +546,17 @@ def _simple_iteration(
 
     # 温度に緩和を適用
     T_new = inp.alpha_T * T_new + (1.0 - inp.alpha_T) * T
+
+    # 内部 INLET BC: 温度指定があれば緩和後に強制
+    for bc in inp.internal_face_bcs:
+        if (
+            bc.kind != InternalFaceBCKind.INLET
+            or bc.temperature is None
+            or bc.mask is None
+            or not np.any(bc.mask)
+        ):
+            continue
+        T_new[bc.mask] = float(bc.temperature)
 
     # 6. 追加スカラーを RC 面速度で同時輸送（Phase 6.1b）
     if inp.extra_scalars and phi_state is not None:
@@ -669,6 +697,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             adaptive_relaxation=inp.adaptive_relaxation,
             max_pressure_iter=inp.max_pressure_iter,
             extra_scalars=inp.extra_scalars,
+            internal_face_bcs=inp.internal_face_bcs,
         )
 
     def _solve_steady(

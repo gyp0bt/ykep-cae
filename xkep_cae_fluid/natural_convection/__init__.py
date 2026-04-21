@@ -7,6 +7,8 @@ FDM + SIMPLE法で解く。固体-流体練成伝熱にも対応。
 from xkep_cae_fluid.natural_convection.data import (
     FluidBoundaryCondition,
     FluidBoundarySpec,
+    InternalFaceBC,
+    InternalFaceBCKind,
     NaturalConvectionInput,
     NaturalConvectionResult,
     ThermalBoundaryCondition,
@@ -16,6 +18,8 @@ from xkep_cae_fluid.natural_convection.solver import NaturalConvectionFDMProcess
 __all__ = [
     "FluidBoundaryCondition",
     "FluidBoundarySpec",
+    "InternalFaceBC",
+    "InternalFaceBCKind",
     "NaturalConvectionFDMProcess",
     "NaturalConvectionInput",
     "NaturalConvectionResult",
