@@ -35,4 +35,11 @@
 | [scalar-transport-fdm.md](scalar-transport-fdm.md) | `docs/design/` | 汎用スカラー輸送ソルバー (Phase 6.1a 水槽 CAE 基盤) | 完了 |
 | (未作成) | - | 乱流モデル Strategy 設計 | 予定 |
 
+## 水槽モジュール設計文書（Phase 6）
+
+| 文書 | 配置先 | 内容 | 状態 |
+|------|--------|------|------|
+| [aquarium-geometry.md](aquarium-geometry.md) | `docs/design/` | AquariumGeometryProcess（90×30×45 cm + 底床/ガラス/水マスク） | 完了 |
+| [aquarium-heater.md](aquarium-heater.md) | `docs/design/` | HeaterProcess（定熱流束 + 定温ヒステリシス） | 完了 |
+
 ---
