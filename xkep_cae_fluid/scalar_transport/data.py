@@ -147,6 +147,33 @@ class ScalarTransportInput:
 
 
 @dataclass(frozen=True)
+class ExtraScalarSpec:
+    """NaturalConvection 統合用の追加スカラー仕様.
+
+    `NaturalConvectionInput.extra_scalars` に複数件渡すことで、
+    SIMPLE 外部反復内で温度と同じ Rhie-Chow 面速度を用いて輸送される。
+
+    Parameters
+    ----------
+    field : ScalarFieldSpec
+        スカラー場仕様（名前・拡散係数・初期値・ソース項）
+    bc_xm, bc_xp, bc_ym, bc_yp, bc_zm, bc_zp : ScalarBoundarySpec
+        各面の境界条件（Dirichlet / Neumann / Adiabatic / Robin）
+    alpha : float
+        スカラー更新の緩和係数（0 < alpha ≤ 1、デフォルト 1.0 = 更新 100%）
+    """
+
+    field: ScalarFieldSpec
+    bc_xm: ScalarBoundarySpec = field(default_factory=ScalarBoundarySpec)
+    bc_xp: ScalarBoundarySpec = field(default_factory=ScalarBoundarySpec)
+    bc_ym: ScalarBoundarySpec = field(default_factory=ScalarBoundarySpec)
+    bc_yp: ScalarBoundarySpec = field(default_factory=ScalarBoundarySpec)
+    bc_zm: ScalarBoundarySpec = field(default_factory=ScalarBoundarySpec)
+    bc_zp: ScalarBoundarySpec = field(default_factory=ScalarBoundarySpec)
+    alpha: float = 1.0
+
+
+@dataclass(frozen=True)
 class ScalarTransportResult:
     """スカラー輸送ソルバー出力.
 

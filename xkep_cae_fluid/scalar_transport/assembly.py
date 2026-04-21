@@ -48,6 +48,7 @@ def _is_solid(
 def build_scalar_system(
     inp: ScalarTransportInput,
     phi_old_time: np.ndarray | None = None,
+    rc_face_velocities: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
 ) -> tuple[sparse.csr_matrix, np.ndarray]:
     """対流-拡散方程式の疎行列を組み立てる.
 
@@ -62,6 +63,11 @@ def build_scalar_system(
         前タイムステップの φ 場 (nx, ny, nz)。
         非定常時に必要（陰的 Euler の時間項）。
         定常時（inp.dt == 0）は無視。
+    rc_face_velocities : tuple | None
+        Rhie-Chow 補間済み面速度 (u_face_xp, v_face_yp, w_face_zp)。
+        NaturalConvection 統合時にエネルギー方程式と整合的な面速度を
+        渡すことでチェッカーボード抑制とスカラー質量保存を両立する。
+        None の場合はセル中心速度の線形補間を使用。
 
     Returns
     -------
@@ -127,10 +133,28 @@ def build_scalar_system(
         # 拡散係数（現状はスカラー定数）
         D = Gamma / (d * d)
 
-        # 対流速度（面法線方向、線形補間）
+        # 対流速度（面法線方向）
         cell_is_fluid = ~_is_solid(inp.solid_mask, ii_f[mask], jj_f[mask], kk_f[mask])
 
-        if di != 0:
+        # RC面速度がある場合は energy 方程式と同じ取り回しで取得する
+        if rc_face_velocities is not None:
+            u_rc, v_rc, w_rc = rc_face_velocities
+            if di != 0:
+                if di > 0:
+                    face_vel = u_rc[ii_f[mask], jj_f[mask], kk_f[mask]]
+                else:
+                    face_vel = -u_rc[nb_i, nb_j, nb_k]
+            elif dj != 0:
+                if dj > 0:
+                    face_vel = v_rc[ii_f[mask], jj_f[mask], kk_f[mask]]
+                else:
+                    face_vel = -v_rc[nb_i, nb_j, nb_k]
+            else:
+                if dk > 0:
+                    face_vel = w_rc[ii_f[mask], jj_f[mask], kk_f[mask]]
+                else:
+                    face_vel = -w_rc[nb_i, nb_j, nb_k]
+        elif di != 0:
             u_face = 0.5 * (u[ii_f[mask], jj_f[mask], kk_f[mask]] + u[nb_i, nb_j, nb_k])
             face_vel = u_face * di
         elif dj != 0:
