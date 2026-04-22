@@ -33,6 +33,63 @@ class ThermalBoundaryCondition(Enum):
     ADIABATIC = "adiabatic"  # 断熱
 
 
+class InternalFaceBCKind(Enum):
+    """内部セル領域境界条件の種別.
+
+    外部フィルター等で、領域外面ではなく水槽内部の任意セル集合に
+    強制速度（吐出）またはゼロ圧力基準（吸入）を課すために使用する。
+    """
+
+    INLET = "inlet"  # 吐出: 速度ベクトル強制（任意で温度・スカラー強制）
+    OUTLET = "outlet"  # 吸入: 圧力基準（p'=0 ピン留め）
+
+
+@dataclass(frozen=True)
+class InternalFaceBC:
+    """内部セル領域境界条件仕様 (Phase 6.3a).
+
+    外部フィルターのインレット／アウトレットを水槽内部の任意セル集合に
+    課すためのペナルティ型 BC。`mask` が True のセルに対して:
+
+    - INLET:
+      - 運動量方程式: 対角ペナルティで `velocity` を強制
+      - 圧力補正方程式: `p'=0` ピン留め（圧力を固定）
+      - エネルギー方程式: `temperature` が指定されればペナルティで強制
+    - OUTLET:
+      - 運動量方程式: 変更なし（ゼロ勾配）
+      - 圧力補正方程式: `p'=0` ピン留め（圧力基準）
+      - エネルギー方程式: 変更なし（ゼロ勾配）
+
+    Parameters
+    ----------
+    kind : InternalFaceBCKind
+        INLET または OUTLET
+    mask : np.ndarray
+        (nx, ny, nz) bool。True のセルに BC を適用
+    velocity : tuple[float, float, float]
+        INLET: 強制する速度ベクトル [m/s]。面法線成分が流入量を決める
+    temperature : float | None
+        INLET: 強制する温度 [K]。None なら温度は拘束しない
+    pressure : float
+        OUTLET: 基準圧力値 [Pa]（p'=0 ピン留めで相対圧が調整される）
+    label : str
+        識別子（ログ・デバッグ用。重複可）
+
+    Notes
+    -----
+    `mask` がゼロ体積（全 False）の場合は BC が無効化される。
+    `AquariumFilterProcess` を使うと Eheim 相当のバウンディングボックス＋
+    流量 Q [L/h] から INLET/OUTLET のペアを自動生成できる。
+    """
+
+    kind: InternalFaceBCKind
+    mask: np.ndarray
+    velocity: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    temperature: float | None = None
+    pressure: float = 0.0
+    label: str = ""
+
+
 @dataclass(frozen=True)
 class FluidBoundarySpec:
     """1面の流体境界条件仕様.
@@ -146,6 +203,9 @@ class NaturalConvectionInput:
         SIMPLE 外部反復内で同時輸送する追加スカラー（CO2/O2/トレーサー等）。
         エネルギー方程式と同じ Rhie-Chow 面速度で対流フラックスを組む。
         デフォルトは空 tuple（追加スカラーなし）。
+    internal_face_bcs : tuple[InternalFaceBC, ...]
+        水槽内部セルに課す強制速度／圧力基準（外部フィルター吐出・吸入等）。
+        空 tuple がデフォルト。詳細は `InternalFaceBC` docstring。
     """
 
     Lx: float
@@ -189,6 +249,7 @@ class NaturalConvectionInput:
     adaptive_relaxation: bool = False
     max_pressure_iter: int = 0
     extra_scalars: tuple[ExtraScalarSpec, ...] = ()
+    internal_face_bcs: tuple[InternalFaceBC, ...] = ()
 
     @property
     def dx(self) -> float:

@@ -5,8 +5,15 @@
 
 - `geometry.py`: AquariumGeometryProcess（Phase 6.2a）
 - `heater.py`: HeaterProcess（Phase 6.2b）
+- `filter.py`: AquariumFilterProcess（Phase 6.3a）
 """
 
+from xkep_cae_fluid.aquarium.filter import (
+    AquariumFilterInput,
+    AquariumFilterProcess,
+    AquariumFilterResult,
+    NozzleGeometry,
+)
 from xkep_cae_fluid.aquarium.geometry import (
     AquariumGeometryInput,
     AquariumGeometryProcess,
@@ -21,6 +28,9 @@ from xkep_cae_fluid.aquarium.heater import (
 )
 
 __all__ = [
+    "AquariumFilterInput",
+    "AquariumFilterProcess",
+    "AquariumFilterResult",
     "AquariumGeometryInput",
     "AquariumGeometryProcess",
     "AquariumGeometryResult",
@@ -29,4 +39,5 @@ __all__ = [
     "HeaterMode",
     "HeaterProcess",
     "HeaterResult",
+    "NozzleGeometry",
 ]

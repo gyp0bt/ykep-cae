@@ -15,9 +15,19 @@ from scipy import sparse
 from xkep_cae_fluid.natural_convection.data import (
     FluidBoundaryCondition,
     FluidBoundarySpec,
+    InternalFaceBC,
+    InternalFaceBCKind,
     NaturalConvectionInput,
     ThermalBoundaryCondition,
 )
+
+_INTERNAL_BC_PENALTY = 1e25
+"""内部セル BC のペナルティ係数.
+
+`solid_mask` で使っている 1e30 より小さく、運動量行列の条件数を過度に悪化
+させない範囲で Dirichlet 拘束として機能する値。固体ペナルティと明確に
+区別するため別定数とする。
+"""
 
 
 def _flat_index(i: np.ndarray, j: np.ndarray, k: np.ndarray, ny: int, nz: int) -> np.ndarray:
@@ -165,6 +175,92 @@ def _tvd_deferred_correction(
         correction[solid_mask] = 0.0
 
     return correction.ravel()
+
+
+def _apply_internal_bc_momentum(
+    bcs: tuple[InternalFaceBC, ...],
+    component: str,
+    flat_idx: np.ndarray,
+    diag: np.ndarray,
+    rhs: np.ndarray,
+) -> None:
+    """運動量方程式に InternalFaceBC のペナルティを適用.
+
+    INLET セルに対して `diag += BIG`, `rhs += BIG * velocity[comp_idx]` を加え
+    Dirichlet 条件として `u = velocity` を強制する。OUTLET は何もしない
+    （ゼロ勾配相当、圧力補正で圧力が決まる）。
+    """
+    if not bcs:
+        return
+    comp_idx = {"u": 0, "v": 1, "w": 2}[component]
+    for bc in bcs:
+        if bc.kind != InternalFaceBCKind.INLET:
+            continue
+        if bc.mask is None or not np.any(bc.mask):
+            continue
+        cells = flat_idx.reshape(bc.mask.shape)[bc.mask]
+        diag[cells] += _INTERNAL_BC_PENALTY
+        rhs[cells] += _INTERNAL_BC_PENALTY * bc.velocity[comp_idx]
+
+
+def _apply_internal_bc_pressure(
+    bcs: tuple[InternalFaceBC, ...],
+    flat_idx: np.ndarray,
+    diag: np.ndarray,
+    rhs: np.ndarray,
+) -> None:
+    """圧力補正方程式に InternalFaceBC のペナルティを適用.
+
+    INLET/OUTLET ともに `p' = 0` ピン留めする。INLET では速度が強制されている
+    ため補正を禁じ、OUTLET は基準圧力位置として使う（p は実際の値ではなく、
+    Boussinesq 近似下での相対圧なのでゼロピン留めで問題ない）。
+    """
+    if not bcs:
+        return
+    for bc in bcs:
+        if bc.mask is None or not np.any(bc.mask):
+            continue
+        cells = flat_idx.reshape(bc.mask.shape)[bc.mask]
+        diag[cells] = 1e30
+        rhs[cells] = 0.0
+
+
+def _apply_internal_bc_energy(
+    bcs: tuple[InternalFaceBC, ...],
+    flat_idx: np.ndarray,
+    diag: np.ndarray,
+    rhs: np.ndarray,
+) -> None:
+    """エネルギー方程式に InternalFaceBC のペナルティを適用.
+
+    INLET で `temperature` が指定されていれば、対角ペナルティで強制する。
+    OUTLET と `temperature=None` の INLET は変更しない。
+    """
+    if not bcs:
+        return
+    for bc in bcs:
+        if bc.kind != InternalFaceBCKind.INLET:
+            continue
+        if bc.temperature is None:
+            continue
+        if bc.mask is None or not np.any(bc.mask):
+            continue
+        cells = flat_idx.reshape(bc.mask.shape)[bc.mask]
+        diag[cells] += _INTERNAL_BC_PENALTY
+        rhs[cells] += _INTERNAL_BC_PENALTY * float(bc.temperature)
+
+
+def _inlet_mask_union(
+    bcs: tuple[InternalFaceBC, ...],
+    shape: tuple[int, int, int],
+) -> np.ndarray:
+    """全 INLET BC のマスクを論理和で結合."""
+    combined = np.zeros(shape, dtype=bool)
+    for bc in bcs:
+        if bc.kind != InternalFaceBCKind.INLET or bc.mask is None:
+            continue
+        combined |= bc.mask
+    return combined
 
 
 def build_momentum_system(
@@ -446,6 +542,9 @@ def build_momentum_system(
         diag[solid_idx] = big
         rhs[solid_idx] = 0.0
 
+    # 内部 BC (INLET): 強制速度
+    _apply_internal_bc_momentum(inp.internal_face_bcs, component, flat_idx, diag, rhs)
+
     # 行列組み立て
     rows.append(np.arange(n))
     cols.append(np.arange(n))
@@ -718,12 +817,20 @@ def build_pressure_correction_system_rc(
         diag[solid_idx] = big
         rhs[solid_idx] = 0.0
 
-    # 圧力の基準点固定
-    fluid_cells = ~is_solid_cell
-    if np.any(fluid_cells):
-        ref_idx = flat_idx[fluid_cells][0]
-        diag[ref_idx] = 1e30
-        rhs[ref_idx] = 0.0
+    # 内部 BC (INLET/OUTLET): 圧力をピン留め
+    _apply_internal_bc_pressure(inp.internal_face_bcs, flat_idx, diag, rhs)
+
+    # 圧力の基準点固定（内部 BC に OUTLET がある場合はそれが基準なので重複固定しない）
+    has_outlet = any(
+        b.kind == InternalFaceBCKind.OUTLET and b.mask is not None and np.any(b.mask)
+        for b in inp.internal_face_bcs
+    )
+    if not has_outlet:
+        fluid_cells = ~is_solid_cell
+        if np.any(fluid_cells):
+            ref_idx = flat_idx[fluid_cells][0]
+            diag[ref_idx] = 1e30
+            rhs[ref_idx] = 0.0
 
     # 行列組み立て
     rows.append(np.arange(n))
@@ -866,13 +973,21 @@ def build_pressure_correction_system(
         diag[solid_idx] = big
         rhs[solid_idx] = 0.0
 
+    # 内部 BC (INLET/OUTLET): 圧力をピン留め
+    _apply_internal_bc_pressure(inp.internal_face_bcs, flat_idx, diag, rhs)
+
     # 圧力の基準点固定（圧力の一意性のため）
-    # 最初の流体セルの圧力補正をゼロに固定
-    fluid_cells = ~is_solid_cell
-    if np.any(fluid_cells):
-        ref_idx = flat_idx[fluid_cells][0]
-        diag[ref_idx] = 1e30
-        rhs[ref_idx] = 0.0
+    # 最初の流体セルの圧力補正をゼロに固定。内部 OUTLET があればそれが基準なので省略。
+    has_outlet = any(
+        b.kind == InternalFaceBCKind.OUTLET and b.mask is not None and np.any(b.mask)
+        for b in inp.internal_face_bcs
+    )
+    if not has_outlet:
+        fluid_cells = ~is_solid_cell
+        if np.any(fluid_cells):
+            ref_idx = flat_idx[fluid_cells][0]
+            diag[ref_idx] = 1e30
+            rhs[ref_idx] = 0.0
 
     # 行列組み立て
     rows.append(np.arange(n))
@@ -1078,6 +1193,9 @@ def build_energy_system(
             time_coeff = rho * Cp / inp.dt
             diag += time_coeff
             rhs += time_coeff * T_old_time.ravel()
+
+    # 内部 BC (INLET): 温度強制（temperature が指定されている場合）
+    _apply_internal_bc_energy(inp.internal_face_bcs, flat_idx, diag, rhs)
 
     # TVD 遅延補正（エネルギー方程式）
     if inp.convection_scheme in ("van_leer", "superbee"):
