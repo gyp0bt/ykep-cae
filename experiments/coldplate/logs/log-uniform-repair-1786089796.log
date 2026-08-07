@@ -1,0 +1,62 @@
+
+================ baseline (mu_vu=0.0, mu_phiu=0.0) ================
+  stage penal=1 beta=4: cooling=-5.157 grey=0.393 leak_frac=0.688
+  stage penal=2 beta=6: cooling=-4.940 grey=0.197 leak_frac=0.305
+  stage penal=3 beta=8: cooling=-4.883 grey=0.071 leak_frac=0.217
+  prune: rho_cut=0.10 -> flow-capable main comp 196 edges  port_share=1.000  coverage 31/32
+  prune: blocks covered 28/32
+  round 0: edges=196 blocks=28/32 cooling=-4.811 block_min/mean=0.773
+  prune: unused-channel removal -> 193 edges
+  prune: blocks covered 28/32
+  round 1: edges=193 blocks=28/32 cooling=-4.811 block_min/mean=0.772
+  prune: unused-channel removal -> 193 edges
+  prune: blocks covered 28/32
+  repair: block 7 -> 2 corridors
+  repair: block 15 -> 2 corridors
+  repair: block 23 -> 2 corridors
+  repair: block 31 -> 2 corridors
+  prune: unused-channel removal -> 225 edges
+  prune: blocks covered 32/32
+  repair: blocks=32/32 cooling=-5.242 log_diss=4.329
+pipeline 135s
+  cooling=-5.242  blocks_covered=32  block_min_over_mean=0.523  log_diss=4.329  vel_cv=0.932  phi_block_mean=0.475  phi_block_std=0.152  phi_block_min=0.253  phi_block_max=0.818
+  mass_check {'resid_max': 8.212102442506364e-09, 'leak_inactive': 0.0}
+  connectivity {'connected': True, 'n_src_components': 1, 'n_snk_components': 1, 'n_kept_edges': 225}
+  inlet : node (17,18)  share=1.000
+  outlet: node (0,2)  share=1.000
+
+================ uniform (mu_vu=2.0, mu_phiu=25.0) ================
+  stage penal=1 beta=4: cooling=-5.157 grey=0.393 leak_frac=0.688
+  stage penal=2 beta=6: cooling=-4.940 grey=0.197 leak_frac=0.305
+  stage penal=3 beta=8: cooling=-4.883 grey=0.071 leak_frac=0.217
+  prune: rho_cut=0.10 -> flow-capable main comp 196 edges  port_share=1.000  coverage 31/32
+  prune: blocks covered 28/32
+  round 0: edges=196 blocks=28/32 cooling=-4.876 block_min/mean=0.708
+  prune: unused-channel removal -> 196 edges
+  prune: blocks covered 28/32
+  repair: block 7 -> 2 corridors
+  repair: block 15 -> 2 corridors
+  repair: block 23 -> 2 corridors
+  repair: block 31 -> 2 corridors
+  prune: unused-channel removal -> 228 edges
+  prune: blocks covered 32/32
+  repair: blocks=32/32 cooling=-5.259 log_diss=4.291
+pipeline 71s
+  cooling=-5.259  blocks_covered=32  block_min_over_mean=0.491  log_diss=4.291  vel_cv=0.844  phi_block_mean=0.466  phi_block_std=0.157  phi_block_min=0.246  phi_block_max=0.815
+  mass_check {'resid_max': 7.769284660064102e-09, 'leak_inactive': 0.0}
+  connectivity {'connected': True, 'n_src_components': 1, 'n_snk_components': 1, 'n_kept_edges': 228}
+  inlet : node (17,18)  share=1.000
+  outlet: node (0,2)  share=1.000
+
+--- baseline vs uniform ---
+  cooling              base=-5.242  unif=-5.259
+  blocks_covered       base=32  unif=32
+  block_min_over_mean  base=0.523  unif=0.491
+  log_diss             base=4.329  unif=4.291
+  vel_cv               base=0.932  unif=0.844
+  phi_block_mean       base=0.475  unif=0.466
+  phi_block_std        base=0.152  unif=0.157
+  phi_block_min        base=0.253  unif=0.246
+  phi_block_max        base=0.818  unif=0.815
+saved: /home/user/ykep-cae/experiments/coldplate/output/coldplate_uniform.png
+saved: /home/user/ykep-cae/experiments/coldplate/output/coldplate_uniform_result.npz
