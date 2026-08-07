@@ -65,10 +65,53 @@ class TestColdplateAPI:
             st = cp.state(small_problem, cfg, torch.tensor(x_fin), mask)
         rho = st["rho"].numpy()
         assert set(np.unique(rho)).issubset({0.0, 1.0})
-        # 凍結ポート (port_on=False) の softmax 重みは厳密ゼロ
+        # 凍結ポート (port_*_on=False) の softmax 重みは厳密ゼロ
         yi, yo = st["w_in"].numpy(), st["w_out"].numpy()
-        assert np.all(yi[~mask.port_on] == 0.0)
-        assert np.all(yo[~mask.port_on] == 0.0)
+        assert np.all(yi[~mask.port_in_on] == 0.0)
+        assert np.all(yo[~mask.port_out_on] == 0.0)
+
+
+@pytest.fixture(scope="module")
+def single_port_result(small_problem: cp.Problem):
+    cfg = cp.Config(vol_frac=0.25)
+    _, x_fin, mask = cp.solve_pipeline(
+        small_problem,
+        cfg,
+        log_p_max=5.0,
+        maxiter_stage=200,
+        maxiter_reopt=200,
+        single_ports=True,
+        verbose=False,
+    )
+    return cfg, x_fin, mask
+
+
+class TestColdplateSinglePortAPI:
+    """single-port モード: 物理ポート in/out 各 1 箇所の強制."""
+
+    def test_exactly_one_port_each(self, small_problem: cp.Problem, single_port_result) -> None:
+        cfg, x_fin, mask = single_port_result
+        assert int(mask.port_in_on.sum()) == 1
+        assert int(mask.port_out_on.sum()) == 1
+        with torch.no_grad():
+            st = cp.state(small_problem, cfg, torch.tensor(x_fin), mask)
+        yi, yo = st["w_in"].numpy(), st["w_out"].numpy()
+        # 1 要素 softmax は厳密に 1
+        assert yi.max() == 1.0
+        assert yo.max() == 1.0
+        b = st["b"].numpy()
+        assert int((b > 0).sum()) == 1
+        assert int((b < 0).sum()) == 1
+
+    def test_single_port_leak_free_connected(
+        self, small_problem: cp.Problem, single_port_result
+    ) -> None:
+        cfg, x_fin, mask = single_port_result
+        mc = cp.mass_check(small_problem, cfg, x_fin, mask)
+        assert mc["leak_inactive"] == 0.0
+        assert mc["resid_max"] < 1e-8
+        cc = cp.connectivity_check(small_problem, cfg, x_fin, mask=mask)
+        assert cc["connected"]
 
 
 class TestColdplatePhysics:

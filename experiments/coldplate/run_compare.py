@@ -44,7 +44,8 @@ def run(cap: float) -> None:
         x_raw=x_raw,
         x_final=x_fin,
         edge_on=mask.edge_on,
-        port_on=mask.port_on,
+        port_in_on=mask.port_in_on,
+        port_out_on=mask.port_out_on,
         block_on=mask.block_on,
     )
 

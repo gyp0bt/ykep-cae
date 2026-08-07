@@ -184,14 +184,19 @@ class DesignMask:
 
     edge_on が False の辺は rho = 0 (厳密ゼロ)、True の辺は rho = 1 に
     凍結され (grey の構造的排除)、
-    port_on が False のポートは softmax から除外 (ロジット -inf)、
+    port_in_on / port_out_on が False のポートは inlet / outlet の softmax
+    から除外 (ロジット -inf)、
     block_on が False のブロックは目的関数の softmin から除外される
     (凍結位相では到達不能なため。放置すると softmin が飽和して
     勾配が死ぬ。除外したブロックは orphan として報告する)。
+
+    single-port モードでは port_in_on / port_out_on を one-hot にして
+    「物理ポートは in/out 各 1 箇所、分配は流路パターンで実現」を強制する。
     """
 
     edge_on: np.ndarray  # bool (E,)
-    port_on: np.ndarray  # bool (P,)
+    port_in_on: np.ndarray  # bool (P,)
+    port_out_on: np.ndarray  # bool (P,)
     block_on: np.ndarray  # bool (B,)
 
     def same_as(self, other: DesignMask | None) -> bool:
@@ -199,7 +204,8 @@ class DesignMask:
             return False
         return (
             bool(np.array_equal(self.edge_on, other.edge_on))
-            and bool(np.array_equal(self.port_on, other.port_on))
+            and bool(np.array_equal(self.port_in_on, other.port_in_on))
+            and bool(np.array_equal(self.port_out_on, other.port_out_on))
             and bool(np.array_equal(self.block_on, other.block_on))
         )
 
@@ -218,9 +224,8 @@ def decode(
         # 位相確定後は rho を厳密 0/1 に固定する (grey の構造的排除)。
         # 凍結辺は rho_floor すら残さない。ここが漏れ流れ排除の本体。
         rho = torch.from_numpy(mask.edge_on.astype(np.float64))
-        off = torch.from_numpy(~mask.port_on)
-        a_in = a_in.masked_fill(off, NEG_INF)
-        a_out = a_out.masked_fill(off, NEG_INF)
+        a_in = a_in.masked_fill(torch.from_numpy(~mask.port_in_on), NEG_INF)
+        a_out = a_out.masked_fill(torch.from_numpy(~mask.port_out_on), NEG_INF)
     return rho, w, torch.softmax(a_in, 0), torch.softmax(a_out, 0)
 
 
@@ -507,6 +512,7 @@ def prune(
     mask: DesignMask | None = None,
     rho_cut: float = 0.5,
     q_cut_rel: float = 1e-6,
+    single_ports: bool = False,
     verbose: bool = False,
 ) -> DesignMask:
     """rho 閾値 + 連結成分抽出 + 死枝除去で凍結マスクを作る.
@@ -520,9 +526,11 @@ def prune(
       2. G' (全ポートを仮想ノードで結合) の橋 = どのポート配分でも定常流を
          運べない袋小路のみ除去する。現在のポート配分での実流量は使わない
          (まだ重みが乗っていないフィーダを再最適化前に切らないため)。
+      single_ports=True なら inlet / outlet を重み最大の各 1 節点に確定し
+      (one-hot 凍結)、以後の分配は流路パターン (ヘッダ木) が担う。
     round 1+ (mask 有り) — 実流量ベース:
       再最適化済みの解で |q| < q_cut_rel·Q_tot の辺 (使われなかった流路) を
-      落とし、主成分を取り直す。
+      落とし、主成分を取り直す。ポートマスクは前ラウンドを引き継ぐ。
     最後に block_on (除熱が届くブロック) を判定する。
     """
     gr = prob.graph
@@ -534,15 +542,33 @@ def prune(
     pn = prob.ports.numpy()
     blk_edge_ids = [e.numpy() for e in prob.block_edges]
 
-    def flow_capable(
-        keep: np.ndarray, label: int, comp: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        on = keep & (comp[tail] == label)
-        p_on = comp[pn] == label
-        br = _bridge_edges(gr, on, pn[p_on])
-        return on & ~br, p_on
-
     if mask is None:
+        # single-port: stage A の重み最大ポートに in/out を確定 (同一節点は不可)
+        if single_ports:
+            k_in = int(np.argmax(yi))
+            yo_m = yo.copy()
+            yo_m[k_in] = -1.0
+            k_out = int(np.argmax(yo_m))
+            allow_in = np.zeros(len(pn), dtype=bool)
+            allow_out = np.zeros(len(pn), dtype=bool)
+            allow_in[k_in] = True
+            allow_out[k_out] = True
+        else:
+            allow_in = np.ones(len(pn), dtype=bool)
+            allow_out = np.ones(len(pn), dtype=bool)
+
+        def flow_capable(keep: np.ndarray, label: int, comp: np.ndarray) -> np.ndarray:
+            on = keep & (comp[tail] == label)
+            p_use = ((comp[pn] == label) & allow_in) | ((comp[pn] == label) & allow_out)
+            br = _bridge_edges(gr, on, pn[p_use])
+            return on & ~br
+
+        def label_valid(comp: np.ndarray, label: int) -> bool:
+            # 許可ポートが in/out とも主成分に含まれること
+            ok_in = bool(((comp[pn] == label) & allow_in).any())
+            ok_out = bool(((comp[pn] == label) & allow_out).any())
+            return ok_in and ok_out
+
         # --- round 0: 「流れ得る」被覆が最大になる cut を採用 ---
         chosen = None
         best_cov = -1
@@ -552,7 +578,9 @@ def prune(
             if found is None:
                 continue
             comp_c = _union_find_labels(gr.n_nodes, tail, head, keep)
-            on_c, p_on_c = flow_capable(keep, found[0], comp_c)
+            if not label_valid(comp_c, found[0]):
+                continue
+            on_c = flow_capable(keep, found[0], comp_c)
             cov = sum(1 for ids in blk_edge_ids if on_c[ids].any())
             if cov > best_cov:
                 best_cov = cov
@@ -566,7 +594,8 @@ def prune(
             raise ValueError("bridge removal destroyed the main component")
         comp = _union_find_labels(gr.n_nodes, tail, head, edge_on)
         edge_on = edge_on & (comp[tail] == found[0])
-        port_on = comp[pn] == found[0]
+        port_in_on = (comp[pn] == found[0]) & allow_in
+        port_out_on = (comp[pn] == found[0]) & allow_out
         if verbose:
             print(
                 f"  prune: rho_cut={cut:.2f} -> flow-capable main comp "
@@ -581,14 +610,16 @@ def prune(
         if found is not None:
             comp = _union_find_labels(gr.n_nodes, tail, head, edge_on)
             edge_on = edge_on & (comp[tail] == found[0])
-            port_on = comp[pn] == found[0]
+            port_in_on = (comp[pn] == found[0]) & mask.port_in_on
+            port_out_on = (comp[pn] == found[0]) & mask.port_out_on
         else:  # 全滅したら現状維持
-            edge_on, port_on = mask.edge_on, mask.port_on
+            edge_on = mask.edge_on
+            port_in_on, port_out_on = mask.port_in_on, mask.port_out_on
         if verbose:
             print(f"  prune: unused-channel removal -> {int(edge_on.sum())} edges")
 
     # --- block_on: 除熱が届くブロックの判定 ---
-    m2 = DesignMask(edge_on, port_on, np.ones(len(prob.block_edges), dtype=bool))
+    m2 = DesignMask(edge_on, port_in_on, port_out_on, np.ones(len(prob.block_edges), dtype=bool))
     with torch.no_grad():
         st2 = state(prob, cfg, torch.tensor(x), m2)
     pb = _per_block(prob, st2["q_heat"]).numpy()
@@ -599,7 +630,7 @@ def prune(
         block_on = block_on | touch
     if verbose:
         print(f"  prune: blocks covered {int(block_on.sum())}/{len(block_on)}")
-    return DesignMask(edge_on, port_on, block_on)
+    return DesignMask(edge_on, port_in_on, port_out_on, block_on)
 
 
 def solve_pipeline(
@@ -610,9 +641,14 @@ def solve_pipeline(
     maxiter_stage: int = 400,
     maxiter_reopt: int = 400,
     n_prune_rounds: int = 3,
+    single_ports: bool = False,
     verbose: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, DesignMask]:
     """continuation -> 刈り込み -> 再最適化 の全パイプライン.
+
+    single_ports=True で「物理ポートは inlet / outlet 各 1 箇所」を強制する。
+    stage A で mu_conc をランプしてポートを自然に寄せた後、刈り込み時に
+    重み最大の各 1 節点へ one-hot 凍結し、分配はヘッダ木パターンに任せる。
 
     Returns
     -------
@@ -623,9 +659,12 @@ def solve_pipeline(
     """
     # --- stage A: continuation (penal / beta / mu_bin を段階強化) ---
     stages = [(1.0, 4.0, 0.3), (2.0, 6.0, 1.0), (3.0, 8.0, 3.0)]
+    mu_conc_ramp = (0.0, 0.5, 2.0)  # single_ports 時のみ使用
     x: np.ndarray | None = None
-    for penal, beta, mu_bin in stages:
+    for (penal, beta, mu_bin), mu_conc in zip(stages, mu_conc_ramp, strict=True):
         cfg.penal, prob.beta, cfg.mu_bin = penal, beta, mu_bin
+        if single_ports:
+            cfg.mu_conc = mu_conc
         x = optimise(prob, cfg, x0=x, maxiter=maxiter_stage, seed=seed, log_p_max=log_p_max)
         if verbose:
             r = report(prob, cfg, x)
@@ -641,7 +680,7 @@ def solve_pipeline(
     prob.beta = 12.0  # 刈り込み後は worst-block を直接押し上げる
     mask: DesignMask | None = None
     for rnd in range(n_prune_rounds):
-        new_mask = prune(prob, cfg, x, mask, verbose=verbose)
+        new_mask = prune(prob, cfg, x, mask, single_ports=single_ports, verbose=verbose)
         if new_mask.same_as(mask):
             break
         mask = new_mask
@@ -866,11 +905,16 @@ def plot(
     title: str = "",
     rho_cut: float = 0.35,
     mask: DesignMask | None = None,
+    color_by: str = "phi",
 ) -> None:
     """流路幅をデータ座標に忠実に描く.
 
     lw をデータ座標と無関係な係数で決めると幾何の破綻が見えなくなる。
     lw [pt] = w [セル] × (1 セルあたり pt 数) を厳守すること。
+
+    color_by:
+      "phi" — 鮮度スカラー (辺両端の平均、turbo、0-1 固定スケール)
+      "v"   — 断面平均流速 v = |q| / w² (magma、その図の最大値で正規化)
     """
     import matplotlib.patches as mpatches
     import matplotlib.pyplot as plt
@@ -880,7 +924,18 @@ def plot(
         st = state(prob, cfg, torch.tensor(x), mask)
     xy = gr.coords()
     rn, wn, phin = st["rho"].numpy(), st["w"].numpy(), st["phi"].numpy()
-    cmap = plt.get_cmap("turbo")
+    if color_by == "v":
+        vel = np.abs(st["q"].numpy()) / wn**2  # 断面 w×w (深さ ≈ 幅) を仮定
+        vmax = max(float(vel.max()), 1e-30)
+        cmap = plt.get_cmap("magma")
+
+        def edge_color(e: int, a: int, b: int) -> tuple:
+            return cmap(vel[e] / vmax)
+    else:
+        cmap = plt.get_cmap("turbo")
+
+        def edge_color(e: int, a: int, b: int) -> tuple:
+            return cmap(0.5 * (phin[a] + phin[b]))
 
     ax.set_facecolor("#0e1015")
     ax.set_aspect("equal")
@@ -911,10 +966,12 @@ def plot(
             [xy[a, 1], xy[b, 1]],
             lw=wn[e] * ppc,
             alpha=float(min(1.0, rn[e])),
-            color=cmap(0.5 * (phin[a] + phin[b])),
+            color=edge_color(e, a, b),
             solid_capstyle="round",
             zorder=2,
         )
+    if color_by == "v":
+        ax.text(0.02, 0.01, f"v_max = {vmax:.3g}", color="w", fontsize=8, transform=ax.transAxes)
 
     pn = prob.ports.numpy()
     yi, yo = st["w_in"].numpy(), st["w_out"].numpy()
@@ -987,11 +1044,31 @@ if __name__ == "__main__":
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 9), facecolor="#0e1015")
-    plot(prob, cfg_raw, x_raw, fig, axes[0], title="(a) raw SIMP (leaky, v1)")
-    plot(prob, cfg, x_fin, fig, axes[1], title="(b) pruned + re-optimised (v2)", mask=mask)
+    fig, axes = plt.subplots(2, 2, figsize=(13, 18), facecolor="#0e1015")
+    plot(prob, cfg_raw, x_raw, fig, axes[0, 0], title="(a) raw SIMP (leaky, v1) - freshness phi")
+    plot(prob, cfg, x_fin, fig, axes[0, 1], title="(b) pruned v2 - freshness phi", mask=mask)
+    plot(
+        prob,
+        cfg_raw,
+        x_raw,
+        fig,
+        axes[1, 0],
+        title="(c) raw SIMP - velocity |q|/w^2",
+        color_by="v",
+    )
+    plot(
+        prob,
+        cfg,
+        x_fin,
+        fig,
+        axes[1, 1],
+        title="(d) pruned v2 - velocity |q|/w^2",
+        color_by="v",
+        mask=mask,
+    )
     fig.suptitle(
-        "marker size = port flow share | color = freshness phi | TRUE SCALE",
+        "marker size = port flow share | top: freshness phi (turbo) | "
+        "bottom: velocity (magma) | TRUE SCALE",
         color="w",
         fontsize=11,
     )
@@ -1003,7 +1080,8 @@ if __name__ == "__main__":
         x_raw=x_raw,
         x_final=x_fin,
         edge_on=mask.edge_on,
-        port_on=mask.port_on,
+        port_in_on=mask.port_in_on,
+        port_out_on=mask.port_out_on,
         block_on=mask.block_on,
     )
     print(f"saved: {out_dir / 'coldplate_v2_result.npz'}")
