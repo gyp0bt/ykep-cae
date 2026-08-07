@@ -67,9 +67,9 @@ if __name__ == "__main__":
         assert cc["connected"] and mc["leak_inactive"] == 0.0
         results[cap] = (x_fin, mask, r, prob, cfg)
 
-    # 散逸上限内 (log_diss <= cap + 0.05) の解のうち cooling 最良を採用
-    feasible = {c: v for c, v in results.items() if v[2]["log_diss"] <= c + 0.05}
-    pick = max(feasible or results, key=lambda c: (feasible or results)[c][2]["cooling"])
+    # 採用基準: ブロック被覆を最優先 (cooling は被覆数が違うと比較不能)、
+    # 同被覆なら cooling 最良
+    pick = max(results, key=lambda c: (results[c][2]["blocks_covered"], results[c][2]["cooling"]))
     x_fin, mask, r, prob, cfg = results[pick]
     print(f"\nselected cap = {pick} (log_diss = {r['log_diss']:.3f})")
 
