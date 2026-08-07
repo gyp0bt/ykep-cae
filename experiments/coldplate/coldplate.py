@@ -961,7 +961,7 @@ if __name__ == "__main__":
     x_raw, x_fin, mask = solve_pipeline(prob, cfg, log_p_max=3.5, verbose=True)
     print(f"pipeline done in {time.perf_counter() - t0:.0f}s")
 
-    print(f"gradient check (masked)      = {check_gradient(prob, cfg, mask=mask):.2e}")
+    print(f"gradient check (masked)      = {check_gradient(prob, cfg, mask=mask, n_probe=40):.2e}")
 
     print("\n--- raw SIMP solution (before prune; v1 相当) ---")
     cfg_raw = Config(vol_frac=cfg.vol_frac, penal=3.0, mu_bin=3.0)  # stage A 最終段相当
