@@ -1,0 +1,63 @@
+grid 18x29  nodes=522  edges=997  blocks=32  ports=29
+gradient check (max rel err) = 9.69e-07
+  stage penal=1 beta=4: cooling=-5.302 grey=0.215 leak_frac=0.382
+  stage penal=2 beta=6: cooling=-5.170 grey=0.074 leak_frac=0.076
+  stage penal=3 beta=8: cooling=-5.105 grey=0.066 leak_frac=0.031
+  prune: rho_cut=0.40 -> flow-capable main comp 251 edges  port_share=1.000  coverage 32/32
+  prune: blocks covered 32/32
+  round 0: edges=251 blocks=32/32 cooling=-5.171 block_min/mean=0.659
+  prune: unused-channel removal -> 248 edges
+  prune: blocks covered 32/32
+  round 1: edges=248 blocks=32/32 cooling=-5.143 block_min/mean=0.658
+  prune: unused-channel removal -> 248 edges
+  prune: blocks covered 32/32
+pipeline done in 126s
+gradient check (masked)      = 0.00e+00
+
+--- raw SIMP solution (before prune; v1 相当) ---
+  cooling              -4.9798
+  log_diss             3.5077
+  n_on                 240
+  grey                 0.0662
+  w_mean               0.6932
+  w_std                0.0715
+  phi_out              0.2781
+  heat_in_block        0.4444
+  eff_ports_in         4.6100
+  eff_ports_out        3.0594
+  block_min            0.0079
+  block_max            0.0174
+  block_cv             0.1677
+  block_min_over_mean  0.7869
+  blocks_covered       32
+  mass_resid_max       0.0000
+  leak_flow_frac       0.0306
+  leak_flow_masked     nan
+  mass_check           {'resid_max': 2.9491911751706885e-09, 'leak_inactive': 1.1076669025143877}
+  connectivity         {'connected': False, 'n_src_components': 4, 'n_snk_components': 1, 'n_kept_edges': 240}
+
+--- pruned + re-optimised solution (v2) ---
+  cooling              -5.1425
+  log_diss             3.5063
+  n_on                 248
+  grey                 0.0000
+  w_mean               0.6733
+  w_std                0.0733
+  phi_out              0.2174
+  heat_in_block        0.4073
+  eff_ports_in         4.8316
+  eff_ports_out        3.2977
+  block_min            0.0066
+  block_max            0.0169
+  block_cv             0.3016
+  block_min_over_mean  0.6584
+  blocks_covered       32
+  mass_resid_max       0.0000
+  leak_flow_frac       0.0000
+  leak_flow_masked     0.0000
+  mass_check           {'resid_max': 4.028980205017518e-09, 'leak_inactive': 0.0}
+  connectivity         {'connected': True, 'n_src_components': 1, 'n_snk_components': 1, 'n_kept_edges': 248}
+
+P0 checks passed: connected, zero leak on inactive edges, mass conserved.
+saved: /home/user/ykep-cae/experiments/coldplate/output/coldplate_v2.png
+saved: /home/user/ykep-cae/experiments/coldplate/output/coldplate_v2_result.npz
