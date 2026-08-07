@@ -7,9 +7,8 @@ from __future__ import annotations
 
 import time
 
-import numpy as np
-
 import coldplate as cp
+import numpy as np
 
 
 def run(cap: float) -> None:
@@ -33,7 +32,9 @@ def run(cap: float) -> None:
             "eff_ports_out",
             "leak_flow_frac",
         )
-        vals = "  ".join(f"{k}={r[k]:.3f}" if isinstance(r[k], float) else f"{k}={r[k]}" for k in keys)
+        vals = "  ".join(
+            f"{k}={r[k]:.3f}" if isinstance(r[k], float) else f"{k}={r[k]}" for k in keys
+        )
         print(f"  [{tag:6s}] {vals}")
         print(f"  [{tag:6s}] mass_check {mc}")
     cc = cp.connectivity_check(prob, cfg, x_fin, mask=mask)

@@ -747,12 +747,19 @@ def check_gradient(
     mask: DesignMask | None = None,
     x0: np.ndarray | None = None,
 ) -> float:
-    """autograd 勾配を中心差分で検証。1e-4 以下なら健全。"""
+    """autograd 勾配を中心差分で検証。1e-4 以下なら健全.
+
+    AD と FD の両方がノイズ床 (線形ソルバの丸めに由来、目的値 O(1) と
+    h=1e-6 に対して FD 分解能 ~1e-7) を下回る成分は「ゼロ勾配と整合」と
+    みなしスキップする。さもないと感度が厳密ゼロに近い成分 (凍結辺の w 等) で
+    ノイズ同士の比が O(1) となり偽陽性を出す。
+    """
     rng = np.random.default_rng(seed)
     n = 2 * prob.graph.n_edges + 2 * len(prob.ports)
     xv = 0.3 * rng.standard_normal(n) if x0 is None else x0.copy()
     xt = torch.tensor(xv, requires_grad=True)
     (g_ad,) = torch.autograd.grad(objective(prob, cfg, xt, log_p_max, mask), xt)
+    noise_floor = 1e-6 * (1.0 + float(g_ad.abs().max()))
     h, errs = 1e-6, []
     for i in rng.choice(n, size=n_probe, replace=False):
         xp, xm = xv.copy(), xv.copy()
@@ -762,8 +769,10 @@ def check_gradient(
             objective(prob, cfg, torch.tensor(xp), log_p_max, mask).item()
             - objective(prob, cfg, torch.tensor(xm), log_p_max, mask).item()
         ) / (2 * h)
+        if abs(fd) < noise_floor and abs(float(g_ad[i])) < noise_floor:
+            continue  # ゼロ勾配成分: FD はソルバノイズしか見えない
         errs.append(abs(fd - float(g_ad[i])) / (abs(fd) + 1e-8))
-    return float(np.max(errs))
+    return float(np.max(errs)) if errs else 0.0
 
 
 def connectivity_check(
