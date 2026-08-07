@@ -446,6 +446,60 @@ def _main_component(
     return best, best_score
 
 
+def _bridge_edges(gr: GridGraph, edge_on: np.ndarray, port_on_nodes: np.ndarray) -> np.ndarray:
+    """仮想ノード経由で全ポートを結んだグラフ G' の橋 (実辺のみ) を返す.
+
+    G' = アクティブ辺 + {各ポート節点 - 仮想ノード} の補助辺。
+    G' で橋である実辺は、どのポート配分でも定常流を運べない
+    (片側にポートが無い袋小路)。逆に橋でない辺は in-out 経路または
+    ループ上にあり、ポート配分次第で流れ得る。
+    """
+    n_e = gr.n_edges
+    tail, head = gr.tail.numpy(), gr.head.numpy()
+    virt = gr.n_nodes
+    adj: list[list[tuple[int, int]]] = [[] for _ in range(gr.n_nodes + 1)]
+    for e in np.nonzero(edge_on)[0]:
+        u, v = int(tail[e]), int(head[e])
+        adj[u].append((v, int(e)))
+        adj[v].append((u, int(e)))
+    for k, nd in enumerate(port_on_nodes):
+        adj[int(nd)].append((virt, n_e + k))
+        adj[virt].append((int(nd), n_e + k))
+
+    n_all = gr.n_nodes + 1
+    disc = np.full(n_all, -1, dtype=np.int64)
+    low = np.zeros(n_all, dtype=np.int64)
+    is_bridge = np.zeros(n_e, dtype=bool)
+    timer = 0
+    for s in range(n_all):
+        if disc[s] != -1 or not adj[s]:
+            continue
+        disc[s] = low[s] = timer
+        timer += 1
+        st = [(s, -1, iter(adj[s]))]
+        while st:
+            u, peid, it = st[-1]
+            advanced = False
+            for v, eid in it:
+                if eid == peid:
+                    continue
+                if disc[v] == -1:
+                    disc[v] = low[v] = timer
+                    timer += 1
+                    st.append((v, eid, iter(adj[v])))
+                    advanced = True
+                    break
+                low[u] = min(low[u], disc[v])
+            if not advanced:
+                st.pop()
+                if st:
+                    pu = st[-1][0]
+                    low[pu] = min(low[pu], low[u])
+                    if low[u] > disc[pu] and 0 <= peid < n_e:
+                        is_bridge[peid] = True
+    return is_bridge
+
+
 def prune(
     prob: Problem,
     cfg: Config,
@@ -455,13 +509,21 @@ def prune(
     q_cut_rel: float = 1e-6,
     verbose: bool = False,
 ) -> DesignMask:
-    """rho 閾値 + 連結成分抽出 + 無流量辺除去で凍結マスクを作る.
+    """rho 閾値 + 連結成分抽出 + 死枝除去で凍結マスクを作る.
 
-    1. rho > cut の辺で連結成分を取り、inlet/outlet の重みを両方含む
-       主成分だけ残す (cut は 0.5 から下げながら最初に成立する値を採用)。
-    2. 主成分のみをアクティブにして厳密再解し、|q| < q_cut_rel·Q_tot の
-       死枝 (無流量のヒゲ・孤立リング) を落とす。
-    3. 再度主成分を取り直し、到達可能なブロック (block_on) を判定する。
+    round 0 (mask=None) — 位相能力ベース:
+      1. rho > cut の辺で連結成分を取り、inlet/outlet の重みを両方含む
+         主成分を候補にする。cut は複数試し、「流れ得る」ブロック被覆数が
+         最大の cut を採用 (同数なら高い cut)。低い cut は grey の半端な
+         実流路を主成分に取り込めるため、被覆と清潔さのトレードオフを
+         ここで解く。
+      2. G' (全ポートを仮想ノードで結合) の橋 = どのポート配分でも定常流を
+         運べない袋小路のみ除去する。現在のポート配分での実流量は使わない
+         (まだ重みが乗っていないフィーダを再最適化前に切らないため)。
+    round 1+ (mask 有り) — 実流量ベース:
+      再最適化済みの解で |q| < q_cut_rel·Q_tot の辺 (使われなかった流路) を
+      落とし、主成分を取り直す。
+    最後に block_on (除熱が届くブロック) を判定する。
     """
     gr = prob.graph
     tail, head = gr.tail.numpy(), gr.head.numpy()
@@ -469,54 +531,75 @@ def prune(
         st = state(prob, cfg, torch.tensor(x), mask)
     rho = st["rho"].numpy()
     yi, yo = st["w_in"].numpy(), st["w_out"].numpy()
+    pn = prob.ports.numpy()
+    blk_edge_ids = [e.numpy() for e in prob.block_edges]
 
-    # --- 1. rho 閾値 (連結する最も厳しい cut を採用) ---
-    chosen = None
-    for cut in (rho_cut, 0.4, 0.3, 0.2, 0.1, 0.05, 0.02):
-        keep = rho > cut
-        found = _main_component(prob, keep, yi, yo)
+    def flow_capable(
+        keep: np.ndarray, label: int, comp: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        on = keep & (comp[tail] == label)
+        p_on = comp[pn] == label
+        br = _bridge_edges(gr, on, pn[p_on])
+        return on & ~br, p_on
+
+    if mask is None:
+        # --- round 0: 「流れ得る」被覆が最大になる cut を採用 ---
+        chosen = None
+        best_cov = -1
+        for cut in (rho_cut, 0.4, 0.3, 0.2, 0.1, 0.05, 0.02):
+            keep = rho > cut
+            found = _main_component(prob, keep, yi, yo)
+            if found is None:
+                continue
+            comp_c = _union_find_labels(gr.n_nodes, tail, head, keep)
+            on_c, p_on_c = flow_capable(keep, found[0], comp_c)
+            cov = sum(1 for ids in blk_edge_ids if on_c[ids].any())
+            if cov > best_cov:
+                best_cov = cov
+                chosen = (cut, on_c, found[1])
+        if chosen is None:
+            raise ValueError("no component contains both inlet and outlet flow")
+        cut, edge_on, score = chosen
+        # 橋除去で主成分が割れることがあるので取り直す
+        found = _main_component(prob, edge_on, yi, yo)
+        if found is None:
+            raise ValueError("bridge removal destroyed the main component")
+        comp = _union_find_labels(gr.n_nodes, tail, head, edge_on)
+        edge_on = edge_on & (comp[tail] == found[0])
+        port_on = comp[pn] == found[0]
+        if verbose:
+            print(
+                f"  prune: rho_cut={cut:.2f} -> flow-capable main comp "
+                f"{int(edge_on.sum())} edges  port_share={score:.3f}  "
+                f"coverage {best_cov}/{len(blk_edge_ids)}"
+            )
+    else:
+        # --- round 1+: 使われなかった流路を実流量で落とす ---
+        q0 = st["q"].numpy()
+        edge_on = mask.edge_on & (np.abs(q0) > q_cut_rel * prob.q_total)
+        found = _main_component(prob, edge_on, yi, yo)
         if found is not None:
-            chosen = (cut, keep, found[0], found[1])
-            break
-    if chosen is None:
-        raise ValueError("no component contains both inlet and outlet flow")
-    cut, keep, label, score = chosen
-    comp = _union_find_labels(gr.n_nodes, tail, head, keep)
-    edge_on = keep & (comp[tail] == label)
-    port_on = comp[prob.ports.numpy()] == label
-    if verbose:
-        print(
-            f"  prune: rho_cut={cut:.2f}  kept={int(keep.sum())} -> "
-            f"main comp {int(edge_on.sum())} edges  port_share={score:.3f}"
-        )
+            comp = _union_find_labels(gr.n_nodes, tail, head, edge_on)
+            edge_on = edge_on & (comp[tail] == found[0])
+            port_on = comp[pn] == found[0]
+        else:  # 全滅したら現状維持
+            edge_on, port_on = mask.edge_on, mask.port_on
+        if verbose:
+            print(f"  prune: unused-channel removal -> {int(edge_on.sum())} edges")
 
-    # --- 2. 厳密再解して無流量の死枝を落とす ---
-    m1 = DesignMask(edge_on, port_on, np.ones(len(prob.block_edges), dtype=bool))
-    with torch.no_grad():
-        st1 = state(prob, cfg, torch.tensor(x), m1)
-    q1 = st1["q"].numpy()
-    yi1, yo1 = st1["w_in"].numpy(), st1["w_out"].numpy()
-    edge_on2 = edge_on & (np.abs(q1) > q_cut_rel * prob.q_total)
-    found2 = _main_component(prob, edge_on2, yi1, yo1)
-    if found2 is not None:
-        comp2 = _union_find_labels(gr.n_nodes, tail, head, edge_on2)
-        edge_on2 = edge_on2 & (comp2[tail] == found2[0])
-        port_on2 = comp2[prob.ports.numpy()] == found2[0]
-    else:  # 死枝除去で壊れたら step1 の結果に戻す
-        edge_on2, port_on2 = edge_on, port_on
-
-    # --- 3. 到達可能なブロックの判定 ---
-    m2 = DesignMask(edge_on2, port_on2, np.ones(len(prob.block_edges), dtype=bool))
+    # --- block_on: 除熱が届くブロックの判定 ---
+    m2 = DesignMask(edge_on, port_on, np.ones(len(prob.block_edges), dtype=bool))
     with torch.no_grad():
         st2 = state(prob, cfg, torch.tensor(x), m2)
     pb = _per_block(prob, st2["q_heat"]).numpy()
     block_on = pb > 1e-6 * max(float(pb.max()), 1e-30)
+    if mask is None:
+        # round 0 は位相的に流れ得るブロックも残す (再最適化が流れを配る余地)
+        touch = np.array([bool(edge_on[ids].any()) for ids in blk_edge_ids])
+        block_on = block_on | touch
     if verbose:
-        print(
-            f"  prune: dead-branch removal -> {int(edge_on2.sum())} edges, "
-            f"blocks covered {int(block_on.sum())}/{len(block_on)}"
-        )
-    return DesignMask(edge_on2, port_on2, block_on)
+        print(f"  prune: blocks covered {int(block_on.sum())}/{len(block_on)}")
+    return DesignMask(edge_on, port_on, block_on)
 
 
 def solve_pipeline(
@@ -866,13 +949,13 @@ if __name__ == "__main__":
     print(f"gradient check (max rel err) = {check_gradient(prob, cfg):.2e}")
 
     t0 = time.perf_counter()
-    x_raw, x_fin, mask = solve_pipeline(prob, cfg, log_p_max=5.0, verbose=True)
+    x_raw, x_fin, mask = solve_pipeline(prob, cfg, log_p_max=3.5, verbose=True)
     print(f"pipeline done in {time.perf_counter() - t0:.0f}s")
 
     print(f"gradient check (masked)      = {check_gradient(prob, cfg, mask=mask):.2e}")
 
     print("\n--- raw SIMP solution (before prune; v1 相当) ---")
-    cfg_raw = Config(vol_frac=cfg.vol_frac, penal=3.0, mu_bin=3.0)
+    cfg_raw = Config(vol_frac=cfg.vol_frac, penal=3.0, mu_bin=3.0)  # stage A 最終段相当
     for k, v in report(prob, cfg_raw, x_raw).items():
         print(f"  {k:20s} {v:.4f}" if isinstance(v, float) else f"  {k:20s} {v}")
     print(f"  mass_check           {mass_check(prob, cfg_raw, x_raw)}")
