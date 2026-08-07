@@ -675,6 +675,10 @@ def solve_pipeline(
         mask    最終凍結マスク (edge_on の外の流量は厳密ゼロ)
     """
     # --- stage A: continuation (penal / beta / mu_bin を段階強化) ---
+    # 空間均一化罰則 (mu_vu / mu_phiu) は位相探索を不安定化させ被覆が崩壊する
+    # (実測: 14/32) ため stage A では無効化し、位相凍結後の stage B でのみ課す。
+    mu_vu_user, mu_phiu_user = cfg.mu_vu, cfg.mu_phiu
+    cfg.mu_vu, cfg.mu_phiu = 0.0, 0.0
     stages = [(1.0, 4.0, 0.3), (2.0, 6.0, 1.0), (3.0, 8.0, 3.0)]
     mu_conc_ramp = (0.0, 0.5, 2.0)  # single_ports 時のみ使用
     x: np.ndarray | None = None
@@ -694,6 +698,7 @@ def solve_pipeline(
     x_raw = x.copy()
 
     # --- stage B: prune -> reopt を繰り返す (逐次刈り込み) ---
+    cfg.mu_vu, cfg.mu_phiu = mu_vu_user, mu_phiu_user  # 均一化は凍結位相上でのみ
     prob.beta = 12.0  # 刈り込み後は worst-block を直接押し上げる
     mask: DesignMask | None = None
     for rnd in range(n_prune_rounds):
