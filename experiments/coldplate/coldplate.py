@@ -153,6 +153,7 @@ class Problem:
     ports: torch.Tensor  # 候補ポート節点 (左辺)
     block_edges: list[torch.Tensor]  # 各発熱体 footprint 内の辺
     block_boxes: list[tuple[int, int, int, int]] = field(default_factory=list)
+    block_nodes: list[torch.Tensor] = field(default_factory=list)  # 各発熱体 footprint の節点
     ntu_coef: float = 1e-2
     q_total: float = 1.0
     beta: float = 8.0  # softmin の鋭さ
@@ -175,6 +176,8 @@ class Config:
     mu_conc: float = 0.0  # ポート集中化 (0 なら分散を許す)
     mu_overlap: float = 5.0  # inlet/outlet の同一節点重なり禁止
     mu_uni: float = 0.0  # ブロック別 log 除熱の分散罰則 (均一性)
+    mu_vu: float = 0.0  # 流速の空間 CV² 罰則 (rho·L 重み付き)
+    mu_phiu: float = 0.0  # 発熱体位置での鮮度 φ の分散罰則
     logit_scale: float = 1.0
 
 
@@ -335,6 +338,20 @@ def objective(
         j = j + cfg.mu_overlap * (st["w_in"] * st["w_out"]).sum()
     if cfg.mu_uni > 0:
         j = j + cfg.mu_uni * logs.var()
+    if cfg.mu_vu > 0:
+        # 流速 v=|q|/w² の空間 CV²。重みは材料存在 rho·L (SIMP と整合する滑らかな重み)
+        v = (st["q"].abs() + QEPS) / st["w"] ** 2
+        wgt = st["rho"] * gr.elen
+        wsum = wgt.sum() + EPS
+        v_mean = (wgt * v).sum() / wsum
+        v_var = (wgt * (v - v_mean) ** 2).sum() / wsum
+        j = j + cfg.mu_vu * v_var / (v_mean**2 + EPS)
+    if cfg.mu_phiu > 0 and prob.block_nodes:
+        # 各発熱体 footprint 節点の平均 φ のブロック間分散 (φ∈[0,1] の絶対分散)
+        phi_b = torch.stack([st["phi"][nd].mean() for nd in prob.block_nodes])
+        if mask is not None:
+            phi_b = phi_b[torch.from_numpy(mask.block_on)]
+        j = j + cfg.mu_phiu * phi_b.var()
     if log_p_max is not None:
         j = j + cfg.mu_diss * torch.relu(torch.log(st["diss"] + EPS) - log_p_max) ** 2
     return j
@@ -752,7 +769,32 @@ def report(
         "mass_resid_max": float(resid),
         "leak_flow_frac": leak_frac,
         "leak_flow_masked": leak_abs,
+        **_uniformity_metrics(prob, st, mask),
     }
+
+
+def _uniformity_metrics(
+    prob: Problem, st: dict[str, torch.Tensor], mask: DesignMask | None
+) -> dict[str, float]:
+    """流速とブロック位置 φ の空間均一性指標 (rho>0.5 の実在流路で評価)."""
+    rn = st["rho"].numpy()
+    on = rn > 0.5
+    out: dict[str, float] = {}
+    if on.any():
+        v = np.abs(st["q"].numpy()[on]) / st["w"].numpy()[on] ** 2
+        out["vel_cv"] = float(v.std() / max(v.mean(), 1e-30))
+    else:
+        out["vel_cv"] = float("nan")
+    if prob.block_nodes:
+        phin = st["phi"].numpy()
+        phi_b = np.array([float(phin[nd.numpy()].mean()) for nd in prob.block_nodes])
+        if mask is not None:
+            phi_b = phi_b[mask.block_on]
+        out["phi_block_mean"] = float(phi_b.mean())
+        out["phi_block_std"] = float(phi_b.std())
+        out["phi_block_min"] = float(phi_b.min())
+        out["phi_block_max"] = float(phi_b.max())
+    return out
 
 
 def mass_check(
@@ -854,9 +896,12 @@ def make_problem(
     margin_left: int = 4,
     margin_right: int = 3,
     margin_y: int = 3,
+    port_side: str = "left",
     **kw: float,
 ) -> Problem:
     """発熱体 n_cols × n_rows を中央に配置。各発熱体は 1 セル (2×2 節点).
+
+    port_side: "left" = 左辺のみ (従来) / "boundary" = 全境界節点を候補ポートに。
 
     幾何の前提: 格子ピッチ = 流路ピッチ = d + 壁厚。
     発熱体幅 ≈ 2·d_min ≈ 1.2 セル なので 1 セルを占める。
@@ -870,6 +915,7 @@ def make_problem(
 
     tail_np, head_np = gr.tail.numpy(), gr.head.numpy()
     block_edges: list[torch.Tensor] = []
+    block_nodes: list[torch.Tensor] = []
     boxes: list[tuple[int, int, int, int]] = []
     for c in range(n_cols):
         x0 = margin_left + c * block_pitch
@@ -882,12 +928,25 @@ def make_problem(
             block_edges.append(
                 torch.tensor(np.nonzero(inside[tail_np] & inside[head_np])[0], dtype=torch.long)
             )
+            block_nodes.append(torch.tensor(np.nonzero(inside)[0], dtype=torch.long))
             boxes.append((x0, y0, 1, 1))
+
+    if port_side == "boundary":
+        pset: list[int] = [gr.nid(i, 0) for i in range(nx)]
+        pset += [gr.nid(i, ny - 1) for i in range(nx)]
+        pset += [gr.nid(0, j) for j in range(1, ny - 1)]
+        pset += [gr.nid(nx - 1, j) for j in range(1, ny - 1)]
+        ports = torch.tensor(sorted(pset), dtype=torch.long)
+    elif port_side == "left":
+        ports = torch.tensor([gr.nid(0, j) for j in range(ny)], dtype=torch.long)
+    else:
+        raise ValueError(f"unknown port_side: {port_side}")
 
     return Problem(
         graph=gr,
-        ports=torch.tensor([gr.nid(0, j) for j in range(ny)], dtype=torch.long),
+        ports=ports,
         block_edges=block_edges,
+        block_nodes=block_nodes,
         block_boxes=boxes,
         **kw,
     )
@@ -939,8 +998,8 @@ def plot(
 
     ax.set_facecolor("#0e1015")
     ax.set_aspect("equal")
-    ax.set_xlim(-2.2, gr.nx)
-    ax.set_ylim(-1.2, gr.ny)
+    ax.set_xlim(-2.2, gr.nx + 1.2)
+    ax.set_ylim(-2.2, gr.ny + 1.2)
     ax.axis("off")
     fig.canvas.draw()
     p0, p1 = ax.transData.transform((0, 0)), ax.transData.transform((1, 0))
@@ -975,11 +1034,24 @@ def plot(
 
     pn = prob.ports.numpy()
     yi, yo = st["w_in"].numpy(), st["w_out"].numpy()
+
+    def port_offset(nd: int) -> tuple[float, float]:
+        # ポートマーカーは節点が属する境界の外側に描く (左辺以外にも対応)
+        i, j = int(xy[nd, 0]), int(xy[nd, 1])
+        if i == 0:
+            return -1.1, 0.0
+        if i == gr.nx - 1:
+            return 1.1, 0.0
+        if j == 0:
+            return 0.0, -1.1
+        return 0.0, 1.1
+
     for k, nd in enumerate(pn):
+        dx, dy = port_offset(int(nd))
         if yi[k] > 0.01:
             ax.scatter(
-                xy[nd, 0] - 1.1,
-                xy[nd, 1],
+                xy[nd, 0] + dx,
+                xy[nd, 1] + dy,
                 s=40 + 260 * yi[k],
                 c="#00e5ff",
                 marker="o",
@@ -987,8 +1059,8 @@ def plot(
             )
         if yo[k] > 0.01:
             ax.scatter(
-                xy[nd, 0] - 1.1,
-                xy[nd, 1],
+                xy[nd, 0] + dx,
+                xy[nd, 1] + dy,
                 s=40 + 260 * yo[k],
                 c="#ffffff",
                 marker="X",
