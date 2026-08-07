@@ -659,9 +659,10 @@ def solve_pipeline(
     maxiter_reopt: int = 400,
     n_prune_rounds: int = 3,
     single_ports: bool = False,
+    repair: bool = True,
     verbose: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, DesignMask]:
-    """continuation -> 刈り込み -> 再最適化 の全パイプライン.
+    """continuation -> 刈り込み -> 再最適化 -> 被覆修復 の全パイプライン.
 
     single_ports=True で「物理ポートは inlet / outlet 各 1 箇所」を強制する。
     stage A で mu_conc をランプしてポートを自然に寄せた後、刈り込み時に
@@ -715,7 +716,128 @@ def solve_pipeline(
                 f"cooling={r['cooling']:.3f} block_min/mean={r['block_min_over_mean']:.3f}"
             )
     assert mask is not None
+
+    # --- stage C: 被覆修復 (孤児ブロックへの回廊追加) ---
+    if repair and not mask.block_on.all():
+        repaired = repair_coverage(prob, cfg, x, mask, verbose=verbose)
+        if not repaired.same_as(mask):
+            mask = repaired
+            x = optimise(prob, cfg, x0=x, maxiter=maxiter_reopt, log_p_max=log_p_max, mask=mask)
+            # 回廊の実流量で block_on を採り直し (依然ゼロなら honest に未被覆)
+            final = prune(prob, cfg, x, mask, single_ports=single_ports, verbose=verbose)
+            if int(final.block_on.sum()) >= int(mask.block_on.sum()):
+                mask = final
+                x = optimise(prob, cfg, x0=x, maxiter=maxiter_reopt, log_p_max=log_p_max, mask=mask)
+            else:
+                # q-cut が回廊を潰す場合は修復位相を保持しつつ実流量で被覆を再判定
+                with torch.no_grad():
+                    st_c = state(prob, cfg, torch.tensor(x), mask)
+                pb_c = _per_block(prob, st_c["q_heat"]).numpy()
+                honest = pb_c > 1e-6 * max(float(pb_c.max()), 1e-30)
+                mask = DesignMask(mask.edge_on, mask.port_in_on, mask.port_out_on, honest)
+            if verbose:
+                r = report(prob, cfg, x, mask)
+                print(
+                    f"  repair: blocks={int(mask.block_on.sum())}/{len(mask.block_on)} "
+                    f"cooling={r['cooling']:.3f} log_diss={r['log_diss']:.3f}"
+                )
     return x_raw, x, mask
+
+
+# ==========================================================================
+# 被覆修復 (stage C): 孤児ブロックを最短回廊で主成分ループに組み込む
+# ==========================================================================
+def _grid_adjacency(gr: GridGraph) -> list[list[tuple[int, int]]]:
+    adj: list[list[tuple[int, int]]] = [[] for _ in range(gr.n_nodes)]
+    tail, head = gr.tail.numpy(), gr.head.numpy()
+    for e in range(gr.n_edges):
+        u, v = int(tail[e]), int(head[e])
+        adj[u].append((v, e))
+        adj[v].append((u, e))
+    return adj
+
+
+def _shortest_path_edges(
+    adj: list[list[tuple[int, int]]],
+    src: set[int],
+    dst: set[int],
+    blocked_edges: set[int],
+) -> list[int] | None:
+    """多始点 BFS で src から dst への最短経路の辺 id 列を返す (なければ None)."""
+    from collections import deque
+
+    prev: dict[int, tuple[int, int]] = {}
+    seen = set(src)
+    dq = deque(src)
+    hit = None
+    while dq:
+        u = dq.popleft()
+        if u in dst:
+            hit = u
+            break
+        for v, e in adj[u]:
+            if v in seen or e in blocked_edges:
+                continue
+            seen.add(v)
+            prev[v] = (u, e)
+            dq.append(v)
+    if hit is None:
+        return None
+    path: list[int] = []
+    u = hit
+    while u not in src:
+        pu, e = prev[u]
+        path.append(e)
+        u = pu
+    return path
+
+
+def repair_coverage(
+    prob: Problem,
+    cfg: Config,
+    x: np.ndarray,
+    mask: DesignMask,
+    verbose: bool = False,
+) -> DesignMask:
+    """孤児ブロック (block_on=False) を主成分に回廊 2 本で接続する.
+
+    貪欲 Steiner 増強: 各孤児について footprint 4 辺を有効化し、対角 2 隅から
+    アクティブ集合へ辺素な最短回廊を 2 本引く。着地点が同一節点だと
+    ぶら下がりループ (循環ゼロ) になるため、2 本目は 1 本目の着地点を
+    除外して探索する。流れの実量は続く再最適化 (softmin が孤児を
+    含むようになる) が担う。
+    """
+    gr = prob.graph
+    adj = _grid_adjacency(gr)
+    edge_on = mask.edge_on.copy()
+    orphans = np.nonzero(~mask.block_on)[0]
+    block_on = mask.block_on.copy()
+    for b in orphans:
+        bn = set(int(n) for n in prob.block_nodes[b].numpy())
+        edge_on[prob.block_edges[b].numpy()] = True
+        act = set(_active_nodes(gr, edge_on)) - bn
+        corners = (min(bn), max(bn))  # footprint の対角 2 隅
+        used: set[int] = set()
+        land: set[int] = set()
+        n_paths = 0
+        for corner in corners:
+            p = _shortest_path_edges(adj, {corner}, act - land, used)
+            if p is None:
+                continue
+            edge_on[p] = True
+            used |= set(p)
+            # 着地点 = 経路の terminal 側節点を除外集合へ
+            tail_np, head_np = gr.tail.numpy(), gr.head.numpy()
+            for e in p:
+                for nd in (int(tail_np[e]), int(head_np[e])):
+                    if nd in act:
+                        land.add(nd)
+            n_paths += 1
+        if n_paths >= 2:
+            block_on[b] = True
+        if verbose:
+            print(f"  repair: block {b} -> {n_paths} corridors")
+    return DesignMask(edge_on, mask.port_in_on.copy(), mask.port_out_on.copy(), block_on)
 
 
 # ==========================================================================
