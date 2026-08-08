@@ -164,6 +164,22 @@ class Config:
     # 幾何 (格子ピッチ = 1 に対する比)
     d_min: float = 0.60
     d_max: float = 0.75
+    # --- 固体伝熱レイヤー (mode="thermal" で有効) ---
+    # 同一格子上の 2 レイヤー目として固体熱回路網を解き、目的関数を
+    # 「発熱ブロック温度の smooth-max + 分散」(温度均一化) に置き換える。
+    # 液側の熱伝達係数は層流一定 Nu 近似、温度上昇は風上 1D エネルギー収支。
+    mode: str = "fresh"  # "fresh" (鮮度スカラー) | "thermal" (固体温度)
+    cell_pitch: float = 5e-3  # 格子ピッチ [m]
+    t_plate: float = 3e-3  # ベース板厚 (伝導層) [m]
+    duct_depth: float = 2e-3  # 流路深さ [m]
+    k_solid: float = 167.0  # 固体熱伝導率 [W/mK] (Al 6061)
+    k_fluid: float = 0.6  # 冷媒熱伝導率 [W/mK] (水)
+    cp_fluid: float = 4180.0  # 冷媒比熱 [J/kgK]
+    m_dot: float = 5e-3  # 総質量流量 [kg/s]
+    nu_lam: float = 3.66  # 層流一定壁温 Nusselt 数
+    q_block_w: float = 10.0  # 発熱量 / ブロック [W]
+    beta_t: float = 2.0  # ピーク温度 smooth-max の鋭さ [1/K]
+    mu_tvar: float = 0.0  # ブロック温度分散罰則 (T_ref² 正規化後)
     # SIMP
     penal: float = 3.0
     rho_floor: float = 1e-4
@@ -293,6 +309,87 @@ def physics(
     }
 
 
+def thermal(
+    prob: Problem,
+    cfg: Config,
+    rho: torch.Tensor,
+    w: torch.Tensor,
+    q: torch.Tensor,
+    b: torch.Tensor,
+) -> dict[str, torch.Tensor]:
+    """固体伝熱レイヤー: (T_s, T_f) 連成線形系を解く (mode="thermal" の本体).
+
+    2 レイヤー目の固体熱回路網 + 液側近似式:
+      固体伝導   G_s,e   = k_s · t_plate / elen        (全格子辺, 流路彫込は無視)
+      対流伝達   h_e     = Nu · k_f / D_h(w)           (層流一定 Nu 近似)
+                 G_cv,e  = rho_e · h_e · (w+2d)·L·elen (濡れ面 = 底面+側壁 2 面)
+      流体移流   C_e     = cp · m_dot · |q_e| / Q_tot   (風上 1D エネルギー収支)
+
+    節点集中化: 辺の対流を両端節点へ半分ずつ配り、対角結合
+    G_i = ½ Σ_{e∋i} G_cv,e で T_s,i と T_f,i を結ぶ。
+
+      固体:  Σ_j G_s (T_s,i - T_s,j) + G_i (T_s,i - T_f,i) = q_src,i
+      流体:  (ΣC_in + C_port_in + G_i) T_f,i - Σ C_in T_f,up - G_i T_s,i
+             = C_port_in · T_in (= 0)
+
+    温度は inlet 基準の上昇分 [K]。流れも対流も無い節点は微小対角で
+    T_f = 0 に留める。定常なので Σ q_src = 出口エンタルピー流束が厳密に成立
+    (energy balance をテストで検証)。
+    """
+    gr = prob.graph
+    n = gr.n_nodes
+    lc = cfg.cell_pitch
+
+    # --- 対流結合 (辺 -> 節点半分ずつ) ---
+    w_m = w * lc
+    d_h = 2.0 * w_m * cfg.duct_depth / (w_m + cfg.duct_depth)
+    h = cfg.nu_lam * cfg.k_fluid / d_h
+    a_wet = (w_m + 2.0 * cfg.duct_depth) * gr.elen * lc
+    g_cv = rho * h * a_wet
+    g_node = 0.5 * (torch.zeros(n).index_add_(0, gr.tail, g_cv).index_add_(0, gr.head, g_cv))
+
+    # --- 固体伝導 Laplacian (正方格子: G = k_s·t/elen) ---
+    g_s = cfg.k_solid * cfg.t_plate / gr.elen
+    lap_s = gr.laplacian(g_s)
+
+    # --- 流体移流 (風上, 質量保存済みの q を利用) ---
+    c_scale = cfg.cp_fluid * cfg.m_dot / prob.q_total
+    ce_p = c_scale * torch.relu(q)  # tail -> head
+    ce_m = c_scale * torch.relu(-q)  # head -> tail
+    c_port_in = c_scale * torch.relu(b)
+    c_in = torch.zeros(n).index_add_(0, gr.head, ce_p).index_add_(0, gr.tail, ce_m) + c_port_in
+    rows = torch.cat([gr.head, gr.tail])
+    cols = torch.cat([gr.tail, gr.head])
+    adv = torch.zeros(n, n).index_put_((rows, cols), torch.cat([ce_p, ce_m]), accumulate=True)
+
+    # --- 熱源 (ブロック footprint 節点に等配分) ---
+    q_src = torch.zeros(n)
+    for nd in prob.block_nodes:
+        q_src.index_add_(0, nd, torch.full((len(nd),), cfg.q_block_w / len(nd)))
+
+    # --- 連成線形系 [[A_ss, A_sf], [A_fs, A_ff]] [T_s; T_f] = [q_src; 0] ---
+    eye = torch.eye(n)
+    a_ss = lap_s + torch.diag(g_node) + EPS * eye
+    a_sf = -torch.diag(g_node)
+    a_ff = torch.diag(c_in + g_node + 1e-9) - adv
+    a_full = torch.cat([torch.cat([a_ss, a_sf], dim=1), torch.cat([a_sf, a_ff], dim=1)], dim=0)
+    t_all = torch.linalg.solve(a_full, torch.cat([q_src, torch.zeros(n)]))
+    t_s, t_f = t_all[:n], t_all[n:]
+
+    heat_out = (c_scale * torch.relu(-b) * t_f).sum()  # 出口エンタルピー流束 [W]
+    return {"T_s": t_s, "T_f": t_f, "q_src": q_src, "heat_out": heat_out, "g_conv": g_cv}
+
+
+def block_temps(prob: Problem, t_s: torch.Tensor) -> torch.Tensor:
+    """各発熱ブロック footprint 節点の平均固体温度 [K]."""
+    return torch.stack([t_s[nd].mean() for nd in prob.block_nodes])
+
+
+def t_ref_scale(prob: Problem, cfg: Config) -> float:
+    """目的関数の温度正規化スケール = 全熱を受けた冷媒の温度上昇 [K]."""
+    return cfg.q_block_w * len(prob.block_nodes) / (cfg.cp_fluid * cfg.m_dot)
+
+
 def state(
     prob: Problem, cfg: Config, x: torch.Tensor, mask: DesignMask | None = None
 ) -> dict[str, torch.Tensor]:
@@ -318,17 +415,28 @@ def objective(
     gr = prob.graph
     st = state(prob, cfg, x, mask)
 
-    per_block = _per_block(prob, st["q_heat"])
-    if mask is not None:
-        # 凍結位相で到達不能なブロックは softmin から外す (勾配死の防止)。
-        per_block = per_block[torch.from_numpy(mask.block_on)]
-    logs = torch.log(per_block + 1e-14)
-    worst = -torch.logsumexp(-prob.beta * logs, dim=0) / prob.beta
+    if cfg.mode == "thermal":
+        # 固体温度ベース: ブロック温度の smooth-max (ピーク) + 分散 (均一化)。
+        # 伝導が全ブロックへ勾配を届けるため block_on による除外は不要。
+        th = thermal(prob, cfg, st["rho"], st["w"], st["q"], st["b"])
+        t_b = block_temps(prob, th["T_s"])
+        t_ref = t_ref_scale(prob, cfg)
+        t_peak = torch.logsumexp(cfg.beta_t * t_b, dim=0) / cfg.beta_t
+        j = t_peak / t_ref
+        if cfg.mu_tvar > 0:
+            j = j + cfg.mu_tvar * t_b.var() / t_ref**2
+    else:
+        per_block = _per_block(prob, st["q_heat"])
+        if mask is not None:
+            # 凍結位相で到達不能なブロックは softmin から外す (勾配死の防止)。
+            per_block = per_block[torch.from_numpy(mask.block_on)]
+        logs = torch.log(per_block + 1e-14)
+        worst = -torch.logsumexp(-prob.beta * logs, dim=0) / prob.beta
+        j = -worst
 
     d_nom = 0.5 * (cfg.d_min + cfg.d_max)
     v_target = cfg.vol_frac * float((gr.elen * d_nom**2).sum())
 
-    j = -worst
     j = j + cfg.mu_vol * torch.relu(st["volume"] / v_target - 1.0) ** 2
     if cfg.mu_bin > 0:
         j = j + cfg.mu_bin * (st["rho"] * (1.0 - st["rho"])).mean()
@@ -336,7 +444,7 @@ def objective(
         j = j + cfg.mu_conc * (2.0 - (st["w_in"] ** 2).sum() - (st["w_out"] ** 2).sum())
     if cfg.mu_overlap > 0:
         j = j + cfg.mu_overlap * (st["w_in"] * st["w_out"]).sum()
-    if cfg.mu_uni > 0:
+    if cfg.mu_uni > 0 and cfg.mode != "thermal":
         j = j + cfg.mu_uni * logs.var()
     if cfg.mu_vu > 0:
         # 流速 v=|q|/w² の空間 CV²。重みは材料存在 rho·L (SIMP と整合する滑らかな重み)
@@ -676,10 +784,11 @@ def solve_pipeline(
         mask    最終凍結マスク (edge_on の外の流量は厳密ゼロ)
     """
     # --- stage A: continuation (penal / beta / mu_bin を段階強化) ---
-    # 空間均一化罰則 (mu_vu / mu_phiu) は位相探索を不安定化させ被覆が崩壊する
-    # (実測: 14/32) ため stage A では無効化し、位相凍結後の stage B でのみ課す。
-    mu_vu_user, mu_phiu_user = cfg.mu_vu, cfg.mu_phiu
-    cfg.mu_vu, cfg.mu_phiu = 0.0, 0.0
+    # 空間均一化罰則 (mu_vu / mu_phiu / mu_tvar) は位相探索を不安定化させ被覆が
+    # 崩壊する (実測: 14/32) ため stage A では無効化し、位相凍結後の stage B での
+    # み課す。
+    mu_vu_user, mu_phiu_user, mu_tvar_user = cfg.mu_vu, cfg.mu_phiu, cfg.mu_tvar
+    cfg.mu_vu, cfg.mu_phiu, cfg.mu_tvar = 0.0, 0.0, 0.0
     stages = [(1.0, 4.0, 0.3), (2.0, 6.0, 1.0), (3.0, 8.0, 3.0)]
     mu_conc_ramp = (0.0, 0.5, 2.0)  # single_ports 時のみ使用
     x: np.ndarray | None = None
@@ -699,13 +808,20 @@ def solve_pipeline(
     x_raw = x.copy()
 
     # --- stage B: prune -> reopt を繰り返す (逐次刈り込み) ---
-    cfg.mu_vu, cfg.mu_phiu = mu_vu_user, mu_phiu_user  # 均一化は凍結位相上でのみ
+    # 均一化は凍結位相上でのみ
+    cfg.mu_vu, cfg.mu_phiu, cfg.mu_tvar = mu_vu_user, mu_phiu_user, mu_tvar_user
     prob.beta = 12.0  # 刈り込み後は worst-block を直接押し上げる
     mask: DesignMask | None = None
     for rnd in range(n_prune_rounds):
         new_mask = prune(prob, cfg, x, mask, single_ports=single_ports, verbose=verbose)
         if new_mask.same_as(mask):
             break
+        if mask is None:
+            # 初回凍結時: stage A の体積制約が w ロジットを飽和させている
+            # (sigmoid 勾配死 → 以後サイジングが一切動かない実測あり) ため、
+            # 符号 (太い/細いの序列) を保ったまま再中心化して勾配を復活させる。
+            n_e = prob.graph.n_edges
+            x[n_e : 2 * n_e] = np.clip(x[n_e : 2 * n_e], -2.0, 2.0)
         mask = new_mask
         x = optimise(prob, cfg, x0=x, maxiter=maxiter_reopt, log_p_max=log_p_max, mask=mask)
         if verbose:
@@ -897,6 +1013,28 @@ def report(
         "leak_flow_frac": leak_frac,
         "leak_flow_masked": leak_abs,
         **_uniformity_metrics(prob, st, mask),
+        **_thermal_metrics(prob, cfg, st),
+    }
+
+
+def _thermal_metrics(prob: Problem, cfg: Config, st: dict[str, torch.Tensor]) -> dict[str, float]:
+    """固体温度指標 (mode="thermal" のみ)。温度は inlet 基準の上昇分 [K]."""
+    if cfg.mode != "thermal":
+        return {}
+    with torch.no_grad():
+        th = thermal(prob, cfg, st["rho"], st["w"], st["q"], st["b"])
+        t_b = block_temps(prob, th["T_s"]).numpy()
+        q_in = cfg.q_block_w * len(prob.block_nodes)
+        bal = abs(float(th["heat_out"]) - q_in) / q_in
+        c_out = torch.relu(-st["b"]) * (cfg.cp_fluid * cfg.m_dot / prob.q_total)
+        t_out = float((c_out * th["T_f"]).sum() / (c_out.sum() + EPS))
+    return {
+        "T_peak": float(t_b.max()),
+        "T_block_mean": float(t_b.mean()),
+        "T_block_std": float(t_b.std()),
+        "T_block_min": float(t_b.min()),
+        "T_fluid_out": t_out,
+        "heat_balance_rel": bal,
     }
 
 
@@ -1092,6 +1230,7 @@ def plot(
     rho_cut: float = 0.35,
     mask: DesignMask | None = None,
     color_by: str = "phi",
+    t_range: tuple[float, float] | None = None,
 ) -> None:
     """流路幅をデータ座標に忠実に描く.
 
@@ -1101,6 +1240,7 @@ def plot(
     color_by:
       "phi" — 鮮度スカラー (辺両端の平均、turbo、0-1 固定スケール)
       "v"   — 断面平均流速 v = |q| / w² (magma、その図の最大値で正規化)
+      "T"   — 固体温度場 T_s を背景に描画、流路は半透明で上に重ねる
     """
     import matplotlib.patches as mpatches
     import matplotlib.pyplot as plt
@@ -1110,7 +1250,33 @@ def plot(
         st = state(prob, cfg, torch.tensor(x), mask)
     xy = gr.coords()
     rn, wn, phin = st["rho"].numpy(), st["w"].numpy(), st["phi"].numpy()
-    if color_by == "v":
+    if color_by == "T":
+        with torch.no_grad():
+            th = thermal(prob, cfg, st["rho"], st["w"], st["q"], st["b"])
+        ts = th["T_s"].numpy()
+        t2d = ts.reshape(gr.ny, gr.nx)
+        vmin, vmax_t = t_range if t_range is not None else (float(ts.min()), float(ts.max()))
+        ax.imshow(
+            t2d,
+            origin="lower",
+            extent=(-0.5, gr.nx - 0.5, -0.5, gr.ny - 0.5),
+            cmap="inferno",
+            vmin=vmin,
+            vmax=vmax_t,
+            zorder=1,
+        )
+        ax.text(
+            0.02,
+            0.01,
+            f"T_s = [{ts.min():.1f}, {ts.max():.1f}] K over inlet",
+            color="w",
+            fontsize=8,
+            transform=ax.transAxes,
+        )
+
+        def edge_color(e: int, a: int, b: int) -> tuple:
+            return (0.55, 0.8, 1.0, 0.55)  # 流路は半透明 (温度場を透かす)
+    elif color_by == "v":
         vel = np.abs(st["q"].numpy()) / wn**2  # 断面 w×w (深さ ≈ 幅) を仮定
         vmax = max(float(vel.max()), 1e-30)
         cmap = plt.get_cmap("magma")
@@ -1145,13 +1311,14 @@ def plot(
             )
         )
     draw = np.nonzero(mask.edge_on if mask is not None else (rn > rho_cut))[0]
+    alpha_cap = 0.55 if color_by == "T" else 1.0
     for e in draw:
         a, b = int(gr.tail[e]), int(gr.head[e])
         ax.plot(
             [xy[a, 0], xy[b, 0]],
             [xy[a, 1], xy[b, 1]],
             lw=wn[e] * ppc,
-            alpha=float(min(1.0, rn[e])),
+            alpha=float(min(alpha_cap, rn[e])),
             color=edge_color(e, a, b),
             solid_capstyle="round",
             zorder=2,

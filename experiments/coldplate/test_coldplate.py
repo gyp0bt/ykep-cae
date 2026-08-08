@@ -171,3 +171,73 @@ class TestColdplatePhysics:
         r = cp.report(small_problem, cfg, x_fin, mask)
         assert 0.0 <= r["block_cv"] < 1.0
         assert r["block_min_over_mean"] > 0.5
+
+
+@pytest.fixture(scope="module")
+def thermal_pipeline_result(small_problem: cp.Problem):
+    cfg = cp.Config(vol_frac=0.25, mode="thermal")
+    _, x_fin, mask = cp.solve_pipeline(
+        small_problem, cfg, log_p_max=4.0, maxiter_stage=150, maxiter_reopt=150, verbose=False
+    )
+    return cfg, x_fin, mask
+
+
+class TestColdplateThermalAPI:
+    """固体伝熱モード (mode="thermal"): API・勾配・収束."""
+
+    def test_gradient_thermal(self, small_problem: cp.Problem) -> None:
+        cfg = cp.Config(mode="thermal")
+        assert cp.check_gradient(small_problem, cfg, log_p_max=4.0) < 1e-4
+
+    def test_thermal_pipeline_converges(
+        self, small_problem: cp.Problem, thermal_pipeline_result
+    ) -> None:
+        cfg, x_fin, mask = thermal_pipeline_result
+        r = cp.report(small_problem, cfg, x_fin, mask)
+        assert np.isfinite(r["T_peak"])
+        assert r["blocks_covered"] == 6
+        assert r["grey"] == 0.0
+        mc = cp.mass_check(small_problem, cfg, x_fin, mask)
+        cc = cp.connectivity_check(small_problem, cfg, x_fin, mask=mask)
+        assert mc["leak_inactive"] == 0.0
+        assert cc["connected"]
+
+
+class TestColdplateThermalPhysics:
+    """固体伝熱モードの物理テスト: エネルギー収支・温度場の妥当性."""
+
+    def test_energy_balance(self, small_problem: cp.Problem, thermal_pipeline_result) -> None:
+        """定常収支: Σ 発熱 = 出口エンタルピー流束 (連成系の整合)."""
+        cfg, x_fin, mask = thermal_pipeline_result
+        r = cp.report(small_problem, cfg, x_fin, mask)
+        assert r["heat_balance_rel"] < 1e-6
+
+    def test_temperature_positive_and_ordered(
+        self, small_problem: cp.Problem, thermal_pipeline_result
+    ) -> None:
+        """温度上昇は正、固体ブロック温度 > 出口流体温度 > 0 (熱は固体→流体)."""
+        cfg, x_fin, mask = thermal_pipeline_result
+        r = cp.report(small_problem, cfg, x_fin, mask)
+        assert r["T_fluid_out"] > 0.0
+        assert r["T_block_min"] > r["T_fluid_out"]
+
+    def test_fluid_outlet_equals_tref(
+        self, small_problem: cp.Problem, thermal_pipeline_result
+    ) -> None:
+        """全熱吸収なら出口温度 = T_ref = ΣQ/(cp·m_dot) (単一流路網では厳密)."""
+        cfg, x_fin, mask = thermal_pipeline_result
+        r = cp.report(small_problem, cfg, x_fin, mask)
+        t_ref = cp.t_ref_scale(small_problem, cfg)
+        assert r["T_fluid_out"] == pytest.approx(t_ref, rel=1e-6)
+
+    def test_fluid_below_solid_everywhere_on_channels(
+        self, small_problem: cp.Problem, thermal_pipeline_result
+    ) -> None:
+        """流路上の節点では T_f ≤ T_s (熱流の向きが正しい)."""
+        cfg, x_fin, mask = thermal_pipeline_result
+        with torch.no_grad():
+            st = cp.state(small_problem, cfg, torch.tensor(x_fin), mask)
+            th = cp.thermal(small_problem, cfg, st["rho"], st["w"], st["q"], st["b"])
+        act = cp._active_nodes(small_problem.graph, mask.edge_on)
+        ts, tf = th["T_s"].numpy(), th["T_f"].numpy()
+        assert np.all(tf[act] <= ts[act] + 1e-9)
