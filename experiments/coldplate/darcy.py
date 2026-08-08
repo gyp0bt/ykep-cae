@@ -464,18 +464,19 @@ def panel(
     vmin: float | None = None,
     vmax: float | None = None,
     fig=None,
+    norm=None,
 ) -> None:
     from matplotlib.patches import Rectangle
 
     ext = (0.0, geo.ncx * geo.h * 1e3, 0.0, geo.ncy * geo.h * 1e3)
+    scale = {"norm": norm} if norm is not None else {"vmin": vmin, "vmax": vmax}
     im = ax.imshow(
         field.reshape(geo.ncy, geo.ncx),
         origin="lower",
         extent=ext,
         cmap=cmap,
-        vmin=vmin,
-        vmax=vmax,
         interpolation="nearest",
+        **scale,
     )
     r = geo.ncx // geo.bx
     pitch = geo.h * r * 1e3
