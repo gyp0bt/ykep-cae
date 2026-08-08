@@ -1,6 +1,6 @@
 # 冷却流路 概念設計ソルバ (coldplate v2)
 
-[<- リポジトリ README](../../README.md)
+[<- リポジトリ README](../../README.md) | **セッション引き継ぎ → [HANDOVER.md](HANDOVER.md)**
 
 **注意**: 本ディレクトリは xkep-cae-fluid 本体 (FDM/FVM ソルバー・Process Architecture)
 とはほぼ独立した実験タスク。CI 対象外で、追加依存に torch を使う
