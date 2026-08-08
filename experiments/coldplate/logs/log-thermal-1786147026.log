@@ -1,0 +1,69 @@
+
+================ fresh (phi objective) (mode=fresh, mu_tvar=0.0) ================
+T_ref = 3.828 K  (Q=80 W, m_dot=5.0 g/s)
+  stage penal=1 beta=4: cooling=-4.180 grey=0.087 leak_frac=0.310
+  stage penal=2 beta=6: cooling=-4.103 grey=0.042 leak_frac=0.053
+  stage penal=3 beta=8: cooling=-4.222 grey=0.021 leak_frac=0.041
+  prune: rho_cut=0.30 -> flow-capable main comp 56 edges  port_share=1.000  coverage 8/8
+  prune: blocks covered 6/8
+  round 0: edges=56 blocks=6/8 cooling=-3.833 block_min/mean=0.887
+  prune: unused-channel removal -> 56 edges
+  prune: blocks covered 6/8
+  repair: block 0 -> 2 corridors
+  repair: block 4 -> 2 corridors
+  prune: unused-channel removal -> 71 edges
+  prune: blocks covered 8/8
+  repair: blocks=8/8 cooling=-3.945 log_diss=3.928
+pipeline 28s
+  T_peak=39.629  T_block_mean=38.442  T_block_std=1.115  T_block_min=35.779  T_fluid_out=3.828  heat_balance_rel=0.000  blocks_covered=8  log_diss=3.928  vel_cv=0.479
+  mass_check {'resid_max': 5.352882581632912e-10, 'leak_inactive': 0.0}
+  connectivity {'connected': True, 'n_src_components': 1, 'n_snk_components': 1, 'n_kept_edges': 71}
+  inlet (11,5)  outlet (0,14)
+  per-block T [K over inlet]: [39.63 38.38 38.18 35.78 39.4  38.42 39.06 38.69]
+
+================ thermal (peak-T objective) (mode=thermal, mu_tvar=0.0) ================
+T_ref = 3.828 K  (Q=80 W, m_dot=5.0 g/s)
+  stage penal=1 beta=4: cooling=-4.745 grey=0.121 leak_frac=0.235
+  stage penal=2 beta=6: cooling=-4.529 grey=0.053 leak_frac=0.012
+  stage penal=3 beta=8: cooling=-4.497 grey=0.040 leak_frac=0.006
+  prune: rho_cut=0.50 -> flow-capable main comp 107 edges  port_share=0.986  coverage 8/8
+  prune: blocks covered 8/8
+  round 0: edges=107 blocks=8/8 cooling=-4.353 block_min/mean=0.777
+  prune: unused-channel removal -> 107 edges
+  prune: blocks covered 8/8
+pipeline 45s
+  T_peak=27.332  T_block_mean=26.343  T_block_std=0.662  T_block_min=25.490  T_fluid_out=3.828  heat_balance_rel=0.000  blocks_covered=8  log_diss=3.865  vel_cv=0.868
+  mass_check {'resid_max': 1.189940201928863e-09, 'leak_inactive': 0.0}
+  connectivity {'connected': True, 'n_src_components': 1, 'n_snk_components': 1, 'n_kept_edges': 107}
+  inlet (11,4)  outlet (5,16)
+  per-block T [K over inlet]: [27.14 26.06 25.95 25.6  25.49 26.24 26.94 27.33]
+
+================ t-unif (peak-T + variance) (mode=thermal, mu_tvar=10.0) ================
+T_ref = 3.828 K  (Q=80 W, m_dot=5.0 g/s)
+  stage penal=1 beta=4: cooling=-4.745 grey=0.121 leak_frac=0.235
+  stage penal=2 beta=6: cooling=-4.529 grey=0.053 leak_frac=0.012
+  stage penal=3 beta=8: cooling=-4.497 grey=0.040 leak_frac=0.006
+  prune: rho_cut=0.50 -> flow-capable main comp 107 edges  port_share=0.986  coverage 8/8
+  prune: blocks covered 8/8
+  round 0: edges=107 blocks=8/8 cooling=-4.421 block_min/mean=0.762
+  prune: unused-channel removal -> 107 edges
+  prune: blocks covered 8/8
+pipeline 45s
+  T_peak=27.309  T_block_mean=26.425  T_block_std=0.628  T_block_min=25.578  T_fluid_out=3.828  heat_balance_rel=0.000  blocks_covered=8  log_diss=3.908  vel_cv=0.911
+  mass_check {'resid_max': 1.224557122370129e-09, 'leak_inactive': 0.0}
+  connectivity {'connected': True, 'n_src_components': 1, 'n_snk_components': 1, 'n_kept_edges': 107}
+  inlet (11,4)  outlet (5,16)
+  per-block T [K over inlet]: [27.26 26.21 26.11 25.7  25.58 26.3  26.94 27.31]
+
+--- 比較 (2x4, cap=4.0, 全ケース温度は同一物理で評価) ---
+  T_peak             fresh=39.629  thermal=27.332  t-unif=27.309
+  T_block_mean       fresh=38.442  thermal=26.343  t-unif=26.425
+  T_block_std        fresh=1.115  thermal=0.662  t-unif=0.628
+  T_block_min        fresh=35.779  thermal=25.490  t-unif=25.578
+  T_fluid_out        fresh=3.828  thermal=3.828  t-unif=3.828
+  heat_balance_rel   fresh=0.000  thermal=0.000  t-unif=0.000
+  blocks_covered     fresh=8  thermal=8  t-unif=8
+  log_diss           fresh=3.928  thermal=3.865  t-unif=3.908
+  vel_cv             fresh=0.479  thermal=0.868  t-unif=0.911
+saved: /home/user/ykep-cae/experiments/coldplate/output/coldplate_thermal.png
+saved: /home/user/ykep-cae/experiments/coldplate/output/coldplate_thermal_result.npz
