@@ -1,0 +1,59 @@
+
+================ single-port, log_p_max = 3.5 ================
+  stage penal=1 beta=4: cooling=-5.302 grey=0.215 leak_frac=0.382
+  stage penal=2 beta=6: cooling=-5.208 grey=0.057 leak_frac=0.046
+  stage penal=3 beta=8: cooling=-5.170 grey=0.049 leak_frac=0.031
+  prune: rho_cut=0.02 -> flow-capable main comp 141 edges  port_share=1.000  coverage 32/32
+  prune: blocks covered 17/32
+  round 0: edges=141 blocks=17/32 cooling=-4.946 block_min/mean=0.448
+  prune: unused-channel removal -> 141 edges
+  prune: blocks covered 17/32
+pipeline 71s
+  cooling=-4.946  blocks_covered=17  block_cv=0.268  block_min_over_mean=0.448  log_diss=4.179  eff_ports_in=1.000  eff_ports_out=1.000
+  mass_check {'resid_max': 2.403146348584073e-09, 'leak_inactive': 0.0}
+  connectivity {'connected': True, 'n_src_components': 1, 'n_snk_components': 1, 'n_kept_edges': 141}
+  inlet : j=19  share=1.000
+  outlet: j= 3  share=1.000
+
+================ single-port, log_p_max = 4.5 ================
+  stage penal=1 beta=4: cooling=-5.102 grey=0.138 leak_frac=0.402
+  stage penal=2 beta=6: cooling=-5.019 grey=0.098 leak_frac=0.158
+  stage penal=3 beta=8: cooling=-5.050 grey=0.041 leak_frac=0.042
+  prune: rho_cut=0.20 -> flow-capable main comp 217 edges  port_share=1.000  coverage 31/32
+  prune: blocks covered 28/32
+  round 0: edges=217 blocks=28/32 cooling=-4.954 block_min/mean=0.611
+  prune: unused-channel removal -> 217 edges
+  prune: blocks covered 28/32
+pipeline 80s
+  cooling=-4.954  blocks_covered=28  block_cv=0.268  block_min_over_mean=0.611  log_diss=4.054  eff_ports_in=1.000  eff_ports_out=1.000
+  mass_check {'resid_max': 4.27544663561541e-09, 'leak_inactive': 0.0}
+  connectivity {'connected': True, 'n_src_components': 1, 'n_snk_components': 1, 'n_kept_edges': 217}
+  inlet : j=21  share=1.000
+  outlet: j= 1  share=1.000
+
+================ single-port, log_p_max = 5.5 ================
+  stage penal=1 beta=4: cooling=-5.009 grey=0.071 leak_frac=0.513
+  stage penal=2 beta=6: cooling=-4.861 grey=0.082 leak_frac=0.349
+  stage penal=3 beta=8: cooling=-4.794 grey=0.082 leak_frac=0.153
+  prune: rho_cut=0.20 -> flow-capable main comp 235 edges  port_share=1.000  coverage 32/32
+  prune: blocks covered 32/32
+  round 0: edges=235 blocks=32/32 cooling=-5.035 block_min/mean=0.606
+  prune: unused-channel removal -> 235 edges
+  prune: blocks covered 32/32
+pipeline 128s
+  cooling=-5.035  blocks_covered=32  block_cv=0.258  block_min_over_mean=0.606  log_diss=4.350  eff_ports_in=1.000  eff_ports_out=1.000
+  mass_check {'resid_max': 6.879264047299216e-09, 'leak_inactive': 0.0}
+  connectivity {'connected': True, 'n_src_components': 1, 'n_snk_components': 1, 'n_kept_edges': 235}
+  inlet : j=22  share=1.000
+  outlet: j= 1  share=1.000
+
+selected cap = 5.5 (log_diss = 4.350)
+
+--- distributed vs single-port ---
+  cooling              dist=-5.143  single=-5.035
+  blocks_covered       dist=32  single=32
+  block_cv             dist=0.302  single=0.258
+  block_min_over_mean  dist=0.658  single=0.606
+  log_diss             dist=3.506  single=4.350
+saved: /home/user/ykep-cae/experiments/coldplate/output/coldplate_single_port.png
+saved: /home/user/ykep-cae/experiments/coldplate/output/coldplate_single_port_result.npz

@@ -1,0 +1,20 @@
+  stage penal=1 beta=4: cooling=-5.298 grey=0.175 leak_frac=0.309
+  stage penal=2 beta=6: cooling=-5.244 grey=0.078 leak_frac=0.068
+  stage penal=3 beta=8: cooling=-5.175 grey=0.065 leak_frac=0.020
+  prune: rho_cut=0.40 -> flow-capable main comp 217 edges  port_share=0.990  coverage 32/32
+  prune: blocks covered 32/32
+  round 0: edges=217 blocks=32/32 cooling=-5.351 block_min/mean=0.594
+  prune: unused-channel removal -> 216 edges
+  prune: blocks covered 32/32
+  round 1: edges=216 blocks=32/32 cooling=-5.351 block_min/mean=0.593
+  prune: unused-channel removal -> 215 edges
+  prune: blocks covered 32/32
+  round 2: edges=215 blocks=32/32 cooling=-5.329 block_min/mean=0.611
+pipeline 159s
+  cooling: -5.328924265131814
+  blocks_covered: 32
+  block_cv: 0.21619671022124168
+  block_min_over_mean: 0.6106544883843419
+  eff_ports_in: 4.4458933006627115
+  eff_ports_out: 3.926423534526084
+mass: {'resid_max': 4.802909403522904e-09, 'leak_inactive': 0.0}

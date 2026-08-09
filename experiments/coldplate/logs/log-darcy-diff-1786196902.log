@@ -1,0 +1,5 @@
+g=10.0: dp=26.41Pa T_peak=8.895K T_std=0.213K solidity=0.043
+g=1.0: dp=29.14Pa T_peak=7.469K T_std=0.101K solidity=0.060
+g=0.1: dp=44.54Pa T_peak=6.318K T_std=0.113K solidity=0.128
+g=0.01: dp=117.31Pa T_peak=5.850K T_std=0.108K solidity=0.250
+saved: /home/user/ykep-cae/experiments/coldplate/output/coldplate_darcy_diff.png

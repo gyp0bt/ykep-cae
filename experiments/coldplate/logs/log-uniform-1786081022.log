@@ -1,0 +1,51 @@
+
+================ baseline (mu_vu=0.0, mu_phiu=0.0) ================
+  stage penal=1 beta=4: cooling=-5.157 grey=0.393 leak_frac=0.688
+  stage penal=2 beta=6: cooling=-4.940 grey=0.197 leak_frac=0.305
+  stage penal=3 beta=8: cooling=-4.883 grey=0.071 leak_frac=0.217
+  prune: rho_cut=0.10 -> flow-capable main comp 196 edges  port_share=1.000  coverage 31/32
+  prune: blocks covered 28/32
+  round 0: edges=196 blocks=28/32 cooling=-4.811 block_min/mean=0.773
+  prune: unused-channel removal -> 193 edges
+  prune: blocks covered 28/32
+  round 1: edges=193 blocks=28/32 cooling=-4.811 block_min/mean=0.772
+  prune: unused-channel removal -> 193 edges
+  prune: blocks covered 28/32
+pipeline 135s
+  cooling=-4.811  blocks_covered=28  block_min_over_mean=0.772  log_diss=4.218  vel_cv=0.893  phi_block_mean=0.519  phi_block_std=0.142  phi_block_min=0.291  phi_block_max=0.834
+  mass_check {'resid_max': 6.712560285393465e-09, 'leak_inactive': 0.0}
+  connectivity {'connected': True, 'n_src_components': 1, 'n_snk_components': 1, 'n_kept_edges': 193}
+  inlet : node (17,18)  share=1.000
+  outlet: node (0,2)  share=1.000
+
+================ uniform (mu_vu=2.0, mu_phiu=25.0) ================
+  stage penal=1 beta=4: cooling=-5.240 grey=0.041 leak_frac=0.614
+  stage penal=2 beta=6: cooling=-5.031 grey=0.226 leak_frac=0.549
+  stage penal=3 beta=8: cooling=-5.210 grey=0.142 leak_frac=0.338
+  prune: rho_cut=0.10 -> flow-capable main comp 163 edges  port_share=0.714  coverage 23/32
+  prune: blocks covered 14/32
+  round 0: edges=163 blocks=14/32 cooling=-4.587 block_min/mean=0.554
+  prune: unused-channel removal -> 153 edges
+  prune: blocks covered 14/32
+  round 1: edges=153 blocks=14/32 cooling=-4.586 block_min/mean=0.554
+  prune: unused-channel removal -> 153 edges
+  prune: blocks covered 14/32
+pipeline 131s
+  cooling=-4.586  blocks_covered=14  block_min_over_mean=0.554  log_diss=5.383  vel_cv=0.529  phi_block_mean=0.595  phi_block_std=0.204  phi_block_min=0.335  phi_block_max=0.928
+  mass_check {'resid_max': 1.248665282803374e-08, 'leak_inactive': 0.0}
+  connectivity {'connected': True, 'n_src_components': 1, 'n_snk_components': 1, 'n_kept_edges': 153}
+  inlet : node (17,16)  share=1.000
+  outlet: node (0,5)  share=1.000
+
+--- baseline vs uniform ---
+  cooling              base=-4.811  unif=-4.586
+  blocks_covered       base=28  unif=14
+  block_min_over_mean  base=0.772  unif=0.554
+  log_diss             base=4.218  unif=5.383
+  vel_cv               base=0.893  unif=0.529
+  phi_block_mean       base=0.519  unif=0.595
+  phi_block_std        base=0.142  unif=0.204
+  phi_block_min        base=0.291  unif=0.335
+  phi_block_max        base=0.834  unif=0.928
+saved: /home/user/ykep-cae/experiments/coldplate/output/coldplate_uniform.png
+saved: /home/user/ykep-cae/experiments/coldplate/output/coldplate_uniform_result.npz
