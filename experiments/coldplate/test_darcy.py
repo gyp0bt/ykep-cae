@@ -280,3 +280,111 @@ class TestPinFin:
         t_pin = dc.evaluate(cfg_pin, geo, rand_field)["T_peak"]
         t_old = dc.evaluate(cfg_old, geo, rand_field)["T_peak"]
         assert t_pin > t_old
+
+
+class TestGranularity:
+    def test_expand_arbitrary_design_grid(self, small):
+        """セルグリッドを割り切る任意粒度の展開 (Task 4)."""
+        _, geo = small
+        # 粗い 1 ブロック → 全セル同値
+        s1 = dc.expand(geo, torch.full((1, 1), 0.3))
+        assert torch.allclose(s1, torch.full((geo.n_cells,), 0.3))
+        # セル単位 → 恒等
+        vals = torch.arange(geo.n_cells, dtype=torch.get_default_dtype()).reshape(geo.ncy, geo.ncx)
+        assert torch.equal(dc.expand(geo, vals), vals.reshape(-1))
+
+    def test_expand_rejects_nondivisor(self, small):
+        _, geo = small
+        with pytest.raises(ValueError):
+            dc.expand(geo, torch.zeros(geo.ncy - 1, geo.ncx))
+
+    def test_objective_gradient_cell_level(self, small_pin):
+        """セル単位設計変数でも勾配が FD と一致する."""
+        cfg, geo = small_pin
+        dp_ref = dc.dp_reference(cfg, geo)
+        rng = np.random.default_rng(5)
+        xi = torch.tensor(0.5 * rng.standard_normal((geo.ncy, geo.ncx)), requires_grad=True)
+        j, _ = dc.objective(cfg, geo, xi, gamma_p=1.0, dp_ref=dp_ref)
+        (g,) = torch.autograd.grad(j, xi)
+        eps = 1e-6
+        for k in (0, geo.n_cells // 3, geo.n_cells - 1):
+            i, jj = np.unravel_index(k, xi.shape)
+            xp = xi.detach().clone()
+            xp[i, jj] += eps
+            xm = xi.detach().clone()
+            xm[i, jj] -= eps
+            jp, _ = dc.objective(cfg, geo, xp, 1.0, dp_ref)
+            jm, _ = dc.objective(cfg, geo, xm, 1.0, dp_ref)
+            fd = (float(jp) - float(jm)) / (2 * eps)
+            an = float(g[i, jj])
+            assert abs(fd - an) / max(abs(fd), abs(an), 1e-12) < 1e-5
+
+    def test_optimize_design_shape(self, small_pin):
+        cfg, geo = small_pin
+        xi = dc.optimize(cfg, geo, gamma_p=0.3, iters=5, seed=0, design_shape=(geo.ncy, geo.ncx))
+        assert xi.shape == (geo.ncy, geo.ncx)
+
+
+class TestPorts:
+    def test_center_window_concentrates_outflow(self, small_pin, rand_field):
+        """η=0 (中央) の窓では流出が中央セルに集中する."""
+        cfg, geo = small_pin
+        ports = dc.make_ports(cfg, geo, torch.tensor(0.0), torch.tensor(0.0))
+        with torch.no_grad():
+            s = dc.expand(geo, rand_field)
+            flow = dc.solve_flow(cfg, geo, s, ports=ports)
+        q_out = flow["q_out"]
+        mid = geo.ncy // 2
+        assert int(q_out.argmax()) in (mid - 1, mid)
+        assert abs(float(q_out.sum()) / (cfg.m_dot / cfg.rho_f) - 1.0) < 1e-9
+
+    def test_ports_mass_conservation(self, small_pin, rand_field):
+        cfg, geo = small_pin
+        ports = dc.make_ports(cfg, geo, torch.tensor(-1.0), torch.tensor(1.5))
+        with torch.no_grad():
+            s = dc.expand(geo, rand_field)
+            flow = dc.solve_flow(cfg, geo, s, ports=ports)
+        q_v = cfg.m_dot / cfg.rho_f
+        left, right = dc.edge_cells(geo)
+        div = np.zeros(geo.n_cells)
+        qf = flow["q_face"].numpy()
+        np.add.at(div, geo.fi.numpy(), qf)
+        np.add.at(div, geo.fj.numpy(), -qf)
+        w_in = (ports["w_in"] / ports["w_in"].sum()).numpy()
+        div[left.numpy()] -= q_v * w_in
+        div[right.numpy()] += flow["q_out"].numpy()
+        assert np.abs(div).max() / q_v < 1e-9
+
+    def test_ports_energy_balance(self, small_pin, rand_field):
+        cfg, geo = small_pin
+        ports = dc.make_ports(cfg, geo, torch.tensor(1.0), torch.tensor(-1.0))
+        r = dc.evaluate(cfg, geo, rand_field, ports=ports)
+        assert r["heat_balance_rel"] < 1e-8
+
+    def test_ports_gradient_wrt_eta(self, small_pin):
+        """η (ポート位置) ごしの勾配を FD 照合 (Forchheimer 込み)."""
+        from dataclasses import replace
+
+        cfg, geo = small_pin
+        cfg_f = replace(cfg, forchheimer=True)
+        dp_ref = dc.dp_reference(cfg_f, geo)
+        rng = np.random.default_rng(4)
+        xi = torch.tensor(0.3 * rng.standard_normal((geo.by, geo.bx)))
+        eta = torch.tensor([0.4, -0.6], requires_grad=True)
+
+        def f(e):
+            ports = dc.make_ports(cfg_f, geo, e[0], e[1])
+            j, _ = dc.objective(cfg_f, geo, xi, 1.0, dp_ref, ports=ports)
+            return j
+
+        j = f(eta)
+        (g,) = torch.autograd.grad(j, eta)
+        eps = 1e-6
+        for k in range(2):
+            ep = eta.detach().clone()
+            ep[k] += eps
+            em = eta.detach().clone()
+            em[k] -= eps
+            fd = (float(f(ep)) - float(f(em))) / (2 * eps)
+            an = float(g[k])
+            assert abs(fd - an) / max(abs(fd), abs(an), 1e-12) < 1e-4
