@@ -1,0 +1,56 @@
+granularity study: cells 48x64 (h=1.25mm), gamma=1.0, iters=600, seed=0
+dp_ref(all-open)=16.69Pa
+
+=== design grid 6x8 (10mm, 48 vars) ===
+    it=  0 J=15.5618 J_t=3.2613 dp=205.27Pa T_peak=10.67K T_std=0.694K
+    it=100 J=5.3610 J_t=3.6931 dp=27.83Pa T_peak=13.24K T_std=0.232K
+    it=200 J=5.3169 J_t=3.6744 dp=27.41Pa T_peak=13.17K T_std=0.222K
+    it=300 J=5.3039 J_t=3.6757 dp=27.17Pa T_peak=13.17K T_std=0.221K
+    it=400 J=5.2980 J_t=3.6766 dp=27.06Pa T_peak=13.17K T_std=0.221K
+    it=500 J=5.2947 J_t=3.6771 dp=26.99Pa T_peak=13.18K T_std=0.221K
+    it=599 J=5.2927 J_t=3.6774 dp=26.96Pa T_peak=13.18K T_std=0.221K
+  optimize 24s
+  J=5.2927  TV=0.0072  perim/area=0.144  dp=26.96  T_peak=13.18  T_block_mean=12.87  T_block_std=0.2207  T_fluid_out=3.828  solidity_mean=0.2018
+
+=== design grid 12x16 (5mm, 192 vars) ===
+    it=  0 J=15.4277 J_t=3.2431 dp=203.34Pa T_peak=10.63K T_std=0.683K
+    it=100 J=5.2387 J_t=3.6000 dp=27.35Pa T_peak=12.87K T_std=0.221K
+    it=200 J=5.1649 J_t=3.5750 dp=26.53Pa T_peak=12.76K T_std=0.212K
+    it=300 J=5.1351 J_t=3.5656 dp=26.19Pa T_peak=12.73K T_std=0.213K
+    it=400 J=5.1142 J_t=3.5522 dp=26.07Pa T_peak=12.70K T_std=0.210K
+    it=500 J=5.1062 J_t=3.5464 dp=26.03Pa T_peak=12.68K T_std=0.211K
+    it=599 J=5.1027 J_t=3.5455 dp=25.99Pa T_peak=12.68K T_std=0.211K
+  optimize 24s
+  J=5.1029  TV=0.0233  perim/area=0.333  dp=25.99  T_peak=12.68  T_block_mean=12.37  T_block_std=0.2112  T_fluid_out=3.828  solidity_mean=0.2361
+
+=== design grid 24x32 (2.5mm, 768 vars) ===
+    it=  0 J=15.3400 J_t=3.2542 dp=201.69Pa T_peak=10.64K T_std=0.690K
+    it=100 J=5.0716 J_t=3.4705 dp=26.72Pa T_peak=12.38K T_std=0.178K
+    it=200 J=4.9431 J_t=3.4062 dp=25.65Pa T_peak=12.15K T_std=0.184K
+    it=300 J=4.9005 J_t=3.3833 dp=25.32Pa T_peak=12.06K T_std=0.190K
+    it=400 J=4.8839 J_t=3.3746 dp=25.19Pa T_peak=12.03K T_std=0.194K
+    it=500 J=4.8737 J_t=3.3707 dp=25.08Pa T_peak=12.02K T_std=0.198K
+    it=599 J=4.8674 J_t=3.3680 dp=25.02Pa T_peak=12.01K T_std=0.200K
+  optimize 22s
+  J=4.8677  TV=0.0681  perim/area=0.469  dp=25.02  T_peak=12.01  T_block_mean=11.71  T_block_std=0.2006  T_fluid_out=3.828  solidity_mean=0.2961
+
+=== design grid 48x64 (1.25mm(cell), 3072 vars) ===
+    it=  0 J=15.4004 J_t=3.2536 dp=202.71Pa T_peak=10.64K T_std=0.689K
+    it=100 J=4.9857 J_t=3.4007 dp=26.45Pa T_peak=12.12K T_std=0.161K
+    it=200 J=4.8249 J_t=3.3194 dp=25.12Pa T_peak=11.84K T_std=0.182K
+    it=300 J=4.7723 J_t=3.2893 dp=24.75Pa T_peak=11.73K T_std=0.197K
+    it=400 J=4.7488 J_t=3.2776 dp=24.55Pa T_peak=11.68K T_std=0.205K
+    it=500 J=4.7371 J_t=3.2722 dp=24.45Pa T_peak=11.67K T_std=0.208K
+    it=599 J=4.7299 J_t=3.2679 dp=24.40Pa T_peak=11.65K T_std=0.208K
+  optimize 19s
+  J=4.7302  TV=0.1166  perim/area=0.714  dp=24.4  T_peak=11.65  T_block_mean=11.32  T_block_std=0.2082  T_fluid_out=3.828  solidity_mean=0.3141
+
+--- まとめ (γ=1, seed=0, 同一セルグリッド) ---
+granularity     vars        J  dp[Pa]  T_peak      TV per/area
+10mm              48   5.2927    27.0   13.18  0.0072    0.144
+5mm              192   5.1029    26.0   12.68  0.0233    0.333
+2.5mm            768   4.8677    25.0   12.01  0.0681    0.469
+1.25mm(cell)    3072   4.7302    24.4   11.65  0.1166    0.714
+
+saved: /home/nishioka/work/ykep-cae/experiments/coldplate/output/coldplate_granularity.png
+saved: /home/nishioka/work/ykep-cae/experiments/coldplate/output/coldplate_granularity_result.npz
