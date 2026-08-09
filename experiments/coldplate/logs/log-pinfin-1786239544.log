@@ -1,0 +1,69 @@
+pin-fin model: d=1.0mm phi_max=0.6 Nu_pin=4.0
+blocks 11x16  cells 44x64  h=1.25mm  dp_ref(all-open)=16.18Pa  T_ref=3.828K
+
+=== all-open ===
+  dp=16.18  T_peak=41.43  T_block_mean=39.6  T_block_std=1.419  T_block_min=37.78  T_fluid_out=3.828  heat_balance_rel=1.359e-13  solidity_mean=0
+
+=== gamma=0.01 ===
+    it=  0 J=3.5059 J_t=3.3842 dp=196.78Pa T_peak=10.85K T_std=0.766K
+    it=100 J=2.7299 J_t=2.5820 dp=239.32Pa T_peak=8.92K T_std=0.103K
+    it=200 J=2.7037 J_t=2.5524 dp=244.75Pa T_peak=8.79K T_std=0.068K
+    it=300 J=2.7022 J_t=2.5508 dp=244.97Pa T_peak=8.78K T_std=0.066K
+    it=400 J=2.7018 J_t=2.5500 dp=245.49Pa T_peak=8.78K T_std=0.066K
+    it=500 J=2.7015 J_t=2.5496 dp=245.85Pa T_peak=8.78K T_std=0.066K
+    it=599 J=2.7014 J_t=2.5493 dp=246.09Pa T_peak=8.78K T_std=0.065K
+  optimize 18s
+  dp=246.1  T_peak=8.777  T_block_mean=8.704  T_block_std=0.0654  T_block_min=8.63  T_fluid_out=3.828  heat_balance_rel=5.329e-16  solidity_mean=0.6619
+
+=== gamma=0.1 ===
+    it=  0 J=4.6006 J_t=3.3842 dp=196.78Pa T_peak=10.85K T_std=0.766K
+    it=100 J=3.3512 J_t=2.9334 dp=67.60Pa T_peak=10.33K T_std=0.135K
+    it=200 J=3.3213 J_t=2.9182 dp=65.23Pa T_peak=10.27K T_std=0.141K
+    it=300 J=3.3099 J_t=2.9100 dp=64.70Pa T_peak=10.24K T_std=0.143K
+    it=400 J=3.3083 J_t=2.9094 dp=64.53Pa T_peak=10.23K T_std=0.143K
+    it=500 J=3.3073 J_t=2.9092 dp=64.40Pa T_peak=10.23K T_std=0.143K
+    it=599 J=3.3066 J_t=2.9091 dp=64.30Pa T_peak=10.23K T_std=0.143K
+  optimize 18s
+  dp=64.3  T_peak=10.23  T_block_mean=10.02  T_block_std=0.1434  T_block_min=9.866  T_fluid_out=3.828  heat_balance_rel=5.329e-16  solidity_mean=0.4706
+
+=== gamma=1.0 ===
+    it=  0 J=15.5476 J_t=3.3842 dp=196.78Pa T_peak=10.85K T_std=0.766K
+    it=100 J=5.3593 J_t=3.6788 dp=27.19Pa T_peak=13.18K T_std=0.244K
+    it=200 J=5.2570 J_t=3.6086 dp=26.67Pa T_peak=12.92K T_std=0.231K
+    it=300 J=5.2290 J_t=3.5984 dp=26.38Pa T_peak=12.88K T_std=0.228K
+    it=400 J=5.2203 J_t=3.5964 dp=26.27Pa T_peak=12.87K T_std=0.228K
+    it=500 J=5.2137 J_t=3.5948 dp=26.19Pa T_peak=12.87K T_std=0.231K
+    it=599 J=5.2095 J_t=3.5934 dp=26.15Pa T_peak=12.86K T_std=0.231K
+  optimize 18s
+  dp=26.14  T_peak=12.86  T_block_mean=12.53  T_block_std=0.2314  T_block_min=12.31  T_fluid_out=3.828  heat_balance_rel=7.105e-16  solidity_mean=0.244
+
+=== gamma=10.0 ===
+    it=  0 J=125.0175 J_t=3.3842 dp=196.78Pa T_peak=10.85K T_std=0.766K
+    it=100 J=17.4064 J_t=5.1951 dp=19.76Pa T_peak=18.98K T_std=0.235K
+    it=200 J=16.8461 J_t=5.1241 dp=18.96Pa T_peak=18.68K T_std=0.219K
+    it=300 J=16.6486 J_t=5.1029 dp=18.68Pa T_peak=18.58K T_std=0.219K
+    it=400 J=16.5655 J_t=5.1010 dp=18.55Pa T_peak=18.58K T_std=0.217K
+    it=500 J=16.5198 J_t=5.0988 dp=18.48Pa T_peak=18.58K T_std=0.217K
+    it=599 J=16.4923 J_t=5.0966 dp=18.44Pa T_peak=18.58K T_std=0.216K
+  optimize 20s
+  dp=18.44  T_peak=18.58  T_block_mean=18.31  T_block_std=0.2165  T_block_min=18.06  T_fluid_out=3.828  heat_balance_rel=2.487e-15  solidity_mean=0.1033
+
+--- 比較 (pin-fin, 2x4, Al t=3mm + 流路2mm, 水 5 g/s, 10 W/block) ---
+  dp                 all-open=16.18  g=0.01=246.1  g=0.1=64.3  g=1.0=26.14  g=10.0=18.44
+  T_peak             all-open=41.43  g=0.01=8.777  g=0.1=10.23  g=1.0=12.86  g=10.0=18.58
+  T_block_mean       all-open=39.6  g=0.01=8.704  g=0.1=10.02  g=1.0=12.53  g=10.0=18.31
+  T_block_std        all-open=1.419  g=0.01=0.0654  g=0.1=0.1434  g=1.0=0.2314  g=10.0=0.2165
+  T_block_min        all-open=37.78  g=0.01=8.63  g=0.1=9.866  g=1.0=12.31  g=10.0=18.06
+  T_fluid_out        all-open=3.828  g=0.01=3.828  g=0.1=3.828  g=1.0=3.828  g=10.0=3.828
+  heat_balance_rel   all-open=1.359e-13  g=0.01=5.329e-16  g=0.1=5.329e-16  g=1.0=7.105e-16  g=10.0=2.487e-15
+  solidity_mean      all-open=0  g=0.01=0.6619  g=0.1=0.4706  g=1.0=0.244  g=10.0=0.1033
+
+--- vs 旧 logK モデル (dp[Pa] / T_peak[K]) ---
+  all-open   legacy    16.2 /  41.4   pin-fin    16.2 /  41.4
+  g=0.01     legacy   117.3 /   5.8   pin-fin   246.1 /   8.8
+  g=0.1      legacy    44.5 /   6.3   pin-fin    64.3 /  10.2
+  g=1.0      legacy    29.1 /   7.5   pin-fin    26.1 /  12.9
+  g=10.0     legacy    26.4 /   8.9   pin-fin    18.4 /  18.6
+
+saved: /home/nishioka/work/ykep-cae/experiments/coldplate/output/coldplate_pinfin.png
+saved: /home/nishioka/work/ykep-cae/experiments/coldplate/output/coldplate_pinfin_result.npz

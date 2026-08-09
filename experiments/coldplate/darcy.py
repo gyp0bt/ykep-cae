@@ -62,6 +62,12 @@ class DarcyConfig:
     q_block_w: float = 10.0  # 発熱量 / ブロック [W]
     # 設計変数: 固体度 s ∈ [0,1] → K(s) = K_open·k_ratio^s (対数補間)
     k_ratio: float = 1e-5  # K_min/K_open (s=1 でほぼ不透過)
+    # ピンフィンモデル (pin_fin=True で有効): s をピン充填率 φ = phi_max·s と解釈し
+    # K(φ)=平行平板+Gebart 円柱列の直列、層間 U(φ)=プライム面+フィン増倍で閉じる
+    pin_fin: bool = False
+    d_pin: float = 1.0e-3  # ピン直径 [m]
+    phi_max: float = 0.6  # s=1 でのピン充填率 (正方配列の幾何限界 π/4 未満)
+    nu_pin: float = 4.0  # ピン周り Nu (速度非依存の伝導床)
     # 目的
     beta_t: float = 2.0  # ピーク温度 smooth-max の鋭さ [1/K]
     mu_tvar: float = 10.0  # ブロック温度分散罰則 (T_ref² 正規化後)
@@ -181,15 +187,63 @@ def expand(geo: Geo, blocks: torch.Tensor) -> torch.Tensor:
     return r_y.repeat_interleave(geo.ncx // geo.bx, dim=1).reshape(-1)
 
 
+GEBART_C1 = 16.0 / (9.0 * np.pi * np.sqrt(2.0))  # 正方配列・横断流の Gebart 係数
+GEBART_PHI_C = np.pi / 4.0  # 正方配列の最大充填率
+
+
+def pin_phi(cfg: DarcyConfig, s: torch.Tensor) -> torch.Tensor:
+    """ピン充填率 φ = phi_max·s (φ=0 で div/NaN が出ないよう下限クランプ)."""
+    return (cfg.phi_max * s).clamp_min(1e-12)
+
+
 def permeability(cfg: DarcyConfig, s: torch.Tensor) -> torch.Tensor:
-    """K(s) = K_open · k_ratio^s (対数補間: s=0 全開, s=1 でほぼ不透過)."""
-    k_open = cfg.t_chan**2 / 12.0
-    return k_open * torch.exp(float(np.log(cfg.k_ratio)) * s)
+    """透過率 K(s).
+
+    - 旧モード: K = K_open · k_ratio^s (対数補間、幾何的裏付けなし)
+    - pin_fin:  1/K = 1/K_plate + 1/K_pin(φ)。平行平板 Hele-Shaw (t²/12) と
+      正方配列円柱の横断流 (Gebart 1992: K = C1·R²·(√(φ_c/φ)-1)^{5/2}) の直列。
+      φ→0 で K_pin→∞ となり K→K_plate に漸近 (全開 = ピンなし平板流路)。
+    """
+    k_plate = cfg.t_chan**2 / 12.0
+    if not cfg.pin_fin:
+        return k_plate * torch.exp(float(np.log(cfg.k_ratio)) * s)
+    phi = pin_phi(cfg, s)
+    r_pin = cfg.d_pin / 2.0
+    k_pin = GEBART_C1 * r_pin**2 * (torch.sqrt(GEBART_PHI_C / phi) - 1.0).clamp_min(1e-9) ** 2.5
+    return 1.0 / (1.0 / k_plate + 1.0 / k_pin)
 
 
 def conductivity(cfg: DarcyConfig, s: torch.Tensor) -> torch.Tensor:
-    """流路層の面内熱伝導率 k_c(s) = k_f + (k_s - k_f)·s (線形補間)."""
-    return cfg.k_f + (cfg.k_s - cfg.k_f) * s
+    """流路層の面内熱伝導率 (線形混合則).
+
+    旧モード: k_c = k_f + (k_s-k_f)·s。pin_fin: 同式を φ = phi_max·s で評価
+    (ピンは層を貫通する Al 柱なので面内は並列混合の上限側で近似)。
+    """
+    x = pin_phi(cfg, s) if cfg.pin_fin else s
+    return cfg.k_f + (cfg.k_s - cfg.k_f) * x
+
+
+def interlayer_u(cfg: DarcyConfig, s: torch.Tensor) -> torch.Tensor:
+    """ベース板→流路層の層間コンダクタンス U'' [W/m²K] (単位底面積あたり).
+
+    - 旧モード: 半厚み伝導の直列 1/(t_base/2k_s + t_chan/2k_c(s))
+    - pin_fin: ベース半厚み伝導と「プライム面 + ピンフィン」の直列。
+        プライム面: (1-φ)·h0, h0 = 2k_f/t_chan (半深さ伝導床)
+        ピン: 側面積比 a_fin = 4φ·t_chan/d, フィン効率 η = tanh(mL)/mL,
+              m = √(4h_pin/(k_s·d)), h_pin = Nu_pin·k_f/d (速度非依存)
+      φ↑ で濡れ面積が増え U'' が上がる — 「流れを絞る」と「z 方向 h を上げる」が
+      同じ変数 s の別の顔になり、s の物理的意味が閉じる。
+    """
+    r_base = cfg.t_base / (2.0 * cfg.k_s)
+    if not cfg.pin_fin:
+        return 1.0 / (r_base + cfg.t_chan / (2.0 * conductivity(cfg, s)))
+    phi = pin_phi(cfg, s)
+    h0 = 2.0 * cfg.k_f / cfg.t_chan
+    h_pin = cfg.nu_pin * cfg.k_f / cfg.d_pin
+    m_fin = float(np.sqrt(4.0 * h_pin / (cfg.k_s * cfg.d_pin)))
+    eta = float(np.tanh(m_fin * cfg.t_chan) / (m_fin * cfg.t_chan))
+    h_eff = (1.0 - phi) * h0 + eta * h_pin * 4.0 * phi * cfg.t_chan / cfg.d_pin
+    return 1.0 / (r_base + 1.0 / h_eff)
 
 
 # ==========================================================================
@@ -242,9 +296,8 @@ def solve_heat(
     f_neg = rcp * torch.relu(-flow["q_face"])
     f_out = rcp * torch.relu(flow["q_out"])
 
-    # 層間結合: 半厚み伝導の直列 (面積 h²)
-    r_half = cfg.t_base / (2.0 * cfg.k_s) + cfg.t_chan / (2.0 * k_c)
-    u_cpl = geo.h**2 / r_half
+    # 層間結合 (面積 h²): 旧=半厚み伝導直列 / pin_fin=プライム面+フィン増倍
+    u_cpl = geo.h**2 * interlayer_u(cfg, s)
 
     rows = np.concatenate(
         [
