@@ -200,6 +200,73 @@ class TestPinFin:
         u = dc.interlayer_u(cfg, torch.tensor([0.0, 0.1]))
         assert float(u[1] / u[0]) > 2.0
 
+    def test_forchheimer_requires_pin_fin(self, small):
+        cfg, geo = small
+        from dataclasses import replace
+
+        cfg_f = replace(cfg, forchheimer=True)  # pin_fin=False のまま
+        with pytest.raises(ValueError):
+            dc.solve_flow(cfg_f, geo, torch.zeros(geo.n_cells))
+
+    def test_forchheimer_increases_dp(self, small_pin, rand_field):
+        """慣性損失は同一場で ΔP を増やす (全開では β=0 でほぼ不変)."""
+        cfg, geo = small_pin
+        from dataclasses import replace
+
+        cfg_f = replace(cfg, forchheimer=True)
+        dp_d = dc.evaluate(cfg, geo, rand_field)["dp"]
+        dp_f = dc.evaluate(cfg_f, geo, rand_field)["dp"]
+        assert dp_f > dp_d
+        open_field = torch.zeros(geo.by, geo.bx)
+        dp_do = dc.evaluate(cfg, geo, open_field)["dp"]
+        dp_fo = dc.evaluate(cfg_f, geo, open_field)["dp"]
+        assert abs(dp_fo - dp_do) / dp_do < 1e-6
+
+    def test_forchheimer_mass_conservation(self, small_pin, rand_field):
+        """Picard 収束後も面フラックスは厳密に発散ゼロ (最終反復が線形解)."""
+        cfg, geo = small_pin
+        from dataclasses import replace
+
+        cfg_f = replace(cfg, forchheimer=True)
+        with torch.no_grad():
+            s = dc.expand(geo, rand_field)
+            flow = dc.solve_flow(cfg_f, geo, s)
+        assert flow["picard_iters"] < cfg_f.picard_max  # 収束している
+        q_v = cfg.m_dot / cfg.rho_f
+        div = np.zeros(geo.n_cells)
+        qf = flow["q_face"].numpy()
+        np.add.at(div, geo.fi.numpy(), qf)
+        np.add.at(div, geo.fj.numpy(), -qf)
+        div[geo.inlet_cells.numpy()] -= q_v / len(geo.inlet_cells)
+        div[geo.outlet_cells.numpy()] += flow["q_out"].numpy()
+        assert np.abs(div).max() / q_v < 1e-9
+
+    def test_forchheimer_gradient(self, small_pin):
+        """Picard 反復ごしの adjoint 勾配を FD 照合."""
+        cfg, geo = small_pin
+        from dataclasses import replace
+
+        cfg_f = replace(cfg, forchheimer=True)
+        dp_ref = dc.dp_reference(cfg_f, geo)
+        rng = np.random.default_rng(3)
+        xi = torch.tensor(0.5 * rng.standard_normal((geo.by, geo.bx)), requires_grad=True)
+        j, _ = dc.objective(cfg_f, geo, xi, gamma_p=1.0, dp_ref=dp_ref)
+        (g,) = torch.autograd.grad(j, xi)
+        eps = 1e-6
+        err = 0.0
+        for k in range(0, xi.numel(), max(1, xi.numel() // 6)):
+            i, jj = np.unravel_index(k, xi.shape)
+            xp = xi.detach().clone()
+            xp[i, jj] += eps
+            xm = xi.detach().clone()
+            xm[i, jj] -= eps
+            jp, _ = dc.objective(cfg_f, geo, xp, 1.0, dp_ref)
+            jm, _ = dc.objective(cfg_f, geo, xm, 1.0, dp_ref)
+            fd = (float(jp) - float(jm)) / (2 * eps)
+            an = float(g[i, jj])
+            err = max(err, abs(fd - an) / max(abs(fd), abs(an), 1e-12))
+        assert err < 1e-4  # Picard 打ち切り分だけ緩め
+
     def test_pin_more_conservative_than_legacy(self, small_pin, small, rand_field):
         """同一 s 場でピンフィンは旧モデルより板温度が高い (保守側).
 

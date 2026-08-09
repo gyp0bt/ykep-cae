@@ -68,6 +68,12 @@ class DarcyConfig:
     d_pin: float = 1.0e-3  # ピン直径 [m]
     phi_max: float = 0.6  # s=1 でのピン充填率 (正方配列の幾何限界 π/4 未満)
     nu_pin: float = 4.0  # ピン周り Nu (速度非依存の伝導床)
+    # Forchheimer 慣性補正 (pin_fin 前提): ∇p = -(μ/K)U - ρβ(φ)|U|U
+    forchheimer: bool = False
+    c_ergun: float = 1.75  # Ergun 型 β = c_E·φ/((1-φ)³·d) の係数
+    picard_max: int = 60  # Picard 反復上限
+    picard_tol: float = 1e-12  # dp 相対収束判定
+    picard_relax: float = 0.5  # 線形化フラックスの緩和 (固定点の減衰振動対策)
     # 目的
     beta_t: float = 2.0  # ピーク温度 smooth-max の鋭さ [1/K]
     mu_tvar: float = 10.0  # ブロック温度分散罰則 (T_ref² 正規化後)
@@ -248,6 +254,7 @@ def interlayer_u(cfg: DarcyConfig, s: torch.Tensor) -> torch.Tensor:
 
 # ==========================================================================
 # 流れ: ∇·(K t/μ ∇p) = 0, 流入フラックス / 流出 Dirichlet(半セル)
+# Forchheimer 有効時は g_eff(|q|) の Picard 反復 (グラフを通して微分可能)
 # ==========================================================================
 def solve_flow(cfg: DarcyConfig, geo: Geo, s: torch.Tensor) -> dict[str, torch.Tensor]:
     n = geo.n_cells
@@ -260,17 +267,58 @@ def solve_flow(cfg: DarcyConfig, geo: Geo, s: torch.Tensor) -> dict[str, torch.T
     out_np = geo.outlet_cells.numpy()
     rows = np.concatenate([fi_np, fj_np, fi_np, fj_np, out_np])
     cols = np.concatenate([fi_np, fj_np, fj_np, fi_np, out_np])
-    vals = torch.cat([g_f, g_f, -g_f, -g_f, g_out])
 
     q_v = cfg.m_dot / cfg.rho_f  # 体積流量 [m³/s]
     b = torch.zeros(n)
     b[geo.inlet_cells] = q_v / len(geo.inlet_cells)
 
-    p = sparse_solve(vals, b, rows, cols, n)
-    q_face = g_f * (p[geo.fi] - p[geo.fj])  # >0 で fi→fj
-    q_out = g_out * p[geo.outlet_cells]
-    dp = p[geo.inlet_cells].mean()  # 流入は一様フラックスなので単純平均
-    return {"p": p, "q_face": q_face, "q_out": q_out, "dp": dp, "g_f": g_f}
+    if not cfg.forchheimer:
+        vals = torch.cat([g_f, g_f, -g_f, -g_f, g_out])
+        p = sparse_solve(vals, b, rows, cols, n)
+        q_face = g_f * (p[geo.fi] - p[geo.fj])  # >0 で fi→fj
+        q_out = g_out * p[geo.outlet_cells]
+        dp = p[geo.inlet_cells].mean()  # 流入は一様フラックスなので単純平均
+        return {"p": p, "q_face": q_face, "q_out": q_out, "dp": dp, "g_f": g_f, "picard_iters": 0}
+
+    # --- Forchheimer: Δp_F = ρ β |U| U · L,  U = q/(t·h) ---
+    if not cfg.pin_fin:
+        msg = "forchheimer=True は pin_fin=True が前提 (β(φ) がピン形状に依存)"
+        raise ValueError(msg)
+    phi = pin_phi(cfg, s)
+    beta = cfg.c_ergun * phi / ((1.0 - phi).clamp_min(1e-6) ** 3 * cfg.d_pin)  # [1/m]
+    beta_face = 0.5 * (beta[geo.fi] + beta[geo.fj])  # 経路半セルずつの算術平均
+    beta_out = 0.5 * beta[geo.outlet_cells]  # 流出は半セル距離
+    coef = cfg.rho_f / (cfg.t_chan**2 * geo.h)  # R_F = coef·β_face·|q|
+
+    # 線形化点 q_lin は緩和付きで更新 (裸の固定点は減衰振動して遅い)。
+    # 返す q_face/q_out は最終線形解そのものなので発散ゼロは厳密に保たれる。
+    q_lin = torch.zeros(geo.fi.shape[0])
+    qo_lin = torch.zeros(len(geo.outlet_cells))
+    dp_old = float("inf")
+    n_it = 0
+    w = cfg.picard_relax
+    for n_it in range(1, cfg.picard_max + 1):  # noqa: B007 (反復数を picard_iters で返す)
+        g_eff = 1.0 / (1.0 / g_f + coef * beta_face * q_lin.abs())
+        g_oeff = 1.0 / (1.0 / g_out + coef * beta_out * qo_lin.abs())
+        vals = torch.cat([g_eff, g_eff, -g_eff, -g_eff, g_oeff])
+        p = sparse_solve(vals, b, rows, cols, n)
+        q_face = g_eff * (p[geo.fi] - p[geo.fj])
+        q_out = g_oeff * p[geo.outlet_cells]
+        dp = p[geo.inlet_cells].mean()
+        dp_new = float(dp.detach())
+        if abs(dp_new - dp_old) <= cfg.picard_tol * abs(dp_new):
+            break
+        dp_old = dp_new
+        q_lin = w * q_face + (1.0 - w) * q_lin
+        qo_lin = w * q_out + (1.0 - w) * qo_lin
+    return {
+        "p": p,
+        "q_face": q_face,
+        "q_out": q_out,
+        "dp": dp,
+        "g_f": g_eff,
+        "picard_iters": n_it,
+    }
 
 
 # ==========================================================================
