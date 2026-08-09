@@ -1,0 +1,71 @@
+=== Part A: 同一設計の ΔP — ダルシー vs ダルシー+Forchheimer ===
+case        dp_D[Pa]  dp_DF[Pa]  ratio  Re_gap  T_peak_D  T_peak_DF
+all-open        16.2       16.2   1.00     779     41.43      41.43
+g=0.01         246.1      600.8   2.44     784      8.78       9.14
+g=0.1           64.3      166.2   2.58     784     10.23      10.17
+g=1.0           26.1       65.0   2.49     780     12.86      12.92
+g=10.0          18.4       37.7   2.04     779     18.58      18.43
+
+=== Part B: Forchheimer 物理での再最適化 ===
+dp_ref(all-open)=16.18Pa  T_ref=3.828K
+
+--- gamma=0.01 ---
+    it=  0 J=4.2679 J_t=3.3678 dp=1456.09Pa T_peak=10.84K T_std=0.772K
+    it=100 J=2.8763 J_t=2.6530 dp=361.25Pa T_peak=9.21K T_std=0.117K
+    it=200 J=2.8291 J_t=2.6284 dp=324.71Pa T_peak=9.11K T_std=0.091K
+    it=300 J=2.8236 J_t=2.6268 dp=318.28Pa T_peak=9.10K T_std=0.084K
+    it=400 J=2.8179 J_t=2.6230 dp=315.38Pa T_peak=9.07K T_std=0.077K
+    it=500 J=2.8165 J_t=2.6228 dp=313.37Pa T_peak=9.07K T_std=0.075K
+    it=599 J=2.8126 J_t=2.6218 dp=308.72Pa T_peak=9.06K T_std=0.073K
+  optimize 235s
+  dp=312.2  T_peak=9.067  T_block_mean=8.977  T_block_std=0.07414  T_block_min=8.864  T_fluid_out=3.828  heat_balance_rel=5.151e-15  solidity_mean=0.6025
+  [設計シフト] ダルシー設計を DF 評価: dp=600.8 T_peak=9.14 | DF 直接最適化: dp=312.2 T_peak=9.07
+
+--- gamma=0.1 ---
+    it=  0 J=12.3683 J_t=3.3678 dp=1456.09Pa T_peak=10.84K T_std=0.772K
+    it=100 J=3.8286 J_t=3.1553 dp=108.92Pa T_peak=11.26K T_std=0.190K
+    it=200 J=3.5793 J_t=3.0638 dp=83.39Pa T_peak=10.91K T_std=0.177K
+    it=300 J=3.5363 J_t=3.0585 dp=77.29Pa T_peak=10.90K T_std=0.175K
+    it=400 J=3.5168 J_t=3.0538 dp=74.90Pa T_peak=10.89K T_std=0.175K
+    it=500 J=3.5002 J_t=3.0478 dp=73.20Pa T_peak=10.85K T_std=0.173K
+    it=599 J=3.4864 J_t=3.0491 dp=70.75Pa T_peak=10.85K T_std=0.175K
+  optimize 286s
+  dp=71.82  T_peak=10.85  T_block_mean=10.52  T_block_std=0.1769  T_block_min=10.3  T_fluid_out=3.828  heat_balance_rel=1.03e-14  solidity_mean=0.4031
+  [設計シフト] ダルシー設計を DF 評価: dp=166.2 T_peak=10.17 | DF 直接最適化: dp=71.8 T_peak=10.85
+
+--- gamma=1.0 ---
+    it=  0 J=93.3727 J_t=3.3678 dp=1456.09Pa T_peak=10.84K T_std=0.772K
+    it=100 J=8.0423 J_t=4.2424 dp=61.47Pa T_peak=15.37K T_std=0.231K
+    it=200 J=6.7546 J_t=4.1157 dp=42.69Pa T_peak=14.87K T_std=0.225K
+    it=300 J=6.2644 J_t=4.0382 dp=36.02Pa T_peak=14.61K T_std=0.233K
+    it=400 J=6.0225 J_t=3.9645 dp=33.29Pa T_peak=14.33K T_std=0.220K
+    it=500 J=5.9060 J_t=3.9253 dp=32.04Pa T_peak=14.13K T_std=0.233K
+    it=599 J=5.8279 J_t=3.9279 dp=30.74Pa T_peak=14.13K T_std=0.252K
+  optimize 392s
+  dp=30.96  T_peak=14.12  T_block_mean=13.76  T_block_std=0.2532  T_block_min=13.52  T_fluid_out=3.828  heat_balance_rel=1.35e-14  solidity_mean=0.2082
+  [設計シフト] ダルシー設計を DF 評価: dp=65.0 T_peak=12.92 | DF 直接最適化: dp=31.0 T_peak=14.12
+
+--- gamma=10.0 ---
+    it=  0 J=903.4164 J_t=3.3678 dp=1456.09Pa T_peak=10.84K T_std=0.772K
+    it=100 J=37.7416 J_t=6.4495 dp=50.62Pa T_peak=23.58K T_std=0.398K
+    it=200 J=26.9202 J_t=6.4449 dp=33.12Pa T_peak=23.75K T_std=0.193K
+    it=300 J=23.2169 J_t=6.5566 dp=26.95Pa T_peak=24.24K T_std=0.272K
+    it=400 J=21.4086 J_t=6.4660 dp=24.17Pa T_peak=23.88K T_std=0.241K
+    it=500 J=20.2658 J_t=6.2157 dp=22.73Pa T_peak=22.90K T_std=0.180K
+    it=599 J=19.5720 J_t=6.1267 dp=21.75Pa T_peak=22.55K T_std=0.197K
+  optimize 578s
+  dp=21.76  T_peak=22.54  T_block_mean=22.27  T_block_std=0.1966  T_block_min=22.07  T_fluid_out=3.828  heat_balance_rel=1.847e-14  solidity_mean=0.08394
+  [設計シフト] ダルシー設計を DF 評価: dp=37.7 T_peak=18.43 | DF 直接最適化: dp=21.8 T_peak=22.54
+
+--- 比較 (pin-fin + Forchheimer) ---
+  dp                 all-open=16.18  g=0.01=312.2  g=0.1=71.82  g=1.0=30.96  g=10.0=21.76
+  T_peak             all-open=41.43  g=0.01=9.067  g=0.1=10.85  g=1.0=14.12  g=10.0=22.54
+  T_block_mean       all-open=39.6  g=0.01=8.977  g=0.1=10.52  g=1.0=13.76  g=10.0=22.27
+  T_block_std        all-open=1.419  g=0.01=0.07414  g=0.1=0.1769  g=1.0=0.2532  g=10.0=0.1966
+  T_block_min        all-open=37.78  g=0.01=8.864  g=0.1=10.3  g=1.0=13.52  g=10.0=22.07
+  T_fluid_out        all-open=3.828  g=0.01=3.828  g=0.1=3.828  g=1.0=3.828  g=10.0=3.828
+  heat_balance_rel   all-open=1.373e-13  g=0.01=5.151e-15  g=0.1=1.03e-14  g=1.0=1.35e-14  g=10.0=1.847e-14
+  solidity_mean      all-open=0  g=0.01=0.6025  g=0.1=0.4031  g=1.0=0.2082  g=10.0=0.08394
+
+saved: /home/nishioka/work/ykep-cae/experiments/coldplate/output/coldplate_forchheimer.png
+saved: /home/nishioka/work/ykep-cae/experiments/coldplate/output/coldplate_forchheimer_result.npz

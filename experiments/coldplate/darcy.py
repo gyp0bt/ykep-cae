@@ -622,8 +622,8 @@ def optimize_ports(
                     eta_in.clamp_(-4.0, 4.0)  # sigmoid 飽和による勾配死の予防
                     eta_out.clamp_(-4.0, 4.0)
         if verbose and (it % 100 == 0 or it == iters - 1):
-            y_in = h_mm * float(torch.sigmoid(eta_in))
-            y_out = h_mm * float(torch.sigmoid(eta_out))
+            y_in = h_mm * float(torch.sigmoid(eta_in.detach()))
+            y_out = h_mm * float(torch.sigmoid(eta_out.detach()))
             log_fn(
                 f"    it={it:3d} J={parts['j']:.4f} J_t={parts['j_t']:.4f} "
                 f"dp={parts['dp']:.2f}Pa T_peak={parts['t_peak']:.2f}K "
