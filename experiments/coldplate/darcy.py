@@ -62,6 +62,20 @@ class DarcyConfig:
     q_block_w: float = 10.0  # 発熱量 / ブロック [W]
     # 設計変数: 固体度 s ∈ [0,1] → K(s) = K_open·k_ratio^s (対数補間)
     k_ratio: float = 1e-5  # K_min/K_open (s=1 でほぼ不透過)
+    # ピンフィンモデル (pin_fin=True で有効): s をピン充填率 φ = phi_max·s と解釈し
+    # K(φ)=平行平板+Gebart 円柱列の直列、層間 U(φ)=プライム面+フィン増倍で閉じる
+    pin_fin: bool = False
+    d_pin: float = 1.0e-3  # ピン直径 [m]
+    phi_max: float = 0.6  # s=1 でのピン充填率 (正方配列の幾何限界 π/4 未満)
+    nu_pin: float = 4.0  # ピン周り Nu (速度非依存の伝導床)
+    # Forchheimer 慣性補正 (pin_fin 前提): ∇p = -(μ/K)U - ρβ(φ)|U|U
+    forchheimer: bool = False
+    c_ergun: float = 1.75  # Ergun 型 β = c_E·φ/((1-φ)³·d) の係数
+    picard_max: int = 60  # Picard 反復上限
+    picard_tol: float = 1e-12  # dp 相対収束判定
+    picard_relax: float = 0.5  # 線形化フラックスの緩和 (固定点の減衰振動対策)
+    # ポート位置設計 (Task 3): 左右エッジ上のガウシアン窓 (幅 σ 固定・中心可変)
+    port_sigma: float = 2.5e-3  # ポート窓の σ [m] (5mm ポート相当)
     # 目的
     beta_t: float = 2.0  # ピーク温度 smooth-max の鋭さ [1/K]
     mu_tvar: float = 10.0  # ブロック温度分散罰則 (T_ref² 正規化後)
@@ -176,47 +190,194 @@ def sparse_solve(
 # 設計場: ブロック固体度 s → セル物性
 # ==========================================================================
 def expand(geo: Geo, blocks: torch.Tensor) -> torch.Tensor:
-    """(by, bx) ブロック値 → (n_cells,) セル値."""
-    r_y = blocks.repeat_interleave(geo.ncy // geo.by, dim=0)
-    return r_y.repeat_interleave(geo.ncx // geo.bx, dim=1).reshape(-1)
+    """(dy, dx) 設計グリッド値 → (n_cells,) セル値.
+
+    既定は (by, bx) の 5mm 設計ブロックだが、セルグリッドを割り切る任意の
+    粒度を受け付ける (Task 4: 粒度感度)。dy=ncy, dx=ncx ならセル単位。
+    """
+    dy, dx = blocks.shape
+    if geo.ncy % dy or geo.ncx % dx:
+        msg = f"設計グリッド {blocks.shape} がセルグリッド ({geo.ncy},{geo.ncx}) を割り切らない"
+        raise ValueError(msg)
+    r_y = blocks.repeat_interleave(geo.ncy // dy, dim=0)
+    return r_y.repeat_interleave(geo.ncx // dx, dim=1).reshape(-1)
+
+
+GEBART_C1 = 16.0 / (9.0 * np.pi * np.sqrt(2.0))  # 正方配列・横断流の Gebart 係数
+GEBART_PHI_C = np.pi / 4.0  # 正方配列の最大充填率
+
+
+def pin_phi(cfg: DarcyConfig, s: torch.Tensor) -> torch.Tensor:
+    """ピン充填率 φ = phi_max·s (φ=0 で div/NaN が出ないよう下限クランプ)."""
+    return (cfg.phi_max * s).clamp_min(1e-12)
 
 
 def permeability(cfg: DarcyConfig, s: torch.Tensor) -> torch.Tensor:
-    """K(s) = K_open · k_ratio^s (対数補間: s=0 全開, s=1 でほぼ不透過)."""
-    k_open = cfg.t_chan**2 / 12.0
-    return k_open * torch.exp(float(np.log(cfg.k_ratio)) * s)
+    """透過率 K(s).
+
+    - 旧モード: K = K_open · k_ratio^s (対数補間、幾何的裏付けなし)
+    - pin_fin:  1/K = 1/K_plate + 1/K_pin(φ)。平行平板 Hele-Shaw (t²/12) と
+      正方配列円柱の横断流 (Gebart 1992: K = C1·R²·(√(φ_c/φ)-1)^{5/2}) の直列。
+      φ→0 で K_pin→∞ となり K→K_plate に漸近 (全開 = ピンなし平板流路)。
+    """
+    k_plate = cfg.t_chan**2 / 12.0
+    if not cfg.pin_fin:
+        return k_plate * torch.exp(float(np.log(cfg.k_ratio)) * s)
+    phi = pin_phi(cfg, s)
+    r_pin = cfg.d_pin / 2.0
+    k_pin = GEBART_C1 * r_pin**2 * (torch.sqrt(GEBART_PHI_C / phi) - 1.0).clamp_min(1e-9) ** 2.5
+    return 1.0 / (1.0 / k_plate + 1.0 / k_pin)
 
 
 def conductivity(cfg: DarcyConfig, s: torch.Tensor) -> torch.Tensor:
-    """流路層の面内熱伝導率 k_c(s) = k_f + (k_s - k_f)·s (線形補間)."""
-    return cfg.k_f + (cfg.k_s - cfg.k_f) * s
+    """流路層の面内熱伝導率 (線形混合則).
+
+    旧モード: k_c = k_f + (k_s-k_f)·s。pin_fin: 同式を φ = phi_max·s で評価
+    (ピンは層を貫通する Al 柱なので面内は並列混合の上限側で近似)。
+    """
+    x = pin_phi(cfg, s) if cfg.pin_fin else s
+    return cfg.k_f + (cfg.k_s - cfg.k_f) * x
+
+
+def interlayer_u(cfg: DarcyConfig, s: torch.Tensor) -> torch.Tensor:
+    """ベース板→流路層の層間コンダクタンス U'' [W/m²K] (単位底面積あたり).
+
+    - 旧モード: 半厚み伝導の直列 1/(t_base/2k_s + t_chan/2k_c(s))
+    - pin_fin: ベース半厚み伝導と「プライム面 + ピンフィン」の直列。
+        プライム面: (1-φ)·h0, h0 = 2k_f/t_chan (半深さ伝導床)
+        ピン: 側面積比 a_fin = 4φ·t_chan/d, フィン効率 η = tanh(mL)/mL,
+              m = √(4h_pin/(k_s·d)), h_pin = Nu_pin·k_f/d (速度非依存)
+      φ↑ で濡れ面積が増え U'' が上がる — 「流れを絞る」と「z 方向 h を上げる」が
+      同じ変数 s の別の顔になり、s の物理的意味が閉じる。
+    """
+    r_base = cfg.t_base / (2.0 * cfg.k_s)
+    if not cfg.pin_fin:
+        return 1.0 / (r_base + cfg.t_chan / (2.0 * conductivity(cfg, s)))
+    phi = pin_phi(cfg, s)
+    h0 = 2.0 * cfg.k_f / cfg.t_chan
+    h_pin = cfg.nu_pin * cfg.k_f / cfg.d_pin
+    m_fin = float(np.sqrt(4.0 * h_pin / (cfg.k_s * cfg.d_pin)))
+    eta = float(np.tanh(m_fin * cfg.t_chan) / (m_fin * cfg.t_chan))
+    h_eff = (1.0 - phi) * h0 + eta * h_pin * 4.0 * phi * cfg.t_chan / cfg.d_pin
+    return 1.0 / (r_base + 1.0 / h_eff)
+
+
+# ==========================================================================
+# ポート: 位置を連続変数にするガウシアン窓 (Task 3)
+# ==========================================================================
+def edge_cells(geo: Geo) -> tuple[torch.Tensor, torch.Tensor]:
+    """左辺 / 右辺の全セル id (下から上へ)."""
+    left = torch.arange(geo.ncy, dtype=torch.long) * geo.ncx
+    return left, left + (geo.ncx - 1)
+
+
+def port_window(cfg: DarcyConfig, geo: Geo, eta: torch.Tensor) -> torch.Tensor:
+    """エッジ座標 y 上のガウシアン窓 w(y) = exp(-((y-y_c)/σ)²), y_c = H·sigmoid(η).
+
+    流入側では正規化してフラックス分配、流出側では Robin コンダクタンスの
+    マスク (0..1) として使う。σ 固定なのでポート幅は変えず位置だけ動く。
+    """
+    y = (torch.arange(geo.ncy, dtype=torch.get_default_dtype()) + 0.5) * geo.h
+    y_c = geo.ncy * geo.h * torch.sigmoid(eta)
+    return torch.exp(-(((y - y_c) / cfg.port_sigma) ** 2))
+
+
+def make_ports(
+    cfg: DarcyConfig, geo: Geo, eta_in: torch.Tensor, eta_out: torch.Tensor
+) -> dict[str, torch.Tensor]:
+    """η スカラー 2 つ → solve_flow に渡すポート辞書."""
+    return {"w_in": port_window(cfg, geo, eta_in), "w_out": port_window(cfg, geo, eta_out)}
 
 
 # ==========================================================================
 # 流れ: ∇·(K t/μ ∇p) = 0, 流入フラックス / 流出 Dirichlet(半セル)
+# Forchheimer 有効時は g_eff(|q|) の Picard 反復 (グラフを通して微分可能)
+# ports 指定時は左右エッジ全セルにガウシアン窓を掛けてポート位置を連続化
 # ==========================================================================
-def solve_flow(cfg: DarcyConfig, geo: Geo, s: torch.Tensor) -> dict[str, torch.Tensor]:
+def solve_flow(
+    cfg: DarcyConfig, geo: Geo, s: torch.Tensor, ports: dict[str, torch.Tensor] | None = None
+) -> dict[str, torch.Tensor]:
     n = geo.n_cells
     m = permeability(cfg, s) * cfg.t_chan / cfg.mu  # セル移動度 [m³/(Pa·s)]
     m_i, m_j = m[geo.fi], m[geo.fj]
     g_f = 2.0 * m_i * m_j / (m_i + m_j)  # 調和平均 (面幅 h と距離 h が相殺)
-    g_out = 2.0 * m[geo.outlet_cells]  # 流出境界 p=0 (半セル距離)
+
+    if ports is None:
+        inlet_cells, outlet_cells = geo.inlet_cells, geo.outlet_cells
+        w_in = torch.full((len(inlet_cells),), 1.0 / len(inlet_cells))
+        g_out = 2.0 * m[outlet_cells]  # 流出境界 p=0 (半セル距離)
+    else:
+        inlet_cells, outlet_cells = edge_cells(geo)
+        w_in = ports["w_in"] / ports["w_in"].sum()  # フラックス分配 (Σ=1)
+        g_out = 2.0 * m[outlet_cells] * ports["w_out"]  # コンダクタンスマスク
 
     fi_np, fj_np = geo.fi.numpy(), geo.fj.numpy()
-    out_np = geo.outlet_cells.numpy()
+    out_np = outlet_cells.numpy()
     rows = np.concatenate([fi_np, fj_np, fi_np, fj_np, out_np])
     cols = np.concatenate([fi_np, fj_np, fj_np, fi_np, out_np])
-    vals = torch.cat([g_f, g_f, -g_f, -g_f, g_out])
 
     q_v = cfg.m_dot / cfg.rho_f  # 体積流量 [m³/s]
     b = torch.zeros(n)
-    b[geo.inlet_cells] = q_v / len(geo.inlet_cells)
+    b = b.index_add(0, inlet_cells, q_v * w_in)
 
-    p = sparse_solve(vals, b, rows, cols, n)
-    q_face = g_f * (p[geo.fi] - p[geo.fj])  # >0 で fi→fj
-    q_out = g_out * p[geo.outlet_cells]
-    dp = p[geo.inlet_cells].mean()  # 流入は一様フラックスなので単純平均
-    return {"p": p, "q_face": q_face, "q_out": q_out, "dp": dp, "g_f": g_f}
+    if not cfg.forchheimer:
+        vals = torch.cat([g_f, g_f, -g_f, -g_f, g_out])
+        p = sparse_solve(vals, b, rows, cols, n)
+        q_face = g_f * (p[geo.fi] - p[geo.fj])  # >0 で fi→fj
+        q_out = g_out * p[outlet_cells]
+        dp = (w_in * p[inlet_cells]).sum()  # 流入フラックス重み付き平均
+        return {
+            "p": p,
+            "q_face": q_face,
+            "q_out": q_out,
+            "dp": dp,
+            "g_f": g_f,
+            "picard_iters": 0,
+            "outlet_cells": outlet_cells,
+        }
+
+    # --- Forchheimer: Δp_F = ρ β |U| U · L,  U = q/(t·h) ---
+    if not cfg.pin_fin:
+        msg = "forchheimer=True は pin_fin=True が前提 (β(φ) がピン形状に依存)"
+        raise ValueError(msg)
+    phi = pin_phi(cfg, s)
+    beta = cfg.c_ergun * phi / ((1.0 - phi).clamp_min(1e-6) ** 3 * cfg.d_pin)  # [1/m]
+    beta_face = 0.5 * (beta[geo.fi] + beta[geo.fj])  # 経路半セルずつの算術平均
+    beta_out = 0.5 * beta[outlet_cells]  # 流出は半セル距離
+    coef = cfg.rho_f / (cfg.t_chan**2 * geo.h)  # R_F = coef·β_face·|q|
+
+    # 線形化点 q_lin は緩和付きで更新 (裸の固定点は減衰振動して遅い)。
+    # 返す q_face/q_out は最終線形解そのものなので発散ゼロは厳密に保たれる。
+    q_lin = torch.zeros(geo.fi.shape[0])
+    qo_lin = torch.zeros(len(outlet_cells))
+    dp_old = float("inf")
+    n_it = 0
+    w = cfg.picard_relax
+    for n_it in range(1, cfg.picard_max + 1):  # noqa: B007 (反復数を picard_iters で返す)
+        g_eff = 1.0 / (1.0 / g_f + coef * beta_face * q_lin.abs())
+        g_oeff = 1.0 / (1.0 / g_out.clamp_min(1e-30) + coef * beta_out * qo_lin.abs())
+        if ports is not None:
+            g_oeff = g_oeff * (g_out > 0)  # 窓ゼロのセルは閉じたまま
+        vals = torch.cat([g_eff, g_eff, -g_eff, -g_eff, g_oeff])
+        p = sparse_solve(vals, b, rows, cols, n)
+        q_face = g_eff * (p[geo.fi] - p[geo.fj])
+        q_out = g_oeff * p[outlet_cells]
+        dp = (w_in * p[inlet_cells]).sum()
+        dp_new = float(dp.detach())
+        if abs(dp_new - dp_old) <= cfg.picard_tol * abs(dp_new):
+            break
+        dp_old = dp_new
+        q_lin = w * q_face + (1.0 - w) * q_lin
+        qo_lin = w * q_out + (1.0 - w) * qo_lin
+    return {
+        "p": p,
+        "q_face": q_face,
+        "q_out": q_out,
+        "dp": dp,
+        "g_f": g_eff,
+        "picard_iters": n_it,
+        "outlet_cells": outlet_cells,
+    }
 
 
 # ==========================================================================
@@ -227,7 +388,8 @@ def solve_heat(
 ) -> dict[str, torch.Tensor]:
     n = geo.n_cells
     fi_np, fj_np = geo.fi.numpy(), geo.fj.numpy()
-    out_np = geo.outlet_cells.numpy()
+    outlet_cells = flow.get("outlet_cells", geo.outlet_cells)
+    out_np = outlet_cells.numpy()
     cells = np.arange(n)
 
     # 面内伝導: ベース板 (一定) / 流路層 k_c(s)
@@ -242,9 +404,8 @@ def solve_heat(
     f_neg = rcp * torch.relu(-flow["q_face"])
     f_out = rcp * torch.relu(flow["q_out"])
 
-    # 層間結合: 半厚み伝導の直列 (面積 h²)
-    r_half = cfg.t_base / (2.0 * cfg.k_s) + cfg.t_chan / (2.0 * k_c)
-    u_cpl = geo.h**2 / r_half
+    # 層間結合 (面積 h²): 旧=半厚み伝導直列 / pin_fin=プライム面+フィン増倍
+    u_cpl = geo.h**2 * interlayer_u(cfg, s)
 
     rows = np.concatenate(
         [
@@ -317,7 +478,7 @@ def solve_heat(
 
     t = sparse_solve(vals, b, rows, cols, 2 * n)
     t_s, t_c = t[:n], t[n:]
-    heat_out = (f_out * t_c[geo.outlet_cells]).sum()
+    heat_out = (f_out * t_c[outlet_cells]).sum()
     return {"t_s": t_s, "t_c": t_c, "heat_out": heat_out}
 
 
@@ -333,19 +494,27 @@ def t_ref_scale(cfg: DarcyConfig, geo: Geo) -> float:
 # 目的関数と最適化
 # ==========================================================================
 def forward(
-    cfg: DarcyConfig, geo: Geo, xi: torch.Tensor
+    cfg: DarcyConfig,
+    geo: Geo,
+    xi: torch.Tensor,
+    ports: dict[str, torch.Tensor] | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     s_b = torch.sigmoid(xi)
     s = expand(geo, s_b)
-    flow = solve_flow(cfg, geo, s)
+    flow = solve_flow(cfg, geo, s, ports=ports)
     ht = solve_heat(cfg, geo, s, flow)
     return s_b, {**flow, **ht, "s": s}
 
 
 def objective(
-    cfg: DarcyConfig, geo: Geo, xi: torch.Tensor, gamma_p: float, dp_ref: float
+    cfg: DarcyConfig,
+    geo: Geo,
+    xi: torch.Tensor,
+    gamma_p: float,
+    dp_ref: float,
+    ports: dict[str, torch.Tensor] | None = None,
 ) -> tuple[torch.Tensor, dict[str, float]]:
-    _, st = forward(cfg, geo, xi)
+    _, st = forward(cfg, geo, xi, ports=ports)
     t_ref = t_ref_scale(cfg, geo)
     t_b = block_temps(geo, st["t_s"])
     j_t = torch.logsumexp(cfg.beta_t * t_b, dim=0) / cfg.beta_t / t_ref
@@ -378,15 +547,23 @@ def optimize(
     seed: int = 0,
     verbose: bool = False,
     log_fn: Callable[[str], None] = print,
+    design_shape: tuple[int, int] | None = None,
+    xi0: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """γ 固定の重み付き和を Adam で最小化。戻り値: ロジット ξ (by, bx).
+    """γ 固定の重み付き和を Adam で最小化。戻り値: ロジット ξ (design_shape).
 
     設計変数は連続な透過率場なので 0/1 射影・継続法は不要。
     100 反復ごとにロジットを [-6, 6] にクランプ (シグモイド勾配死の予防)。
+    design_shape 省略時は (by, bx) の 5mm 設計ブロック (従来動作)。
+    xi0 を与えるとそこから再開 (γ 連続スイープのウォームスタート用)。
     """
     dp_ref = dp_reference(cfg, geo)
     rng = np.random.default_rng(seed)
-    xi = torch.tensor(0.05 * rng.standard_normal((geo.by, geo.bx)), requires_grad=True)
+    shape = design_shape if design_shape is not None else (geo.by, geo.bx)
+    if xi0 is not None:
+        xi = xi0.detach().clone().requires_grad_(True)
+    else:
+        xi = torch.tensor(0.05 * rng.standard_normal(shape), requires_grad=True)
     opt = torch.optim.Adam([xi], lr=lr)
     for it in range(iters):
         opt.zero_grad()
@@ -405,16 +582,72 @@ def optimize(
     return xi.detach()
 
 
-def evaluate(cfg: DarcyConfig, geo: Geo, s_blocks: torch.Tensor) -> dict[str, float]:
+def optimize_ports(
+    cfg: DarcyConfig,
+    geo: Geo,
+    gamma_p: float,
+    iters: int = 500,
+    lr: float = 0.1,
+    seed: int = 0,
+    eta0: tuple[float, float] = (0.0, 0.0),
+    free_ports: bool = True,
+    verbose: bool = False,
+    log_fn: Callable[[str], None] = print,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """設計場 ξ とポート位置 (η_in, η_out) の同時最適化 (Task 3).
+
+    ポート中心 y_c = H·sigmoid(η)。free_ports=False なら η を固定して
+    設計場のみ最適化 (ガウシアン窓ポートでの公平な基準ケース)。
+    dp_ref は従来の固定中央 5mm ポート基準のまま (γ の意味を揃える)。
+    戻り値: (ξ, η_in, η_out) いずれも detach 済み。
+    """
+    dp_ref = dp_reference(cfg, geo)
+    rng = np.random.default_rng(seed)
+    xi = torch.tensor(0.05 * rng.standard_normal((geo.by, geo.bx)), requires_grad=True)
+    eta_in = torch.tensor(float(eta0[0]), requires_grad=free_ports)
+    eta_out = torch.tensor(float(eta0[1]), requires_grad=free_ports)
+    params = [xi, eta_in, eta_out] if free_ports else [xi]
+    opt = torch.optim.Adam(params, lr=lr)
+    h_mm = geo.ncy * geo.h * 1e3
+    for it in range(iters):
+        opt.zero_grad()
+        ports = make_ports(cfg, geo, eta_in, eta_out)
+        j, parts = objective(cfg, geo, xi, gamma_p, dp_ref, ports=ports)
+        j.backward()
+        opt.step()
+        if (it + 1) % 100 == 0:
+            with torch.no_grad():
+                xi.clamp_(-6.0, 6.0)
+                if free_ports:
+                    eta_in.clamp_(-4.0, 4.0)  # sigmoid 飽和による勾配死の予防
+                    eta_out.clamp_(-4.0, 4.0)
+        if verbose and (it % 100 == 0 or it == iters - 1):
+            y_in = h_mm * float(torch.sigmoid(eta_in.detach()))
+            y_out = h_mm * float(torch.sigmoid(eta_out.detach()))
+            log_fn(
+                f"    it={it:3d} J={parts['j']:.4f} J_t={parts['j_t']:.4f} "
+                f"dp={parts['dp']:.2f}Pa T_peak={parts['t_peak']:.2f}K "
+                f"y_in={y_in:.1f}mm y_out={y_out:.1f}mm"
+            )
+    return xi.detach(), eta_in.detach(), eta_out.detach()
+
+
+def evaluate(
+    cfg: DarcyConfig,
+    geo: Geo,
+    s_blocks: torch.Tensor,
+    ports: dict[str, torch.Tensor] | None = None,
+) -> dict[str, float]:
     """与えたブロック固体度場 (by, bx) を評価."""
     with torch.no_grad():
         s = expand(geo, s_blocks)
-        flow = solve_flow(cfg, geo, s)
+        flow = solve_flow(cfg, geo, s, ports=ports)
         ht = solve_heat(cfg, geo, s, flow)
         t_b = block_temps(geo, ht["t_s"])
         q_in = cfg.q_block_w * len(geo.heater_cells)
         f_out = cfg.rho_f * cfg.cp * torch.relu(flow["q_out"])
-        t_out = float((f_out * ht["t_c"][geo.outlet_cells]).sum() / f_out.sum())
+        out_cells = flow.get("outlet_cells", geo.outlet_cells)
+        t_out = float((f_out * ht["t_c"][out_cells]).sum() / f_out.sum())
         sb = s_blocks.reshape(-1)
     return {
         "dp": float(flow["dp"]),

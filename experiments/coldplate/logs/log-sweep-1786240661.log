@@ -1,0 +1,26 @@
+gamma sweep: 15 points geomspace(30 -> 0.01), warm-start descending | pin-fin Darcy optimize + D-F re-evaluation
+dp_ref(all-open)=16.18Pa
+  g=      30 (600it  20s)  J=38.4399  dp_D=   17.2  dp_DF=   33.0  T_peak= 23.88  solidity=0.057
+  g=   16.93 (300it  12s)  J=24.0945  dp_D=   17.6  dp_DF=   24.7  T_peak= 20.50  solidity=0.084
+  g=   9.558 (300it  10s)  J=15.9130  dp_D=   18.4  dp_DF=   27.5  T_peak= 18.46  solidity=0.105
+  g=   5.395 (300it   8s)  J=11.0009  dp_D=   19.4  dp_DF=   31.6  T_peak= 16.43  solidity=0.144
+  g=   3.045 (300it  10s)  J= 8.0696  dp_D=   20.9  dp_DF=   37.1  T_peak= 14.98  solidity=0.173
+  g=   1.719 (300it  11s)  J= 6.2786  dp_D=   22.9  dp_DF=   44.6  T_peak= 13.83  solidity=0.213
+  g=  0.9703 (300it  10s)  J= 5.1446  dp_D=   26.4  dp_DF=   54.0  T_peak= 12.75  solidity=0.263
+  g=  0.5477 (300it  12s)  J= 4.3930  dp_D=   30.7  dp_DF=   70.3  T_peak= 11.95  solidity=0.318
+  g=  0.3092 (300it  13s)  J= 3.9011  dp_D=   36.9  dp_DF=   92.0  T_peak= 11.35  solidity=0.366
+  g=  0.1745 (300it  10s)  J= 3.5559  dp_D=   47.5  dp_DF=  123.4  T_peak= 10.81  solidity=0.424
+  g= 0.09851 (300it  11s)  J= 3.2830  dp_D=   62.9  dp_DF=  152.4  T_peak= 10.26  solidity=0.481
+  g=  0.0556 (300it  11s)  J= 3.0771  dp_D=   84.9  dp_DF=  203.5  T_peak=  9.82  solidity=0.543
+  g= 0.03139 (300it  12s)  J= 2.9213  dp_D=  116.1  dp_DF=  277.5  T_peak=  9.48  solidity=0.588
+  g= 0.01772 (300it  13s)  J= 2.8072  dp_D=  160.7  dp_DF=  392.1  T_peak=  9.23  solidity=0.635
+  g=    0.01 (300it  12s)  J= 2.7177  dp_D=  222.5  dp_DF=  551.1  T_peak=  9.02  solidity=0.679
+
+--- コールドスタート (run_pinfin) との J 比較 ---
+  γ=0.01 (cold設計をγ同値で評価 J=2.7014) vs warm J=2.7177
+  γ=0.09851 (cold設計をγ同値で評価 J=3.3006) vs warm J=3.2830
+  γ=0.9703 (cold設計をγ同値で評価 J=5.1617) vs warm J=5.1446
+  γ=9.558 (cold設計をγ同値で評価 J=15.9889) vs warm J=15.9130
+
+saved: /home/nishioka/work/ykep-cae/experiments/coldplate/output/coldplate_sweep.png
+saved: /home/nishioka/work/ykep-cae/experiments/coldplate/output/coldplate_sweep_result.npz

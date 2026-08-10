@@ -1,0 +1,83 @@
+pin-fin+Forchheimer, port window σ=2.5mm, H=80mm
+dp_ref(all-open, 固定中央 5mm)=16.18Pa
+
+=== fixed-center@g=1.0 (eta0=(0.0, 0.0), free=False) ===
+    it=  0 J=61.8916 J_t=3.3626 dp=946.88Pa T_peak=10.83K y_in=40.0mm y_out=40.0mm
+    it=100 J=7.3311 J_t=4.2364 dp=50.06Pa T_peak=15.35K y_in=40.0mm y_out=40.0mm
+    it=200 J=6.3939 J_t=4.1117 dp=36.92Pa T_peak=14.89K y_in=40.0mm y_out=40.0mm
+    it=300 J=6.0305 J_t=4.0398 dp=32.21Pa T_peak=14.60K y_in=40.0mm y_out=40.0mm
+    it=400 J=5.8726 J_t=4.0055 dp=30.21Pa T_peak=14.46K y_in=40.0mm y_out=40.0mm
+    it=500 J=5.7857 J_t=3.9594 dp=29.55Pa T_peak=14.25K y_in=40.0mm y_out=40.0mm
+    it=599 J=5.7134 J_t=3.9348 dp=28.77Pa T_peak=14.16K y_in=40.0mm y_out=40.0mm
+  optimize 128s
+  J=5.7234  y_in=40.0mm  y_out=40.0mm  dp=28.98  T_peak=14.15  T_block_mean=13.79  T_block_std=0.25  T_fluid_out=3.828  solidity_mean=0.208
+
+=== free-center@g=1.0 (eta0=(0.0, 0.0), free=True) ===
+/home/nishioka/work/ykep-cae/experiments/coldplate/darcy.py:625: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:822.)
+  y_in = h_mm * float(torch.sigmoid(eta_in))
+    it=  0 J=61.8916 J_t=3.3626 dp=946.88Pa T_peak=10.83K y_in=42.0mm y_out=38.0mm
+    it=100 J=6.8525 J_t=4.3155 dp=41.04Pa T_peak=15.68K y_in=60.5mm y_out=26.1mm
+    it=200 J=6.4519 J_t=4.2552 dp=35.54Pa T_peak=15.38K y_in=59.6mm y_out=26.1mm
+    it=300 J=6.2883 J_t=4.2188 dp=33.48Pa T_peak=15.26K y_in=58.9mm y_out=26.5mm
+    it=400 J=6.2261 J_t=4.2147 dp=32.54Pa T_peak=15.25K y_in=58.3mm y_out=26.9mm
+    it=500 J=6.1887 J_t=4.2134 dp=31.96Pa T_peak=15.26K y_in=57.8mm y_out=27.5mm
+    it=599 J=6.1064 J_t=4.2146 dp=30.61Pa T_peak=15.26K y_in=57.3mm y_out=28.0mm
+  optimize 111s
+  J=6.1584  y_in=57.3mm  y_out=28.0mm  dp=31.55  T_peak=15.24  T_block_mean=14.9  T_block_std=0.2175  T_fluid_out=3.828  solidity_mean=0.1836
+
+=== free-diag@g=1.0 (eta0=(-2.0, 2.0), free=True) ===
+    it=  0 J=84.4899 J_t=3.6118 dp=1308.44Pa T_peak=11.07K y_in=10.4mm y_out=69.6mm
+    it=100 J=6.3852 J_t=4.2540 dp=34.48Pa T_peak=15.41K y_in=37.4mm y_out=38.3mm
+    it=200 J=6.1108 J_t=4.1501 dp=31.72Pa T_peak=15.03K y_in=38.6mm y_out=38.4mm
+    it=300 J=5.9599 J_t=4.0869 dp=30.30Pa T_peak=14.75K y_in=38.6mm y_out=38.5mm
+    it=400 J=5.8945 J_t=4.0734 dp=29.46Pa T_peak=14.69K y_in=38.8mm y_out=39.0mm
+    it=500 J=5.8609 J_t=4.0663 dp=29.03Pa T_peak=14.67K y_in=38.7mm y_out=39.6mm
+    it=599 J=5.7517 J_t=4.0376 dp=27.73Pa T_peak=14.54K y_in=38.4mm y_out=39.6mm
+  optimize 108s
+  J=5.8144  y_in=38.4mm  y_out=39.6mm  dp=28.79  T_peak=14.53  T_block_mean=14.21  T_block_std=0.236  T_fluid_out=3.828  solidity_mean=0.1872
+
+=== fixed-center@g=0.1 (eta0=(0.0, 0.0), free=False) ===
+    it=  0 J=9.2155 J_t=3.3626 dp=946.88Pa T_peak=10.83K y_in=40.0mm y_out=40.0mm
+    it=100 J=3.7879 J_t=3.1729 dp=99.50Pa T_peak=11.30K y_in=40.0mm y_out=40.0mm
+    it=200 J=3.5462 J_t=3.0592 dp=78.79Pa T_peak=10.91K y_in=40.0mm y_out=40.0mm
+    it=300 J=3.5081 J_t=3.0595 dp=72.58Pa T_peak=10.89K y_in=40.0mm y_out=40.0mm
+    it=400 J=3.4926 J_t=3.0556 dp=70.70Pa T_peak=10.87K y_in=40.0mm y_out=40.0mm
+    it=500 J=3.4864 J_t=3.0563 dp=69.59Pa T_peak=10.87K y_in=40.0mm y_out=40.0mm
+    it=599 J=3.4772 J_t=3.0576 dp=67.89Pa T_peak=10.87K y_in=40.0mm y_out=40.0mm
+  optimize 106s
+  J=3.4833  y_in=40.0mm  y_out=40.0mm  dp=68.95  T_peak=10.87  T_block_mean=10.55  T_block_std=0.1751  T_fluid_out=3.828  solidity_mean=0.4098
+
+=== free-center@g=0.1 (eta0=(0.0, 0.0), free=True) ===
+    it=  0 J=9.2155 J_t=3.3626 dp=946.88Pa T_peak=10.83K y_in=42.0mm y_out=38.0mm
+    it=100 J=3.7774 J_t=3.2107 dp=91.68Pa T_peak=11.39K y_in=55.8mm y_out=29.4mm
+    it=200 J=3.7095 J_t=3.2040 dp=81.78Pa T_peak=11.40K y_in=55.5mm y_out=28.5mm
+    it=300 J=3.6800 J_t=3.1946 dp=78.52Pa T_peak=11.36K y_in=54.7mm y_out=28.9mm
+    it=400 J=3.6542 J_t=3.1810 dp=76.56Pa T_peak=11.33K y_in=53.9mm y_out=30.0mm
+    it=500 J=3.6468 J_t=3.1788 dp=75.72Pa T_peak=11.32K y_in=53.5mm y_out=30.3mm
+    it=599 J=3.6370 J_t=3.1796 dp=73.99Pa T_peak=11.32K y_in=53.2mm y_out=30.6mm
+  optimize 112s
+  J=3.6429  y_in=53.2mm  y_out=30.6mm  dp=75.13  T_peak=11.32  T_block_mean=10.99  T_block_std=0.1971  T_fluid_out=3.828  solidity_mean=0.3994
+
+=== free-diag@g=0.1 (eta0=(-2.0, 2.0), free=True) ===
+    it=  0 J=11.6996 J_t=3.6118 dp=1308.44Pa T_peak=11.07K y_in=10.4mm y_out=69.6mm
+    it=100 J=3.7186 J_t=3.2146 dp=81.53Pa T_peak=11.46K y_in=37.0mm y_out=41.8mm
+    it=200 J=3.6618 J_t=3.1863 dp=76.92Pa T_peak=11.34K y_in=38.3mm y_out=43.5mm
+    it=300 J=3.6416 J_t=3.1800 dp=74.68Pa T_peak=11.28K y_in=38.8mm y_out=44.2mm
+    it=400 J=3.6356 J_t=3.1763 dp=74.30Pa T_peak=11.27K y_in=38.9mm y_out=44.4mm
+    it=500 J=3.6295 J_t=3.1704 dp=74.28Pa T_peak=11.25K y_in=39.1mm y_out=44.7mm
+    it=599 J=3.6115 J_t=3.1630 dp=72.57Pa T_peak=11.21K y_in=39.2mm y_out=44.7mm
+  optimize 112s
+  J=3.6194  y_in=39.2mm  y_out=44.7mm  dp=74.03  T_peak=11.21  T_block_mean=10.96  T_block_std=0.1758  T_fluid_out=3.828  solidity_mean=0.3923
+
+--- まとめ (J は同一 dp_ref 基準) ---
+case                          J   dp[Pa]  T_peak   y_in  y_out
+fixed-center@g=1.0       5.7234     29.0   14.15   40.0   40.0
+free-center@g=1.0        6.1584     31.5   15.24   57.3   28.0
+free-diag@g=1.0          5.8144     28.8   14.53   38.4   39.6
+fixed-center@g=0.1       3.4833     68.9   10.87   40.0   40.0
+free-center@g=0.1        3.6429     75.1   11.32   53.2   30.6
+free-diag@g=0.1          3.6194     74.0   11.21   39.2   44.7
+
+saved: /home/nishioka/work/ykep-cae/experiments/coldplate/output/coldplate_ports.png
+saved: /home/nishioka/work/ykep-cae/experiments/coldplate/output/coldplate_ports_result.npz
