@@ -35,6 +35,12 @@
 | [scalar-transport-fdm.md](scalar-transport-fdm.md) | `docs/design/` | 汎用スカラー輸送ソルバー (Phase 6.1a 水槽 CAE 基盤) | 完了 |
 | (未作成) | - | 乱流モデル Strategy 設計 | 予定 |
 
+## 押出モジュール設計文書
+
+| 文書 | 配置先 | 内容 | 状態 |
+|------|--------|------|------|
+| [single-screw-extruder.md](single-screw-extruder.md) | `docs/design/` | 単軸押出 展開チャネル 2.5D（混練性・RTD） | **設計完了・未実装** |
+
 ## 水槽モジュール設計文書（Phase 6）
 
 | 文書 | 配置先 | 内容 | 状態 |
