@@ -393,3 +393,74 @@ class ParticleTrackResult:
     escaped: np.ndarray
     extrapolated: np.ndarray
     n_steps: np.ndarray
+
+
+@dataclass(frozen=True)
+class RTDInput:
+    """滞留時間分布の集計入力.
+
+    Parameters
+    ----------
+    track : ParticleTrackResult
+        粒子追跡の結果
+    flow : ExtruderFlowResult
+        流れ場（理論値 ⟨t⟩ = z_axial·A_free/(sinφ·Q) の照合に使う）
+    z_axial : float
+        追跡に使った軸方向長さ [m]
+    n_bins : int
+        E(t) のヒストグラム区間数
+    """
+
+    track: ParticleTrackResult
+    flow: ExtruderFlowResult
+    z_axial: float
+    n_bins: int = 200
+
+
+@dataclass(frozen=True)
+class RTDResult:
+    """滞留時間分布と混練性指標.
+
+    Parameters
+    ----------
+    t_edges : np.ndarray
+        (n_bins+1,) ヒストグラムの区間端 [s]
+    E : np.ndarray
+        (n_bins,) 滞留時間の確率密度 [1/s]。∫E dt = 1
+    F : np.ndarray
+        (n_bins+1,) 累積分布 [-]。F(t_edges[0])=0, F(t_edges[-1])=1
+    t_mean : float
+        平均滞留時間 [s]（流束重み付き）
+    t_mean_theory : float
+        理論値 z_axial·A_free/(sinφ·Σweight) [s]。厳密関係
+    t_min, t_p10, t_p50, t_p90 : float
+        最短・10/50/90 パーセンタイル滞留時間 [s]
+    spread : float
+        t_p90 / t_p10。分布の広がり（1 に近いほど揃った履歴）
+    gamma_mean, gamma_p10, gamma_p50, gamma_p90 : float
+        累積せん断ひずみの平均とパーセンタイル [-]
+    lambda_mean : float
+        混合指数の流束重み付き平均 [-]
+    extrapolated_weight_fraction : float
+        外挿で閉じた粒子の重み割合 [-]（境界層の長い裾）
+    unresolved_weight_fraction : float
+        脱出も外挿もできなかった粒子の重み割合 [-]
+    """
+
+    t_edges: np.ndarray
+    E: np.ndarray
+    F: np.ndarray
+    t_mean: float
+    t_mean_theory: float
+    t_min: float
+    t_p10: float
+    t_p50: float
+    t_p90: float
+    spread: float
+    gamma_mean: float
+    gamma_p10: float
+    gamma_p50: float
+    gamma_p90: float
+    lambda_mean: float
+    extrapolated_weight_fraction: float
+    unresolved_weight_fraction: float

@@ -47,6 +47,23 @@ from xkep_cae_fluid.extruder.viscosity import mixing_index
 
 _EPS = 1e-30
 
+_DT_MAX_FRACTION = 0.02
+"""1 ステップの時間刻みの上限（理論平均滞留時間に対する比）.
+
+淀み点（u ≈ v ≈ 0）では dt = cfl·dx/|u| が発散し、1 ステップで 10^13 s といった
+時間を踏んでしまう。位置は CFL で守られるが、経過時間が壊れて ⟨t⟩ が 10 桁単位で
+飛ぶ（実測）。理論平均滞留時間 t_ref = z_axial·A_free/(sinφ·Σweight) は種まき時点で
+分かるので、これを基準に上限を置く。平均的な粒子は最低 50 ステップ、
+max_steps=50000 なら 1000·t_ref まで追える。
+"""
+
+_EXTRAPOLATION_MIN_PROGRESS = 0.1
+"""外挿を許す最小の軸方向進行率（z_axial に対する比）.
+
+これ未満しか進んでいない粒子は「定常周回で ζ が t に比例する」という外挿の
+前提を満たしていないので外挿せず、未解決として報告する。外挿係数は最大 10 倍。
+"""
+
 
 def _node_field(
     cell: np.ndarray,
@@ -217,6 +234,10 @@ class ParticleTrackerProcess(PostProcess["ParticleTrackInput", "ParticleTrackRes
         y_lo = 1e-12 * spec.H
         y_hi = spec.H - y_lo
 
+        # 理論平均滞留時間から 1 ステップの時間刻み上限を決める
+        t_ref = inp.z_axial * grid.area_free / (sin_phi * max(weight.sum(), _EPS))
+        dt_max = _DT_MAX_FRACTION * t_ref
+
         for _ in range(inp.max_steps):
             idx = np.nonzero(alive)[0]
             if idx.size == 0:
@@ -233,6 +254,7 @@ class ParticleTrackerProcess(PostProcess["ParticleTrackInput", "ParticleTrackRes
             remain = inp.z_axial - zeta[idx]
             forward = dz1 > 0.0
             dt = np.where(forward, np.minimum(dt, 2.0 * remain / np.maximum(dz1, _EPS)), dt)
+            dt = np.minimum(dt, dt_max)
 
             xk, yk, zk, gk, lk = self._rk4(interp, xa, ya, dt, cos_phi, sin_phi)
 
@@ -274,8 +296,15 @@ class ParticleTrackerProcess(PostProcess["ParticleTrackInput", "ParticleTrackRes
         # 滞留時間が y→H で発散する（根元側も同様）。重みは (H−y) で消えるので
         # 積分は収束するが、有限ステップでは閉じない。定常な周回軌道では
         # ζ が t に比例するので、t_res = t·z_axial/ζ が良い近似になる。
+        #
+        # **外挿には歯止めが要る。** ζ ≈ 0 の粒子（フライト隅の淀みや二次渦に
+        # 捕まったもの）は「ζ が t に比例する定常周回」という前提を満たしておらず、
+        # 係数 z_axial/ζ が発散して ⟨t⟩ を 10 桁単位で壊す（実測）。
+        # 進行率が信用できる粒子だけ外挿し、残りは未解決として正直に報告する。
+        # 重み×滞留時間の寄与は淀み近傍で O(h²) で消えるので、除外しても収束する。
         extrapolated = np.zeros(n, dtype=bool)
-        stuck = alive & (zeta > 0.0)
+        zeta_min = _EXTRAPOLATION_MIN_PROGRESS * inp.z_axial
+        stuck = alive & (zeta >= zeta_min)
         if stuck.any():
             factor = inp.z_axial / zeta[stuck]
             t[stuck] *= factor
