@@ -15,7 +15,7 @@ FDM（差分法）・FVM（有限体積法）による流体ソルバー基盤�
 
 ## 現在の状態
 
-**286 テスト** -- 2026-04-23 examples/aquarium_filter_circulation.py（Geometry+Heater+Filter+NC 4 段連携、Phase 6.3b） | 契約違反 **0件**（11プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**286 テスト** -- 2026-09-02 [単軸押出解析 設計策定](docs/design/single-screw-extruder.md)（展開チャネル 2.5D、RTD 目的、**実装未着手** / [status-27](docs/status/status-27.md)） | 契約違反 **0件**（11プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 ## パッケージ構成
 
