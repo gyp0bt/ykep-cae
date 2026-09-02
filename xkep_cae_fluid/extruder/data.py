@@ -143,3 +143,38 @@ class ChannelGrid:
         """流体セルの断面積和 [m²]."""
         cell = self.dx[:, None] * self.dy[None, :]
         return float(cell[~self.solid].sum())
+
+
+@dataclass(frozen=True)
+class DownChannelInput:
+    """下流方向流れ w の入力.
+
+    Parameters
+    ----------
+    grid : ChannelGrid
+        断面格子
+    mu : np.ndarray
+        (nx, ny) 粘度場 [Pa·s]。ニュートンなら定数配列
+    G : float
+        下流方向圧力勾配 dp/dz [Pa/m]。押出（背圧あり）は正
+    """
+
+    grid: ChannelGrid
+    mu: np.ndarray
+    G: float
+
+
+@dataclass(frozen=True)
+class DownChannelResult:
+    """下流方向流れ w の結果.
+
+    Parameters
+    ----------
+    w : np.ndarray
+        (nx, ny) 下流方向速度 [m/s]。固体セルは 0
+    Q : float
+        体積流量 [m³/s]（断面積分 ∫∫ w dx dy）
+    """
+
+    w: np.ndarray
+    Q: float

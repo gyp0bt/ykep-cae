@@ -33,7 +33,27 @@ class TestShapeFactorPhysics:
     def test_shallow_limit_is_one(self):
         """H/W → 0 で無限幅平板に退化し Fd, Fp → 1."""
         assert shape_factor_drag(1e-6) == pytest.approx(1.0, abs=1e-5)
-        assert shape_factor_pressure(1e-6) == pytest.approx(1.0, abs=1e-8)
+        assert shape_factor_pressure(1e-6) == pytest.approx(1.0, abs=1e-5)
+
+    def test_shallow_slopes(self):
+        """1−F ≃ 係数×h の傾きが閉形式と一致すること.
+
+        Fd: 16(7/8)ζ(3)/π³ = 0.5427545  /  Fp: 192(31/32)ζ(5)/π⁵ = 0.6302489
+        Fp の傾きの方が大きい = 圧力流れの方が側壁の影響を強く受ける。
+        """
+        from xkep_cae_fluid.extruder.shape_factors import (
+            _SHALLOW_DRAG_SLOPE,
+            SHALLOW_PRESSURE_SLOPE,
+        )
+
+        assert _SHALLOW_DRAG_SLOPE == pytest.approx(0.5427545144, rel=1e-9)
+        assert SHALLOW_PRESSURE_SLOPE == pytest.approx(0.6302488763, rel=1e-9)
+        assert SHALLOW_PRESSURE_SLOPE > _SHALLOW_DRAG_SLOPE
+        h = 1e-3
+        assert (1.0 - shape_factor_drag(h)) / h == pytest.approx(_SHALLOW_DRAG_SLOPE, rel=1e-6)
+        assert (1.0 - shape_factor_pressure(h)) / h == pytest.approx(
+            SHALLOW_PRESSURE_SLOPE, rel=1e-5
+        )
 
     def test_monotone_decreasing(self):
         """側壁の抵抗が効くので H/W が増えるほど小さくなる."""
@@ -43,10 +63,13 @@ class TestShapeFactorPhysics:
         assert all(a > b for a, b in zip(fd, fd[1:], strict=False))
         assert all(a > b for a, b in zip(fp, fp[1:], strict=False))
 
-    def test_pressure_factor_exceeds_drag_factor(self):
-        """圧力流れは側壁の影響を受けにくいので常に Fp > Fd."""
-        for h in (0.05, 0.117248, 0.5, 1.0, 2.0):
-            assert shape_factor_pressure(h) > shape_factor_drag(h)
+    def test_pressure_factor_below_drag_factor(self):
+        """圧力流れは 4 面全部が抵抗になるので常に Fp < Fd.
+
+        Fd と Fp を同じ形の級数だと思い込むとここが逆転する（実際に間違えた）。
+        """
+        for h in (0.01, 0.05, 0.117248, 0.5, 1.0, 2.0, 5.0):
+            assert shape_factor_pressure(h) < shape_factor_drag(h), f"h={h}"
 
     def test_square_channel_drag_factor_is_half(self):
         """H/W = 1（正方形断面）で Fd = 1/2 になる（級数の非自明な性質）."""
@@ -55,13 +78,13 @@ class TestShapeFactorPhysics:
     @pytest.mark.parametrize(
         ("h", "fd", "fp"),
         [
-            (0.010000, 0.994572454856, 0.999900630249),
-            (0.050000, 0.972862274278, 0.997578781110),
-            (0.117248, 0.936363118691, 0.987268753748),
-            (0.200000, 0.891449128218, 0.965041989497),
-            (0.500000, 0.729584593001, 0.828488742160),
-            (1.000000, 0.500000000000, 0.578268955135),
-            (2.000000, 0.270415406999, 0.313954968641),
+            (0.010000, 0.994572454856, 0.993697511237),
+            (0.050000, 0.972862274278, 0.968487556186),
+            (0.117248, 0.936363118691, 0.926104579754),
+            (0.200000, 0.891449128218, 0.873950262564),
+            (0.500000, 0.729584593001, 0.686045031359),
+            (1.000000, 0.500000000000, 0.421731044865),
+            (2.000000, 0.270415406999, 0.171511257840),
         ],
     )
     def test_reference_values(self, h, fd, fp):
@@ -84,21 +107,19 @@ class TestShapeFactorPhysics:
             a = math.pi * h / 2.0
             naive_d = sum(math.tanh(a * i) / i**3 for i in range(1, 200001, 2))
             naive_d *= 16.0 / (math.pi**3 * h)
-            naive_p = sum(math.tanh(a * i) / i**5 for i in range(1, 20001, 2))
-            naive_p *= 192.0 / (math.pi**5 * h)
+            b = math.pi / (2.0 * h)
+            naive_p = sum(math.tanh(b * i) / i**5 for i in range(1, 20001, 2))
+            naive_p = 1.0 - 192.0 * h / math.pi**5 * naive_p
             assert shape_factor_drag(h) == pytest.approx(naive_d, rel=1e-9)
             assert shape_factor_pressure(h) == pytest.approx(naive_p, rel=1e-12)
 
     def test_asymptotic_branch_is_continuous(self):
-        """漸近式への切り替え点で不連続にならないこと."""
+        """Fd の漸近式への切り替え点で不連続にならないこと（Fp に分岐は無い）."""
         from xkep_cae_fluid.extruder.shape_factors import _H_ASYMPTOTIC
 
         eps = _H_ASYMPTOTIC * 1e-6
         assert shape_factor_drag(_H_ASYMPTOTIC - eps) == pytest.approx(
             shape_factor_drag(_H_ASYMPTOTIC + eps), rel=1e-9
-        )
-        assert shape_factor_pressure(_H_ASYMPTOTIC - eps) == pytest.approx(
-            shape_factor_pressure(_H_ASYMPTOTIC + eps), rel=1e-9
         )
 
 
@@ -107,7 +128,7 @@ class TestMeteringFlowRate:
 
     def test_superposition(self):
         """Q(G) が G の一次関数で、G=0 で純引きずり、Q=0 で閉塞点になること."""
-        V_z, W, H, mu = 0.199573, 0.0341156, 0.004, 1000.0
+        V_z, W, H, mu = 0.199573, 0.0341156, 0.004, 1000.0  # noqa: N806
         h = H / W
         fd, fp = shape_factor_drag(h), shape_factor_pressure(h)
 
