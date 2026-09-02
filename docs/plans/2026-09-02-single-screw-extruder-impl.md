@@ -323,10 +323,11 @@ OMP_NUM_THREADS=2 .venv/bin/python contracts/validate_process_contracts.py 2>&1 
 - [ ] **Step 6: 訂正が矛盾を生んでいないか grep で確認する**
 
 ```bash
-grep -n "sinφ\|sin φ\|L_turn\|414" docs/design/single-screw-extruder.md
+grep -v "旧版" docs/design/single-screw-extruder.md | grep -n "πD/sinφ\|414"
 ```
 
-期待: `πD/sinφ` と `414` が 1 件も残っていない。
+期待: ヒット 0 件。「旧版の誤り」として誤値に言及している行は正当なので
+`grep -v "旧版"` で除外する（単純な `grep -n "414"` では必ず引っかかる）。
 
 - [ ] **Step 7: mdview で確認して Artifact 公開する**
 
@@ -3228,7 +3229,7 @@ OMP_NUM_THREADS=2 .venv/bin/python experiments/extruder/report.py 2>&1 | tee /tm
 - [ ] **Step 5: 不整合が無いか確認する**
 
 ```bash
-grep -rn "πD/sinφ\|414 mm\|414mm" docs/ && echo "訂正漏れあり" || echo "OK"
+grep -rv "旧版" docs/ --include="*.md" | grep -n "πD/sinφ\|414 mm\|414mm" && echo "訂正漏れあり" || echo "OK"
 OMP_NUM_THREADS=2 .venv/bin/python -m pytest -q 2>&1 | tail -3
 OMP_NUM_THREADS=2 .venv/bin/python contracts/validate_process_contracts.py 2>&1 | tail -3
 ```
