@@ -234,3 +234,90 @@ class CrossChannelResult:
     psi: np.ndarray
     div_max: float
     psi_periodicity: float
+
+
+@dataclass(frozen=True)
+class ExtruderFlowInput:
+    """押出流れ解析の入力.
+
+    Parameters
+    ----------
+    spec : ScrewSpec
+        スクリュー諸元と格子解像度
+    G : float
+        下流方向圧力勾配 dp/dz [Pa/m]。押出（背圧あり）は正
+    max_iter : int
+        Picard 反復の上限
+    tol : float
+        粘度場の相対変化に対する収束閾値
+    relax_mu : float
+        粘度の緩和係数 ω。μ^{k+1} = (1−ω)μ^k + ω·μ(γ̇^k)
+    """
+
+    spec: ScrewSpec
+    G: float
+    max_iter: int = 100
+    tol: float = 1.0e-6
+    relax_mu: float = 0.5
+
+
+@dataclass(frozen=True)
+class ExtruderFlowResult:
+    """押出流れ解析の結果.
+
+    Parameters
+    ----------
+    grid : ChannelGrid
+        使用した断面格子
+    u, v, w : np.ndarray
+        (nx, ny) セル中心の速度 3 成分 [m/s]
+    u_face : np.ndarray
+        (nx, ny) x 面の u [m/s]
+    v_face : np.ndarray
+        (nx, ny+1) y 面の v [m/s]
+    psi : np.ndarray
+        (nx+1, ny+1) 節点流れ関数 [m²/s]
+    p : np.ndarray
+        (nx, ny) 圧力の周期部分 [Pa]
+    mu : np.ndarray
+        (nx, ny) 収束した粘度場 [Pa·s]
+    gamma_dot : np.ndarray
+        (nx, ny) せん断速度 [1/s]
+    Q : float
+        下流方向の体積流量 ∫∫w dA [m³/s]。**押出量ではない**（Q_axial を見ること）
+    Q_leak : float
+        フライトランド中央を通る正味横断流束 [m²/s]。負が上流への漏れ。
+        断面内は 2D 非圧縮なのでどの x 面を取っても同じ値になる
+    Q_axial : float
+        押出量（軸方向の正味体積流量）[m³/s]。Q_axial = Q + L_turn·Q_leak。
+        隙間がなければ Q_leak=0 で Q と一致する
+    converged : bool
+        粘度場の Picard 反復が収束したか
+    n_iter : int
+        Picard 反復回数
+    mu_history : tuple[float, ...]
+        各反復における粘度場の相対変化
+    div_max : float
+        断面内の最大セル発散（|u_barrel|/H で規格化）
+    elapsed_seconds : float
+        計算時間 [s]
+    """
+
+    grid: ChannelGrid
+    u: np.ndarray
+    v: np.ndarray
+    w: np.ndarray
+    u_face: np.ndarray
+    v_face: np.ndarray
+    psi: np.ndarray
+    p: np.ndarray
+    mu: np.ndarray
+    gamma_dot: np.ndarray
+    Q: float
+    Q_leak: float
+    Q_axial: float
+    converged: bool
+    n_iter: int
+    mu_history: tuple[float, ...] = ()
+    div_max: float = 0.0
+    elapsed_seconds: float = 0.0
