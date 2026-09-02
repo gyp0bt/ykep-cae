@@ -321,3 +321,75 @@ class ExtruderFlowResult:
     mu_history: tuple[float, ...] = ()
     div_max: float = 0.0
     elapsed_seconds: float = 0.0
+
+
+@dataclass(frozen=True)
+class ParticleTrackInput:
+    """粒子追跡の入力.
+
+    Parameters
+    ----------
+    flow : ExtruderFlowResult
+        収束済みの流れ場
+    z_axial : float
+        計量部の軸方向長さ [m]。粒子は ζ >= z_axial で脱出したとみなす
+    stride : int
+        種まきセルの間引き。1 で全流体セル、2 で 1 つおき
+    cfl : float
+        時間刻みの安全率。dt = cfl·min(dx/|u|, dy/|v|)。
+        実測では 1.0 が最良（0.5 だと外挿に回る粒子が増えて逆に精度が落ち、
+        2.0 だと時間積分誤差が 0.8% 出る）
+    max_steps : int
+        1 粒子あたりの最大ステップ数。超えた粒子は軸方向の進行率から外挿して
+        閉じる（extrapolated=True）
+    """
+
+    flow: ExtruderFlowResult
+    z_axial: float
+    stride: int = 1
+    cfl: float = 1.0
+    max_steps: int = 50_000
+
+
+@dataclass(frozen=True)
+class ParticleTrackResult:
+    """粒子追跡の結果（全て (n_particles,) の配列）.
+
+    Parameters
+    ----------
+    weight : np.ndarray
+        流束重み [m³/s]。ζ=0 面を通る体積流束。総和が Q_axial に一致する
+    t_res : np.ndarray
+        滞留時間 [s]
+    gamma_total : np.ndarray
+        累積せん断ひずみ ∫γ̇ dt [-]
+    lambda_mean : np.ndarray
+        経路に沿った混合指数の時間平均 [-]
+    n_wraps : np.ndarray
+        x 周期を跨いだ回数（正 = 下流側へ、負 = 上流側へ）
+    x0, y0 : np.ndarray
+        初期位置 [m]
+    x, y : np.ndarray
+        最終位置 [m]
+    escaped : np.ndarray
+        ζ >= z_axial に到達したか（bool）。外挿で閉じたものも True
+    extrapolated : np.ndarray
+        ステップ上限に達したので軸方向進行率から外挿したか（bool）。
+        バレル直下・根元直上の境界層は軸方向速度が 0 に漸近するため
+        滞留時間が発散し、有限ステップでは閉じない
+    n_steps : np.ndarray
+        使用したステップ数
+    """
+
+    weight: np.ndarray
+    t_res: np.ndarray
+    gamma_total: np.ndarray
+    lambda_mean: np.ndarray
+    n_wraps: np.ndarray
+    x0: np.ndarray
+    y0: np.ndarray
+    x: np.ndarray
+    y: np.ndarray
+    escaped: np.ndarray
+    extrapolated: np.ndarray
+    n_steps: np.ndarray

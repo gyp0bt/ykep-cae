@@ -160,3 +160,39 @@ def strain_rate(u: np.ndarray, v: np.ndarray, w: np.ndarray, grid: ChannelGrid) 
     gamma = np.sqrt(np.maximum(g2, 0.0))
     gamma[grid.solid] = 0.0
     return gamma
+
+
+def mixing_index(u: np.ndarray, v: np.ndarray, w: np.ndarray, grid: ChannelGrid) -> np.ndarray:
+    """セル中心の混合指数 λ = |D| / (|D| + |Ω|).
+
+    D はひずみ速度テンソル、Ω は渦度テンソル、|·| は Frobenius ノルム
+    （Manas-Zloczower の混合指数）。
+
+        λ = 0    純回転（変形が無く混ざらない）
+        λ = 0.5  単純せん断
+        λ = 1    純伸長（分散混合に最も効く）
+
+    完全発達（∂/∂z = 0）なので速度勾配は
+    ∇V = [[ux, uy, 0], [vx, vy, 0], [wx, wy, 0]]。これから
+
+        D:D = ux² + vy² + (uy+vx)²/2 + wx²/2 + wy²/2
+        Ω:Ω = (uy−vx)²/2 + wx²/2 + wy²/2
+
+    なお γ̇ = sqrt(2·D:D) が strain_rate() の定義と一致する。
+    """
+    s = grid.spec
+    ux = _grad_x(u, grid)
+    vx = _grad_x(v, grid)
+    wx = _grad_x(w, grid)
+    uy = _grad_y(u, grid, 0.0, s.u_barrel)
+    vy = _grad_y(v, grid, 0.0, 0.0)
+    wy = _grad_y(w, grid, 0.0, s.w_barrel)
+
+    dd = ux**2 + vy**2 + 0.5 * (uy + vx) ** 2 + 0.5 * wx**2 + 0.5 * wy**2
+    oo = 0.5 * (uy - vx) ** 2 + 0.5 * wx**2 + 0.5 * wy**2
+    norm_d = np.sqrt(np.maximum(dd, 0.0))
+    norm_o = np.sqrt(np.maximum(oo, 0.0))
+    total = norm_d + norm_o
+    lam = np.where(total > 0.0, norm_d / np.where(total > 0.0, total, 1.0), 0.0)
+    lam[grid.solid] = 0.0
+    return lam
