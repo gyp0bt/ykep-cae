@@ -178,3 +178,59 @@ class DownChannelResult:
 
     w: np.ndarray
     Q: float
+
+
+@dataclass(frozen=True)
+class CrossChannelInput:
+    """断面内 Stokes の入力.
+
+    Parameters
+    ----------
+    grid : ChannelGrid
+        断面格子
+    mu : np.ndarray
+        (nx, ny) 粘度場 [Pa·s]
+    G : float
+        下流方向圧力勾配 [Pa/m]。横断方向体積力は f_x = −spec.beta(G) = −G·cotφ
+    p_pin_value : float
+        圧力の定数自由度を消すためのピン留め値 [Pa]
+    """
+
+    grid: ChannelGrid
+    mu: np.ndarray
+    G: float
+    p_pin_value: float = 0.0
+
+
+@dataclass(frozen=True)
+class CrossChannelResult:
+    """断面内 Stokes の結果.
+
+    Parameters
+    ----------
+    u, v : np.ndarray
+        (nx, ny) セル中心速度 [m/s]。固体セルは 0
+    u_face : np.ndarray
+        (nx, ny) x 面の u [m/s]。面 i はセル i の西面（周期なので nx 枚）
+    v_face : np.ndarray
+        (nx, ny+1) y 面の v [m/s]。面 j はセル j の南面
+    p : np.ndarray
+        (nx, ny) 圧力の周期部分 p̃ [Pa]
+    psi : np.ndarray
+        (nx+1, ny+1) 節点上の流れ関数 [m²/s]。面流束を積分して作るので
+        離散的に厳密に発散ゼロ。粒子追跡はこれを使う
+    div_max : float
+        セル発散の最大値を代表せん断速度 |u_barrel|/H で規格化した無次元量
+    psi_periodicity : float
+        psi[nx,:] と psi[0,:] のずれを |u_barrel|·H で規格化した無次元量。
+        0 でなければ質量保存が破れている
+    """
+
+    u: np.ndarray
+    v: np.ndarray
+    u_face: np.ndarray
+    v_face: np.ndarray
+    p: np.ndarray
+    psi: np.ndarray
+    div_max: float
+    psi_periodicity: float
