@@ -2515,7 +2515,7 @@ G3（OpenFOAM 突き合わせ）の前に、**自前の解が格子に対して�
 
 **Files:**
 - Create: `experiments/extruder/grid_convergence.py`
-- Create: `docs/generated/extruder-grid-convergence.md`（スクリプトが生成）
+- Create: `docs/reports/extruder/grid-convergence.md`（スクリプトが生成）
 - Test: `tests/test_extruder_solver.py` に `TestGridConvergence` を追加
 
 **Interfaces:**
@@ -2584,7 +2584,7 @@ from xkep_cae_fluid.extruder.data import ExtruderFlowInput, ScrewSpec
 from xkep_cae_fluid.extruder.solver import ExtruderFlowProcess
 from xkep_cae_fluid.extruder.viscosity import NewtonianViscosity
 
-OUT = Path(__file__).resolve().parents[2] / "docs/generated/extruder-grid-convergence.md"
+OUT = Path(__file__).resolve().parents[2] / "docs/reports/extruder/grid-convergence.md"
 G = 5.0e6
 
 
@@ -2649,7 +2649,7 @@ OMP_NUM_THREADS=2 .venv/bin/python experiments/extruder/grid_convergence.py 2>&1
 - [ ] **Step 5: mdview で見せて Artifact 公開する**
 
 ```bash
-~/work/tb/bin/mdview docs/generated/extruder-grid-convergence.md
+~/work/tb/bin/mdview docs/reports/extruder/grid-convergence.md
 ```
 
 生成 HTML の `<body>` 中身を `Artifact` で公開し URL を報告する。
@@ -2657,7 +2657,7 @@ OMP_NUM_THREADS=2 .venv/bin/python experiments/extruder/grid_convergence.py 2>&1
 - [ ] **Step 6: コミット**
 
 ```bash
-git add experiments/extruder/ docs/generated/ tests/test_extruder_solver.py
+git add experiments/extruder/ docs/reports/extruder/ tests/test_extruder_solver.py
 git commit -m "test(extruder): 隙間解像度の格子収束（n_gap=20 で 1% 以内）
 
 1a/a02 のボクセルメッシュ品質ベンチの結論（誤差は最狭方向のセル数だけで決まる。
@@ -2674,7 +2674,7 @@ git commit -m "test(extruder): 隙間解像度の格子収束（n_gap=20 で 1% 
 - Create: `experiments/extruder/of_case.py`
 - Create: `experiments/extruder/compare_openfoam.py`
 - Create: `experiments/extruder/run_g3.sh`
-- Create: `docs/generated/extruder-g3.md`（スクリプトが生成）
+- Create: `docs/reports/extruder/g3-openfoam.md`（スクリプトが生成）
 
 **Interfaces:**
 - Consumes: `ExtruderFlowProcess`、`~/work/1a/a02/tools/of`
@@ -2711,7 +2711,7 @@ G3b の不一致の原因が特定できなくなる。**先に厳密解のあ�
    ```
 2. `of simpleFoam` で解き、中心速度を厳密解と比較
 3. 一致する `k` の与え方（`k = K/ρ` か否か）を**実測で確定**し、
-   `docs/generated/extruder-g3.md` に記録する
+   `docs/reports/extruder/g3-openfoam.md` に記録する
 
 ```bash
 cd ~/work/ykep-cae/experiments/extruder
@@ -2737,7 +2737,7 @@ OMP_NUM_THREADS=2 ../../.venv/bin/python of_case.py --model newtonian --out /tmp
 cd /tmp/of-g3a
 OF_CPUS=1 OF_MEM=1200m ~/work/1a/a02/tools/of blockMesh   2>&1 | tee /tmp/log-$(date +%s).log
 OF_CPUS=1 OF_MEM=1200m ~/work/1a/a02/tools/of topoSet     2>&1 | tee -a /tmp/log-$(date +%s).log
-OF_CPUS=1 OF_MEM=1200m ~/work/1a/a02/tools/of subsetMesh c0 -patch barrel -overwrite 2>&1 | tee -a /tmp/log-$(date +%s).log
+OF_CPUS=1 OF_MEM=1200m ~/work/1a/a02/tools/of subsetMesh c0 -patch screw -overwrite 2>&1 | tee -a /tmp/log-$(date +%s).log
 OF_CPUS=1 OF_MEM=1200m ~/work/1a/a02/tools/of simpleFoam  2>&1 | tee -a /tmp/log-$(date +%s).log
 ```
 
@@ -2760,7 +2760,7 @@ OMP_NUM_THREADS=2 ../../.venv/bin/python of_case.py --model powerlaw --K 2e4 --n
 # 以下 Step 3 と同じ手順
 ```
 
-- [ ] **Step 6: `run_g3.sh` に一括化し、結果を `docs/generated/extruder-g3.md` に出す**
+- [ ] **Step 6: `run_g3.sh` に一括化し、結果を `docs/reports/extruder/g3-openfoam.md` に出す**
 
 レポートには STA2 防止ルールに従い、ブランチ名・コミットハッシュ・実行コマンド・
 OpenFOAM イメージ名を必ず記録する。
@@ -2768,13 +2768,13 @@ OpenFOAM イメージ名を必ず記録する。
 - [ ] **Step 7: mdview → Artifact 公開**
 
 ```bash
-~/work/tb/bin/mdview docs/generated/extruder-g3.md
+~/work/tb/bin/mdview docs/reports/extruder/g3-openfoam.md
 ```
 
 - [ ] **Step 8: コミット**
 
 ```bash
-git add experiments/extruder/ docs/generated/
+git add experiments/extruder/ docs/reports/extruder/
 git commit -m "test(extruder): ゲート G3 — OpenFOAM による独立検算
 
 x 周期の圧力跳びを体積力 (−G·cotφ, 0, −G) に還元したので fixedJump は不要、
@@ -3178,7 +3178,7 @@ G4b は厳密関係 ⟨t⟩ = z_end·A_free/Q との突き合わせ。補間誤�
 
 **Files:**
 - Create: `experiments/extruder/report.py`
-- Create: `docs/generated/extruder-report.md`（スクリプトが生成）
+- Create: `docs/reports/extruder/report.md`（スクリプトが生成）
 - Create: `docs/status/status-28.md`
 - Modify: `docs/status/status-index.md`
 - Modify: `docs/roadmap.md`
@@ -3206,7 +3206,7 @@ G4b は厳密関係 ⟨t⟩ = z_end·A_free/Q との突き合わせ。補間誤�
 ```bash
 cd ~/work/ykep-cae
 OMP_NUM_THREADS=2 .venv/bin/python experiments/extruder/report.py 2>&1 | tee /tmp/log-$(date +%s).log
-~/work/tb/bin/mdview docs/generated/extruder-report.md
+~/work/tb/bin/mdview docs/reports/extruder/report.md
 ```
 
 生成 HTML の `<body>` 中身を取り出して `Artifact` で公開し、**URL を報告に書く**。

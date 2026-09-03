@@ -378,6 +378,23 @@ CLAUDE.md の「機能は可能な限り process クラスとして実装」に�
 > 循環流があるので `simpleFoam` で妥当だが、**収束が異様に遅い場合は
 > 連成の要否を疑うこと。**
 
+**実装で確定した構成**（`experiments/extruder/of_case.py`、結果は [G3 レポート](../reports/extruder/g3-openfoam.md)）:
+
+- 格子は **ykep と同一**にする。`ScrewGeometryProcess` の dx/dy は等比区間の並びなので
+  blockMesh の多区間 grading `((fraction n ratio) ...)` で厳密に再現でき、フライトは
+  `topoSet`（boxToCell + invert）→ `subsetMesh -patch screw` で抜く。compare 時にセル中心の
+  ずれ < 1e-3 セル幅を検査する
+- **緩和係数は U 0.999 / p 1.0（SIMPLEC）**。緩和係数 α は擬似時間刻み α/(1−α)·V/a_P を
+  与え、隙間セル（Δy = 5 μm）では a_P ≈ 2ν/Δy² が巨大なので α=0.9 では最も滑らかな
+  誤差モードが 1 反復あたり 1−7e-5 しか減衰しない（1D で 5000 反復後も残差 1e-3）。
+  α=1 は SIMPLEC の `1/(1/rAU − H1)` が純拡散で 0 割になり sigFpe。上の教訓の定量版
+- べき乗則は **ニュートン収束解から起動する**。U=0 から始めると γ̇=0 → ν=nuMax で
+  a_P がさらに 150 倍になり、粘度が下がるには速度が育つ必要がある鶏と卵で反復が 1 桁増える
+- `powerLaw` の (k, n) は ρ=1 で ykep の (K, n) にそのまま対応（1D Poiseuille 厳密解で 0.5% 以内を確認）。
+  `nuMax = K·γ̇_min^(n−1)` で ykep のクランプと揃える
+- OpenFOAM は writeInterval の倍数でしか書かない（endTime では書かない）。段階実行するなら
+  writeInterval = 段の長さ。`residualControl` の U は成分の max なので 1D（Uy≡0）では発火しない
+
 ---
 
 ## 6. 諸元（仮・40mm 押出機）
@@ -411,8 +428,8 @@ CLAUDE.md の「機能は可能な限り process クラスとして実装」に�
 
 | Phase | 内容 | 完了条件 |
 |---|---|---|
-| **1** | 等温・ニュートン → 非ニュートン → 隙間あり | G1/G2 通過、G3 で OpenFOAM と 1% 以内 |
-| **1.5** | 粒子追跡と RTD | G4 通過。**本来の目的はここ** |
+| **1** ✅ | 等温・ニュートン → 非ニュートン → 隙間あり | G1/G2 通過、G3 で OpenFOAM と 1% 以内（[status-28](../status/status-28.md)、[G3 レポート](../reports/extruder/g3-openfoam.md)） |
+| **1.5** ✅ | 粒子追跡と RTD | G4 通過。**本来の目的はここ**（status-28） |
 | **2** | 粘性発熱 `Φ = μγ̇²` と温度依存粘度 | エネルギー式に散逸項を追加。発熱→低粘度化→発熱減の連成 |
 | **3** | 3D 混練エレメント | 螺旋対称性が壊れる領域。messi + OpenFOAM。MRF で足りるか要検討 |
 
@@ -427,8 +444,8 @@ CLAUDE.md の「機能は可能な限り process クラスとして実装」に�
 | `V sinφ` の向きと `Δp` の符号 | `u_barrel = -V sinφ`, `w_barrel = +V cosφ`, `Δp = +G·L_turn`（`+x` が下流） | §2.1.1 |
 | `Fd`/`Fp` の級数と桁落ち対策 | `tanh(x)=1−2/(e^{2x}+1)` 分解 + ζ 閉形式。指数減衰する級数に変形 | §3 |
 | 非ニュートンの反復スキーム | Picard（逐次代入）+ 粘度の緩和 `ω = 0.5`。Newton は不採用 | 計画 Task 6 |
-| 粒子追跡の時間刻み | 粒子ごとに `dt = CFL·min(dx/\|u\|, dy/\|v\|)` を毎ステップ再計算（CFL=0.2） | 計画 Task 9 |
-| RTD の粒子数と初期配置 | 20,000 個、流量重み付き `p ∝ max(w,0)·dA`（相対標準誤差 0.7%） | 計画 Task 9/10 |
+| 粒子追跡の時間刻み | 粒子ごとに `dt = CFL·min(dx/\|u\|, dy/\|v\|)` を毎ステップ再計算（CFL=1.0、RK4）。淀み点で dt が発散するので上限 = 理論平均滞留時間の 2% | `tracker.py` |
+| RTD の粒子数と初期配置 | **決定論的**: 流体セル 1 個に 1 粒子（40 mm 機で 16,960 個）、重み = 軸方向流束 `max(u cotφ + w, 0)·dA` を追跡と同じ双一次場から取る。1 点求積がセル積分に厳密なのでモンテカルロ誤差ゼロ | `tracker.py` |
 | 諸元 | 仮の 40mm 機。実機は `ScrewSpec` を差し替えるだけ（検証枠組みは `H/W` にのみ依存） | §6 |
 
 **Newton を採らない理由**: 見かけ粘度項のヤコビアンは `∂μ/∂γ̇ · ∂γ̇/∂(∇u)` を通じて
@@ -450,3 +467,4 @@ CLAUDE.md の「機能は可能な限り process クラスとして実装」に�
 |---|---|---|
 | 🌀 押出機の中の8秒 | https://claude.ai/code/artifact/4ed6f1d4-6fa9-4a17-8fdc-d93af00724d4 | 押出の基本のキ（展開・引きずり/圧力流れ・循環・隙間・RTD・混練性） |
 | 🔥 押出断面のフィールド | https://claude.ai/code/artifact/bbc1809e-ca05-4e34-bc57-1ff6ea01fb34 | 40mm 機の断面実解（速度・粘度・せん断速度・粘性発熱・流線、ニュートン vs べき乗則） |
+| 🔬 ゲート G3 — OpenFOAM 検算 | https://claude.ai/code/artifact/c5512b21-f3ba-42fe-9441-cec76ec4e9bb | 同一格子での ykep-cae ↔ simpleFoam 突き合わせ（[Markdown 実体](../reports/extruder/g3-openfoam.md)） |

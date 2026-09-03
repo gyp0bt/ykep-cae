@@ -31,3 +31,4 @@
 | 25 | 2026-04-21 | 286 | `AquariumFilterProcess` + `InternalFaceBC`（Phase 6.3a、外部フィルター循環 INLET/OUTLET BC） |
 | 26 | 2026-04-23 | 286 | `examples/aquarium_filter_circulation.py`（Phase 6.3b、Geometry+Heater+Filter+NC 4 段連携デモ） |
 | 27 | 2026-09-02 | 286 | 単軸押出解析 設計策定（展開チャネル 2.5D、RTD 目的、実装未着手） |
+| 28 | 2026-09-03 | 438 | 単軸押出解析 Phase 1/1.5 実装（`extruder/` 6 プロセス、ゲート G1〜G4 全通過、OpenFOAM G3 検算） |
