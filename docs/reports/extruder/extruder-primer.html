@@ -1,0 +1,1216 @@
+<title>押出機の中の8秒</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+
+<style>
+:root{
+  --ground:#EDEFEC;
+  --surface:#FBFCFA;
+  --sunken:#E3E7E1;
+  --ink:#1A201D;
+  --muted:#5D655F;
+  --rule:#C7CDC5;
+  --rule-soft:#DCE1DA;
+  --machine:#69716C;
+  --melt:#B24714;
+  --melt-soft:#EBD8CD;
+  --leak:#0F6B76;
+  --leak-soft:#CFE2E3;
+  --shadow:0 1px 0 rgba(26,32,29,.05);
+
+  --f-display:"Archivo","Zen Kaku Gothic New",system-ui,sans-serif;
+  --f-body:"Zen Kaku Gothic New","Archivo",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,monospace;
+
+  --col:34rem;
+  --wide:56rem;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#141917;
+    --surface:#1D2321;
+    --sunken:#101514;
+    --ink:#E6ECE8;
+    --muted:#96A09A;
+    --rule:#2F3733;
+    --rule-soft:#262D2A;
+    --machine:#8B928C;
+    --melt:#E9793F;
+    --melt-soft:#3A2418;
+    --leak:#45AEBA;
+    --leak-soft:#10312F;
+    --shadow:0 1px 0 rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#141917;
+  --surface:#1D2321;
+  --sunken:#101514;
+  --ink:#E6ECE8;
+  --muted:#96A09A;
+  --rule:#2F3733;
+  --rule-soft:#262D2A;
+  --machine:#8B928C;
+  --melt:#E9793F;
+  --melt-soft:#3A2418;
+  --leak:#45AEBA;
+  --leak-soft:#10312F;
+  --shadow:0 1px 0 rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:var(--f-body);
+  font-size:16px;
+  line-height:1.85;
+  -webkit-font-smoothing:antialiased;
+}
+.page{max-width:var(--wide);margin:0 auto;padding:0 1.5rem 6rem}
+
+/* ---------- masthead ---------- */
+.masthead{
+  padding:4.5rem 0 2.5rem;
+  border-bottom:1px solid var(--rule);
+  display:flex;flex-direction:column;gap:1.1rem;
+}
+.eyebrow{
+  font-family:var(--f-mono);font-size:.72rem;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted);margin:0;
+}
+h1{
+  font-family:var(--f-display);font-weight:700;
+  font-size:clamp(2.4rem,7vw,3.9rem);line-height:1.06;
+  letter-spacing:-.02em;margin:0;text-wrap:balance;
+}
+.standfirst{
+  max-width:var(--col);margin:0;color:var(--muted);font-size:1.02rem;line-height:1.9;
+}
+.byline{
+  font-family:var(--f-mono);font-size:.74rem;color:var(--muted);
+  display:flex;flex-wrap:wrap;gap:.4rem 1.4rem;margin-top:.3rem;
+}
+
+/* ---------- contents ---------- */
+.toc{
+  margin:2.5rem 0 0;padding:1.4rem 0;border-bottom:1px solid var(--rule);
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:.35rem 2rem;
+}
+.toc a{
+  font-family:var(--f-mono);font-size:.78rem;color:var(--muted);
+  text-decoration:none;display:flex;gap:.7rem;padding:.12rem 0;
+}
+.toc a:hover,.toc a:focus-visible{color:var(--melt)}
+.toc .n{color:var(--rule);min-width:1.4rem}
+
+/* ---------- sections ---------- */
+section{padding:3.6rem 0 0;border-top:1px solid var(--rule-soft)}
+section:first-of-type{border-top:none}
+h2{
+  font-family:var(--f-display);font-weight:700;
+  font-size:clamp(1.5rem,3.4vw,2.05rem);line-height:1.25;letter-spacing:-.01em;
+  margin:0 0 .35rem;max-width:var(--col);text-wrap:balance;
+}
+h2 .num{
+  font-family:var(--f-mono);font-size:.72rem;font-weight:500;letter-spacing:.14em;
+  color:var(--melt);display:block;margin-bottom:.5rem;
+}
+h3{
+  font-family:var(--f-display);font-weight:600;font-size:1.05rem;
+  margin:2.2rem 0 .3rem;max-width:var(--col);letter-spacing:.01em;
+}
+p{max-width:var(--col);margin:1rem 0}
+strong{font-weight:700}
+em{font-style:normal;color:var(--melt);font-weight:500}
+code,.mono{font-family:var(--f-mono);font-size:.9em}
+code{
+  background:var(--sunken);padding:.1em .38em;border-radius:2px;
+  font-size:.86em;
+}
+a{color:var(--melt)}
+:focus-visible{outline:2px solid var(--melt);outline-offset:2px}
+
+ul{max-width:var(--col);padding-left:1.15rem;margin:1rem 0}
+li{margin:.45rem 0}
+li::marker{color:var(--muted)}
+
+/* ---------- figures ---------- */
+figure{
+  margin:2.2rem 0;background:var(--surface);
+  border:1px solid var(--rule);border-radius:3px;
+  padding:1.5rem 1.5rem 1.1rem;box-shadow:var(--shadow);
+  overflow-x:auto;
+}
+figure svg{display:block;max-width:100%;height:auto;margin:0 auto;color:var(--ink)}
+/* SVG のリテラル色をテーマトークンで上書きする。
+   presentation attribute は CSS 宣言より弱いので、属性セレクタで確実に勝てる。 */
+figure svg [stroke="#B24714"]{stroke:var(--melt)}
+figure svg [fill="#B24714"]{fill:var(--melt)}
+figure svg [stroke="#0F6B76"]{stroke:var(--leak)}
+figure svg [fill="#0F6B76"]{fill:var(--leak)}
+figure svg [stroke="#69716C"]{stroke:var(--machine)}
+figure svg [fill="#69716C"]{fill:var(--machine)}
+figure svg polyline[fill="#B24714"]{fill:var(--melt)}
+figcaption{
+  font-family:var(--f-mono);font-size:.75rem;line-height:1.7;color:var(--muted);
+  margin-top:1.1rem;padding-top:.8rem;border-top:1px solid var(--rule-soft);
+  max-width:44rem;
+}
+figcaption b{color:var(--ink);font-weight:500}
+
+/* ---------- takeaway ---------- */
+.point{
+  max-width:var(--col);margin:1.8rem 0;padding:.9rem 0 .9rem 1.1rem;
+  border-left:2px solid var(--melt);
+  font-size:1.02rem;line-height:1.8;
+}
+.point .lab{
+  font-family:var(--f-mono);font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--melt);display:block;margin-bottom:.3rem;
+}
+
+/* ---------- data ---------- */
+.data{
+  margin:2rem 0;border:1px solid var(--rule);border-radius:3px;background:var(--surface);
+  overflow-x:auto;box-shadow:var(--shadow);
+}
+table{border-collapse:collapse;width:100%;font-size:.85rem}
+caption{
+  font-family:var(--f-mono);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);text-align:left;padding:.9rem 1.1rem .5rem;
+}
+th,td{padding:.5rem 1.1rem;text-align:left;border-top:1px solid var(--rule-soft)}
+th{font-family:var(--f-mono);font-size:.72rem;font-weight:500;color:var(--muted);letter-spacing:.06em}
+td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+td.hl{color:var(--melt);font-weight:500}
+tbody tr:hover{background:var(--sunken)}
+
+.stats{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));
+  gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:3px;
+  margin:2rem 0;overflow:hidden;
+}
+.stat{background:var(--surface);padding:1rem 1.1rem}
+.stat .v{
+  font-family:var(--f-mono);font-size:1.32rem;font-weight:500;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em;display:block;line-height:1.3;
+}
+.stat .u{font-family:var(--f-mono);font-size:.8rem;color:var(--muted)}
+.stat .k{font-size:.76rem;color:var(--muted);display:block;margin-top:.25rem;line-height:1.5}
+
+/* ---------- legend chips ---------- */
+.legend{
+  display:flex;flex-wrap:wrap;gap:.4rem 1.3rem;margin:.2rem 0 0;
+  font-family:var(--f-mono);font-size:.74rem;color:var(--muted);
+}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.swatch{width:1.1rem;height:0;border-top-width:2.5px;border-top-style:solid;display:inline-block}
+
+/* ---------- formula ---------- */
+.formula{
+  font-family:var(--f-mono);font-size:.95rem;line-height:2;
+  background:var(--sunken);border-radius:3px;padding:1rem 1.2rem;
+  margin:1.4rem 0;max-width:var(--col);overflow-x:auto;white-space:pre;
+}
+
+.footnote{
+  max-width:var(--col);font-size:.85rem;color:var(--muted);line-height:1.75;
+  margin:1.4rem 0;
+}
+
+footer{
+  margin-top:4.5rem;padding-top:1.6rem;border-top:1px solid var(--rule);
+  font-family:var(--f-mono);font-size:.74rem;color:var(--muted);line-height:1.9;
+}
+@media (max-width:34rem){
+  body{font-size:15px}
+  figure{padding:1rem .8rem .8rem}
+  th,td{padding:.45rem .7rem}
+}
+</style>
+
+<div class="page">
+
+<header class="masthead">
+  <p class="eyebrow">単軸押出機の物理 — 初心者向け</p>
+  <h1>押出機の中の8秒</h1>
+  <p class="standfirst">
+    プラスチックのペレットを溶かして、パイプやフィルムの形に押し出す機械。
+    中で何が起きているのかを、実際に数値計算した 40 mm 押出機の結果と図で説明します。
+    数式は最小限に、「なぜそうなるのか」を順番に。
+  </p>
+  <p class="byline">
+    <span>40 mm 単軸 / 100 rpm</span>
+    <span>樹脂 μ = 1000 Pa·s</span>
+    <span>押出量 39.5 kg/h</span>
+    <span>平均滞留時間 7.8 s</span>
+  </p>
+</header>
+
+<nav class="toc" aria-label="目次">
+  <a href="#s1"><span class="n">01</span>押出機とは何か</a>
+  <a href="#s2"><span class="n">02</span>なぜ材料は前に進むのか</a>
+  <a href="#s3"><span class="n">03</span>螺旋を平面に開く</a>
+  <a href="#s4"><span class="n">04</span>断面ひとつで全部わかる</a>
+  <a href="#s5"><span class="n">05</span>3 つの流れ</a>
+  <a href="#s6"><span class="n">06</span>隙間のパラドックス</a>
+  <a href="#s7"><span class="n">07</span>混ぜているのは渦</a>
+  <a href="#s8"><span class="n">08</span>滞留時間分布</a>
+  <a href="#s9"><span class="n">09</span>樹脂は水ではない</a>
+  <a href="#s10"><span class="n">10</span>どう確かめたか</a>
+</nav>
+
+<!-- ============================================================ 01 -->
+<section id="s1">
+  <h2><span class="num">01</span>押出機とは何か</h2>
+
+  <p>
+    円筒（<em>バレル</em>）の中で 1 本のスクリューが回っている。それだけの機械です。
+    上のホッパーからプラスチックのペレットを入れると、右端の口金（<em>ダイ</em>）から
+    溶けた樹脂が連続的に出てくる。パイプ、電線の被覆、フィルム、ペットボトルの原料——
+    身の回りのプラスチック製品のほとんどが、どこかでこの機械を通っています。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 700 250" role="img" aria-label="押出機の縦断面。左のホッパーから入った樹脂が、固体輸送部・溶融部・計量部の3ゾーンを通り右のダイから出る">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="currentColor"/>
+        </marker>
+        <marker id="arm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="#B24714"/>
+        </marker>
+      </defs>
+
+      <!-- hopper -->
+      <path d="M62,20 L128,20 L108,66 L82,66 z" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <circle cx="80" cy="34" r="3.2" fill="currentColor" opacity=".55"/>
+      <circle cx="94" cy="30" r="3.2" fill="currentColor" opacity=".55"/>
+      <circle cx="108" cy="36" r="3.2" fill="currentColor" opacity=".55"/>
+      <circle cx="88" cy="45" r="3.2" fill="currentColor" opacity=".55"/>
+      <circle cx="103" cy="50" r="3.2" fill="currentColor" opacity=".55"/>
+      <text x="95" y="12" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">ホッパー（ペレット投入）</text>
+
+      <!-- barrel -->
+      <rect x="60" y="66" width="510" height="96" fill="none" stroke="currentColor" stroke-width="2"/>
+      <text x="315" y="58" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">バレル（固定・外から加熱）</text>
+
+      <!-- heater bands -->
+      <g stroke="#B24714" stroke-width="4" opacity=".8">
+        <line x1="180" y1="63" x2="240" y2="63"/><line x1="290" y1="63" x2="350" y2="63"/>
+        <line x1="400" y1="63" x2="460" y2="63"/><line x1="490" y1="63" x2="550" y2="63"/>
+      </g>
+
+      <!-- screw shaft: root diameter grows to the right -->
+      <path d="M60,140 L200,140 L360,110 L570,110 L570,118 L360,118 L200,148 L60,148 z"
+            fill="#69716C" opacity=".28" stroke="#69716C" stroke-width="1.4"/>
+      <text x="120" y="176" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">スクリュー根元（だんだん太くなる＝溝が浅くなる）</text>
+
+      <!-- flights -->
+      <g stroke="#69716C" stroke-width="2.4" fill="none">
+        <line x1="78"  y1="140" x2="78"  y2="68"/>
+        <line x1="116" y1="140" x2="116" y2="68"/>
+        <line x1="154" y1="140" x2="154" y2="68"/>
+        <line x1="192" y1="141" x2="192" y2="68"/>
+        <line x1="230" y1="134" x2="230" y2="68"/>
+        <line x1="268" y1="127" x2="268" y2="68"/>
+        <line x1="306" y1="120" x2="306" y2="68"/>
+        <line x1="344" y1="113" x2="344" y2="68"/>
+        <line x1="382" y1="110" x2="382" y2="68"/>
+        <line x1="420" y1="110" x2="420" y2="68"/>
+        <line x1="458" y1="110" x2="458" y2="68"/>
+        <line x1="496" y1="110" x2="496" y2="68"/>
+        <line x1="534" y1="110" x2="534" y2="68"/>
+      </g>
+      <text x="97" y="196" font-family="IBM Plex Mono, monospace" font-size="11" fill="#69716C">フライト（螺旋の羽根）</text>
+      <line x1="97" y1="190" x2="97" y2="150" stroke="#69716C" stroke-width="1" stroke-dasharray="2 2"/>
+
+      <!-- die -->
+      <path d="M570,66 L610,66 L610,100 L648,104 L648,124 L610,128 L610,162 L570,162 z"
+            fill="none" stroke="currentColor" stroke-width="2"/>
+      <line x1="648" y1="114" x2="694" y2="114" stroke="#B24714" stroke-width="3.5" marker-end="url(#arm)"/>
+      <text x="614" y="56" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">ダイ（口金）</text>
+      <text x="660" y="140" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#B24714">製品</text>
+
+      <!-- zones -->
+      <g stroke="currentColor" stroke-width=".9" opacity=".45">
+        <line x1="200" y1="166" x2="200" y2="214"/>
+        <line x1="360" y1="166" x2="360" y2="214"/>
+        <line x1="570" y1="166" x2="570" y2="214"/>
+        <line x1="60"  y1="166" x2="60"  y2="214"/>
+      </g>
+      <line x1="60" y1="214" x2="570" y2="214" stroke="currentColor" stroke-width=".9" opacity=".45"/>
+      <text x="130" y="232" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">固体輸送部</text>
+      <text x="280" y="232" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">溶融部</text>
+      <text x="465" y="232" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#B24714">計量部 ← ここを解く</text>
+    </svg>
+    <figcaption>
+      <b>押出機の縦断面。</b>スクリューの根元は右へ行くほど太くなり、溝が浅くなる。
+      固体のペレットは左で押し込まれ、中央でバレルの熱とせん断で溶け、右の <b>計量部</b>では
+      完全に溶けて溝を満たしている。ここが流量と品質を決める区間で、本稿はここだけを扱う。
+    </figcaption>
+  </figure>
+
+  <div class="point">
+    <span class="lab">なぜ計量部だけ見るのか</span>
+    固体と液体が混ざった溶融部は「相変化する固体床」という別問題。
+    完全に溶けて溝を満たしている計量部なら、単相の粘性流れとして厳密に解ける。
+    そして出口の流量と、材料がどれだけ均一な履歴を受けたかは、ここでほぼ決まります。
+  </div>
+</section>
+
+<!-- ============================================================ 02 -->
+<section id="s2">
+  <h2><span class="num">02</span>なぜ材料は前に進むのか</h2>
+
+  <p>
+    ここが押出の一番の勘所です。多くの人は最初「スクリューがコルク抜きのように材料を
+    ねじ込んでいる」と考えます。<strong>それは間違いです。</strong>
+  </p>
+
+  <p>
+    もしバレルの内壁がツルツルで、材料がまったく引っかからなかったら——
+    材料はスクリューと一緒にぐるぐる回るだけで、1 mm も前に進みません。
+    コルク抜きが効くのはコルクが瓶に固定されているからで、
+    自由に回れる材料はネジで押せないのです。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 660 250" role="img" aria-label="バレルが滑らかだと材料はスクリューと一緒に回るだけで進まない。バレルが材料をつかむと材料が周方向に押さえられ、フライトが材料を軸方向へ送る">
+      <defs>
+        <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="currentColor"/>
+        </marker>
+        <marker id="ar2m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="#B24714"/>
+        </marker>
+      </defs>
+
+      <!-- Panel A -->
+      <text x="30" y="22" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor" opacity=".62">A ── バレルがツルツルなら</text>
+      <circle cx="150" cy="132" r="82" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="5 5" opacity=".55"/>
+      <circle cx="150" cy="132" r="34" fill="#69716C" opacity=".3" stroke="#69716C" stroke-width="1.5"/>
+      <g stroke="#69716C" stroke-width="2.2">
+        <line x1="150" y1="98" x2="150" y2="52"/>
+        <line x1="184" y1="132" x2="230" y2="132"/>
+        <line x1="150" y1="166" x2="150" y2="212"/>
+        <line x1="116" y1="132" x2="70"  y2="132"/>
+      </g>
+      <path d="M150,72 A60,60 0 0,1 210,132" fill="none" stroke="#B24714" stroke-width="2.4" marker-end="url(#ar2m)"/>
+      <path d="M150,192 A60,60 0 0,1 90,132" fill="none" stroke="#B24714" stroke-width="2.4" marker-end="url(#ar2m)"/>
+      <text x="150" y="132" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">スクリュー</text>
+      <text x="150" y="238" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#B24714">材料も一緒に回る → 進まない</text>
+
+      <!-- divider -->
+      <line x1="330" y1="30" x2="330" y2="220" stroke="currentColor" stroke-width="1" opacity=".2"/>
+
+      <!-- Panel B -->
+      <text x="360" y="22" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor" opacity=".62">B ── バレルが材料をつかむと</text>
+      <circle cx="490" cy="132" r="82" fill="none" stroke="currentColor" stroke-width="3"/>
+      <g stroke="currentColor" stroke-width="1.4" opacity=".6">
+        <line x1="490" y1="50" x2="490" y2="42"/><line x1="548" y1="74" x2="554" y2="68"/>
+        <line x1="572" y1="132" x2="580" y2="132"/><line x1="548" y1="190" x2="554" y2="196"/>
+        <line x1="490" y1="214" x2="490" y2="222"/><line x1="432" y1="190" x2="426" y2="196"/>
+        <line x1="408" y1="132" x2="400" y2="132"/><line x1="432" y1="74" x2="426" y2="68"/>
+      </g>
+      <circle cx="490" cy="132" r="34" fill="#69716C" opacity=".3" stroke="#69716C" stroke-width="1.5"/>
+      <g stroke="#69716C" stroke-width="2.2">
+        <line x1="490" y1="98" x2="490" y2="52"/>
+        <line x1="524" y1="132" x2="570" y2="132"/>
+        <line x1="490" y1="166" x2="490" y2="212"/>
+        <line x1="456" y1="132" x2="410" y2="132"/>
+      </g>
+      <path d="M490,72 A60,60 0 0,1 550,132" fill="none" stroke="#69716C" stroke-width="2.4" marker-end="url(#ar2)"/>
+      <circle cx="530" cy="98" r="9" fill="#B24714" opacity=".85"/>
+      <circle cx="530" cy="98" r="9" fill="none" stroke="#B24714" stroke-width="1.5"/>
+      <text x="490" y="238" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#B24714">材料が周方向に押さえられる → 軸方向へ逃げる</text>
+      <text x="592" y="98" font-family="IBM Plex Mono, monospace" font-size="11" fill="#B24714">材料</text>
+    </svg>
+    <figcaption>
+      <b>スクリューを軸方向から見たところ。</b>A ではスクリューの回転（オレンジ）に材料が
+      そのままついていくだけ。B ではバレルの摩擦が材料を周方向に押さえるので、
+      回転してくるフライトに対して材料は逃げ場を失い、螺旋の溝に沿って軸方向へ送り出される。
+      <b>押し出しているのはスクリューではなく、バレルとの摩擦差です。</b>
+    </figcaption>
+  </figure>
+
+  <div class="point">
+    <span class="lab">押出機の第一原理</span>
+    材料を前へ運ぶのは <strong>スクリューとバレルの「つかみ」の差</strong>。
+    だから溶融樹脂が滑るバレルは押出量が落ちるし、
+    バレル内面に溝を切って摩擦を上げた「溝付きバレル」という機種が存在します。
+  </div>
+
+  <p>
+    この見方を数式に落とすとき、便利な視点の切り替えがあります。
+    <strong>スクリューに乗って一緒に回ってみる</strong>のです。
+    すると止まっているのはスクリューの方で、バレルが逆向きに回っているように見える。
+    形が時間とともに変わらないので、扱いが一気に楽になります。
+  </p>
+</section>
+
+<!-- ============================================================ 03 -->
+<section id="s3">
+  <h2><span class="num">03</span>螺旋を平面に開く</h2>
+
+  <p>
+    スクリューに乗った視点で、さらにもう一手。
+    バレルの内面を<strong>ハサミで切って平らに広げる</strong>と、
+    螺旋の溝はまっすぐな 1 本の水路になります。バレルは、その水路の上を
+    <em>斜めに滑っていく平らな板</em>になる。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 700 290" role="img" aria-label="螺旋チャネルを平面に展開すると、フライトが傾き角φの平行線になり、バレルは速度Vで斜めに滑る平板になる">
+      <defs>
+        <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="currentColor"/>
+        </marker>
+        <marker id="ar3m" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="#B24714"/>
+        </marker>
+        <marker id="ar3l" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="#0F6B76"/>
+        </marker>
+      </defs>
+
+      <!-- unrolled sheet -->
+      <rect x="60" y="40" width="580" height="200" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".5"/>
+      <text x="60" y="30" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor" opacity=".62">バレル内面を切り開いた平面（横 = 円周 πD、縦 = 軸方向）</text>
+
+      <!-- flights as parallel diagonals, angle phi from horizontal -->
+      <g stroke="#69716C" stroke-width="7" stroke-linecap="round" opacity=".9">
+        <line x1="60" y1="235" x2="640" y2="50"/>
+        <line x1="175" y1="240" x2="640" y2="92"/>
+        <line x1="60" y1="192" x2="640" y2="7"/>
+      </g>
+
+      <text x="330" y="150" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor" transform="rotate(-17.7 330 150)">チャネル（溝）</text>
+      <text x="470" y="120" font-family="IBM Plex Mono, monospace" font-size="11" fill="#69716C" transform="rotate(-17.7 470 120)">フライト</text>
+
+      <!-- angle phi -->
+      <line x1="60" y1="235" x2="200" y2="235" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <path d="M110,235 A50,50 0 0,0 107.6,219" fill="none" stroke="#B24714" stroke-width="1.6"/>
+      <text x="124" y="228" font-family="IBM Plex Mono, monospace" font-size="13" fill="#B24714">φ = 17.7°</text>
+
+      <!-- barrel velocity arrow (circumferential = along the sheet's x) -->
+      <line x1="150" y1="70" x2="330" y2="70" stroke="#B24714" stroke-width="3" marker-end="url(#ar3m)"/>
+      <text x="340" y="66" font-family="IBM Plex Mono, monospace" font-size="12" fill="#B24714">バレルの滑り V = πDN = 0.209 m/s</text>
+      <text x="150" y="88" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62">（周方向だけ。軸方向の成分は無い）</text>
+
+      <!-- decomposition of V into channel-aligned components -->
+      <g transform="translate(96,168)">
+        <line x1="0" y1="0" x2="96" y2="0" stroke="#B24714" stroke-width="2.6" marker-end="url(#ar3m)"/>
+        <line x1="0" y1="0" x2="92" y2="-29" stroke="#0F6B76" stroke-width="2.6" marker-end="url(#ar3l)"/>
+        <line x1="0" y1="0" x2="9" y2="29" stroke="#0F6B76" stroke-width="2.6" marker-end="url(#ar3l)"/>
+        <line x1="92" y1="-29" x2="101" y2="0" stroke="currentColor" stroke-width=".9" stroke-dasharray="3 2" opacity=".6"/>
+      </g>
+      <text x="196" y="132" font-family="IBM Plex Mono, monospace" font-size="11" fill="#0F6B76">z 成分 +V cosφ = 0.200（下流へ運ぶ）</text>
+      <text x="112" y="212" font-family="IBM Plex Mono, monospace" font-size="11" fill="#0F6B76">x 成分 −V sinφ = −0.064（渦を作る）</text>
+
+      <!-- geometry labels -->
+      <g font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">
+        <text x="386" y="248">W_t = πD sinφ = 38.1 mm（溝 1 ピッチの幅）</text>
+        <text x="386" y="266">L_turn = πD cosφ = 119.7 mm（隣の溝までの下流距離）</text>
+      </g>
+    </svg>
+    <figcaption>
+      <b>展開図。</b>フライトは傾き <code>φ</code>（リード角）の平行線になり、
+      溝はその間のまっすぐな水路になる。バレルは周方向にしか動かないので、
+      その速度 <code>V</code> は水路に沿う成分 <code>+V cosφ</code>（材料を下流へ引っぱる）と
+      水路を横切る成分 <code>−V sinφ</code>（横断方向の渦を作る）に分かれる。
+      <b>この分解が押出のすべての出発点です。</b>
+    </figcaption>
+  </figure>
+
+  <div class="point">
+    <span class="lab">ここで効いてくる幾何</span>
+    展開すると、隣り合う溝は「同じ 1 本の水路の 1 周前と 1 周後」になります。
+    その下流距離が <code>L_turn = πD cosφ = 119.7 mm</code>。
+    フライトを乗り越えて隣の溝へ漏れた材料は、<strong>一気に 12 cm ワープする</strong>——
+    §06 と §08 で効いてきます。
+  </div>
+</section>
+
+<!-- ============================================================ 04 -->
+<section id="s4">
+  <h2><span class="num">04</span>断面ひとつで全部わかる</h2>
+
+  <p>
+    ここで大きな簡略化ができます。溝のピッチが一定なら、水路の断面形状は
+    下流方向にまったく変わりません。だから流れも下流方向に変化しない——
+    <strong>1 枚の断面を解けば、3 方向すべての速度が出る</strong>のです。
+    3 次元を解く必要がありません。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 700 260" role="img" aria-label="展開チャネルの断面。上がバレル、下がスクリュー根元、中央にフライトと隙間。深さH=4mm、溝幅W=34mm、フライト幅e=4mm、隙間δ=0.1mm">
+      <defs>
+        <marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="currentColor"/>
+        </marker>
+        <marker id="ar4m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="#B24714"/>
+        </marker>
+        <pattern id="hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+          <line x1="0" y1="0" x2="0" y2="7" stroke="#69716C" stroke-width="2.2" opacity=".55"/>
+        </pattern>
+      </defs>
+
+      <!-- fluid domain -->
+      <rect x="70" y="70" width="560" height="110" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".45"/>
+
+      <!-- screw root -->
+      <rect x="70" y="180" width="560" height="26" fill="url(#hatch)" stroke="#69716C" stroke-width="2"/>
+      <text x="350" y="224" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="#69716C">スクリュー根元（止まっている）</text>
+
+      <!-- barrel -->
+      <rect x="70" y="44" width="560" height="26" fill="url(#hatch)" stroke="#69716C" stroke-width="2"/>
+      <line x1="470" y1="57" x2="620" y2="57" stroke="#B24714" stroke-width="3" marker-end="url(#ar4m)"/>
+      <text x="80" y="34" font-family="IBM Plex Mono, monospace" font-size="12" fill="#B24714">バレル（斜めに滑る）→ 図の紙面に垂直な成分 +V cosφ もある</text>
+
+      <!-- flight in the middle -->
+      <rect x="322" y="78" width="56" height="102" fill="url(#hatch)" stroke="#69716C" stroke-width="2"/>
+      <text x="350" y="140" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#69716C" transform="rotate(-90 350 140)">フライト</text>
+
+      <!-- clearance -->
+      <rect x="322" y="70" width="56" height="8" fill="#0F6B76" opacity=".25"/>
+      <line x1="378" y1="74" x2="470" y2="74" stroke="#0F6B76" stroke-width="1" stroke-dasharray="3 2"/>
+      <text x="476" y="78" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#0F6B76">隙間 δ = 0.1 mm</text>
+
+      <!-- dimension: H -->
+      <line x1="100" y1="70" x2="100" y2="180" stroke="currentColor" stroke-width="1" marker-start="url(#ar4)" marker-end="url(#ar4)"/>
+      <text x="110" y="129" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">H = 4 mm</text>
+
+      <!-- dimension: W -->
+      <line x1="378" y1="166" x2="630" y2="166" stroke="currentColor" stroke-width="1" marker-start="url(#ar4)" marker-end="url(#ar4)"/>
+      <text x="504" y="159" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">溝幅 W = 34.1 mm</text>
+
+      <!-- dimension: e -->
+      <line x1="322" y1="196" x2="378" y2="196" stroke="currentColor" stroke-width="1" marker-start="url(#ar4)" marker-end="url(#ar4)"/>
+      <text x="350" y="212" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">e = 4</text>
+
+      <!-- periodic sides -->
+      <line x1="70" y1="70" x2="70" y2="180" stroke="#0F6B76" stroke-width="2.5" stroke-dasharray="6 4"/>
+      <line x1="630" y1="70" x2="630" y2="180" stroke="#0F6B76" stroke-width="2.5" stroke-dasharray="6 4"/>
+      <text x="50" y="250" font-family="IBM Plex Mono, monospace" font-size="11" fill="#0F6B76">左右の破線は同じ場所（周期）</text>
+    </svg>
+    <figcaption>
+      <b>解く領域はこの 1 枚。</b>横 38.1 mm × 縦 4 mm。フライトを真ん中に置き、
+      左右の端（破線）を貼り合わせて筒にする。<b>隙間 δ は深さ H の 1/40</b> しかないが、
+      ここが混ざり方を決めるので、隙間方向だけ格子を細かくして 10〜20 分割する。
+      全体で 124 × 42 = 約 5200 セル、求解は 1 秒未満。
+    </figcaption>
+  </figure>
+
+  <p>
+    実際に解いた速度分布がこれです。溝の中央で、深さ方向にどう速度が変わるかを見ています。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 420 340" role="img" aria-label="溝中央の深さ方向速度分布。横断方向uは上部で負・下部で正、下流方向wは上ほど大きい、軸方向成分は中央付近で最大">
+      <!-- frame -->
+      <line x1="58" y1="20" x2="58" y2="276" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
+      <line x1="58" y1="276" x2="330" y2="276" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
+      <line x1="130.5" y1="20" x2="130.5" y2="276" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" opacity=".5"/>
+
+      <!-- ticks -->
+      <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62" text-anchor="middle">
+        <text x="85.2" y="292">−0.05</text><text x="130.5" y="292">0</text>
+        <text x="175.9" y="292">0.05</text><text x="221.2" y="292">0.10</text>
+        <text x="266.5" y="292">0.15</text><text x="311.9" y="292">0.20</text>
+        <text x="194" y="310">速度 [m/s]</text>
+      </g>
+      <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62" text-anchor="end">
+        <text x="52" y="24">1.0</text><text x="52" y="88">0.75</text>
+        <text x="52" y="152">0.5</text><text x="52" y="216">0.25</text><text x="52" y="280">0</text>
+      </g>
+      <text x="20" y="150" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62" transform="rotate(-90 20 150)" text-anchor="middle">深さ y / H</text>
+      <text x="70" y="16" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62">↑ バレル</text>
+      <text x="70" y="272" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62">根元</text>
+
+      <!-- curves -->
+      <polyline fill="none" stroke="#0F6B76" stroke-width="2.4" points="136.84,261.20 144.53,233.32 148.04,208.68 148.59,186.91 147.07,167.67 144.16,150.67 140.38,135.64 136.08,122.37 131.54,110.64 126.94,100.27 122.43,91.11 118.09,83.02 113.98,75.87 110.13,69.54 106.56,63.96 103.27,59.02 100.27,54.66 97.53,50.81 95.05,47.40 92.80,44.40 90.79,41.74 88.97,39.39 87.34,37.31 85.89,35.48 84.59,33.85 83.43,32.42 82.40,31.15 81.48,30.04 80.66,29.05 79.93,28.17 79.28,27.40 78.71,26.72 78.17,26.08 77.63,25.44 77.08,24.80 76.54,24.16 75.99,23.52 75.44,22.88 74.89,22.24 74.33,21.60 73.78,20.96 73.22,20.32"/>
+      <polyline fill="none" stroke="#B24714" stroke-width="2.4" points="138.90,261.20 155.57,233.32 171.01,208.68 185.22,186.91 198.21,167.67 210.02,150.67 220.73,135.64 230.40,122.37 239.10,110.64 246.92,100.27 253.93,91.11 260.20,83.02 265.80,75.87 270.79,69.54 275.25,63.96 279.21,59.02 282.73,54.66 285.86,50.81 288.64,47.40 291.11,44.40 293.30,41.74 295.24,39.39 296.96,37.31 298.48,35.48 299.83,33.85 301.03,32.42 302.08,31.15 303.02,30.04 303.85,29.05 304.58,28.17 305.23,27.40 305.80,26.72 306.34,26.08 306.88,25.44 307.42,24.80 307.96,24.16 308.50,23.52 309.04,22.88 309.58,22.24 310.12,21.60 310.67,20.96 311.21,20.32"/>
+      <polyline fill="none" stroke="currentColor" stroke-width="2.6" stroke-dasharray="6 3" points="139.08,261.20 151.46,233.32 159.50,208.68 164.32,186.91 166.81,167.67 167.63,150.67 167.27,135.64 166.11,122.37 164.42,110.64 162.42,100.27 160.24,91.11 158.01,83.02 155.79,75.87 153.63,69.54 151.58,63.96 149.65,59.02 147.85,54.66 146.20,50.81 144.67,47.40 143.29,44.40 142.03,41.74 140.89,39.39 139.86,37.31 138.93,35.48 138.10,33.85 137.36,32.42 136.70,31.15 136.10,30.04 135.58,29.05 135.10,28.17 134.69,27.40 134.31,26.72 133.96,26.08 133.61,25.44 133.25,24.80 132.90,24.16 132.54,23.52 132.18,22.88 131.82,22.24 131.45,21.60 131.09,20.96 130.72,20.32"/>
+
+      <!-- barrel end markers -->
+      <circle cx="73.22" cy="20.32" r="3.2" fill="#0F6B76"/>
+      <circle cx="311.21" cy="20.32" r="3.2" fill="#B24714"/>
+      <g font-family="IBM Plex Mono, monospace" font-size="10.5">
+        <text x="340" y="24" fill="#B24714">w = +V cosφ</text>
+        <text x="340" y="38" fill="currentColor" opacity=".62">= 0.200</text>
+        <text x="340" y="262" fill="#0F6B76">u = −V sinφ</text>
+        <text x="340" y="276" fill="currentColor" opacity=".62">= −0.064</text>
+      </g>
+    </svg>
+    <div class="legend">
+      <span><i class="swatch" style="border-color:#B24714"></i>w：下流方向</span>
+      <span><i class="swatch" style="border-color:#0F6B76"></i>u：横断方向</span>
+      <span><i class="swatch" style="border-color:currentColor;border-top-style:dashed"></i>軸方向成分 u cosφ + w sinφ</span>
+    </div>
+    <figcaption>
+      <b>溝中央の深さ方向プロファイル（背圧 5 MPa/m）。</b>
+      下流方向 <code>w</code> はバレル直下で最大。横断方向 <code>u</code> は
+      上半分で負（バレルに引かれて片側へ）、下半分で正（戻ってくる）——これが §07 の渦。
+      破線の<b>軸方向成分</b>は <code>y/H ≈ 0.6</code> で最大になり、
+      <b>バレル面ではちょうどゼロ</b>になる。バレルは周方向にしか動かないので当然だが、
+      <b>それは「バレルに貼りついた材料は前に進まない」ことを意味します</b>（§08 の伏線）。
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ 05 -->
+<section id="s5">
+  <h2><span class="num">05</span>3 つの流れ</h2>
+
+  <p>
+    計量部で起きているのは、重ね合わせると理解しやすい 3 つの流れです。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 700 220" role="img" aria-label="引きずり流れ・圧力流れ・漏れ流れの3つの速度分布">
+      <defs>
+        <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="#B24714"/>
+        </marker>
+        <marker id="a5l" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="#0F6B76"/>
+        </marker>
+      </defs>
+
+      <!-- 1 drag -->
+      <g transform="translate(20,0)">
+        <text x="90" y="20" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">引きずり流れ</text>
+        <line x1="20" y1="40" x2="160" y2="40" stroke="#69716C" stroke-width="4"/>
+        <line x1="20" y1="150" x2="160" y2="150" stroke="#69716C" stroke-width="4"/>
+        <g stroke="#B24714" stroke-width="1.8" marker-end="url(#a5)">
+          <line x1="22" y1="48" x2="122" y2="48"/><line x1="22" y1="66" x2="102" y2="66"/>
+          <line x1="22" y1="84" x2="82"  y2="84"/><line x1="22" y1="102" x2="62" y2="102"/>
+          <line x1="22" y1="120" x2="42" y2="120"/>
+        </g>
+        <line x1="22" y1="150" x2="130" y2="44" stroke="#B24714" stroke-width="2" stroke-dasharray="4 2"/>
+        <text x="90" y="176" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".62">バレルが引っぱる</text>
+        <text x="90" y="192" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".62">＝押出の駆動力</text>
+      </g>
+
+      <!-- 2 pressure -->
+      <g transform="translate(250,0)">
+        <text x="90" y="20" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">圧力流れ</text>
+        <line x1="20" y1="40" x2="160" y2="40" stroke="#69716C" stroke-width="4"/>
+        <line x1="20" y1="150" x2="160" y2="150" stroke="#69716C" stroke-width="4"/>
+        <g stroke="#0F6B76" stroke-width="1.8" marker-end="url(#a5l)">
+          <line x1="80" y1="56" x2="62" y2="56"/><line x1="80" y1="74" x2="42" y2="74"/>
+          <line x1="80" y1="95" x2="34" y2="95"/><line x1="80" y1="116" x2="42" y2="116"/>
+          <line x1="80" y1="134" x2="62" y2="134"/>
+        </g>
+        <path d="M80,42 Q30,95 80,148" fill="none" stroke="#0F6B76" stroke-width="2" stroke-dasharray="4 2"/>
+        <text x="90" y="176" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".62">ダイの抵抗で押し返される</text>
+        <text x="90" y="192" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".62">＝押出量を減らす</text>
+      </g>
+
+      <!-- 3 leakage -->
+      <g transform="translate(480,0)">
+        <text x="100" y="20" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">漏れ流れ</text>
+        <line x1="20" y1="40" x2="180" y2="40" stroke="#69716C" stroke-width="4"/>
+        <rect x="82" y="52" width="36" height="98" fill="#69716C" opacity=".45" stroke="#69716C" stroke-width="1.4"/>
+        <line x1="20" y1="150" x2="180" y2="150" stroke="#69716C" stroke-width="4"/>
+        <g stroke="#0F6B76" stroke-width="2.2" marker-end="url(#a5l)">
+          <line x1="140" y1="46" x2="60" y2="46"/>
+        </g>
+        <text x="100" y="176" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".62">フライトの上を越えて</text>
+        <text x="100" y="192" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".62">隣の溝へ（＝1 周分戻る）</text>
+      </g>
+    </svg>
+    <figcaption>
+      <b>3 つの流れ。</b>引きずり流れ（オレンジ）が押出の駆動力、
+      圧力流れと漏れ流れ（ティール）がそれを削る。ニュートン流体なら
+      この 3 つは<b>厳密に重ね合わせできる</b>ので、押出量は背圧の一次関数になる。
+    </figcaption>
+  </figure>
+
+  <p>
+    実際に背圧 <code>G</code> を振って計算すると、きれいな直線になります。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 560 300" role="img" aria-label="背圧に対する押出量の特性線。断面積分Qと真の押出量Q_axialは平行で、常にQ_axialの方が小さい">
+      <!-- grid -->
+      <g stroke="currentColor" opacity=".13" stroke-width="1">
+        <line x1="70" y1="56.9" x2="540" y2="56.9"/><line x1="70" y1="122.6" x2="540" y2="122.6"/>
+        <line x1="70" y1="188.3" x2="540" y2="188.3"/>
+      </g>
+      <line x1="70" y1="24" x2="70" y2="254" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
+      <line x1="70" y1="254" x2="540" y2="254" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
+      <line x1="137.1" y1="24" x2="137.1" y2="254" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" opacity=".45"/>
+
+      <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62" text-anchor="middle">
+        <text x="70" y="270">−2</text><text x="137.1" y="270">0</text><text x="204.3" y="270">2</text>
+        <text x="271.4" y="270">4</text><text x="338.6" y="270">6</text><text x="405.7" y="270">8</text>
+        <text x="472.9" y="270">10</text><text x="540" y="270">12</text>
+        <text x="305" y="290">背圧 dp/dz [MPa/m]　→　ダイの抵抗が大きいほど右</text>
+      </g>
+      <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62" text-anchor="end">
+        <text x="62" y="58">44</text><text x="62" y="126">40</text><text x="62" y="192">36</text><text x="62" y="258">32</text>
+      </g>
+      <text x="22" y="139" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62" transform="rotate(-90 22 139)" text-anchor="middle">押出量 [kg/h]</text>
+
+      <polyline fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="6 3" points="70.00,41.61 128.75,58.35 187.50,75.09 246.25,91.82 305.00,108.56 363.75,125.30 422.50,142.04 481.25,158.78 540.00,175.51"/>
+      <polyline fill="none" stroke="#B24714" stroke-width="2.8" points="70.00,63.24 128.75,80.01 187.50,96.77 246.25,113.54 305.00,130.31 363.75,147.07 422.50,163.84 481.25,180.60 540.00,197.37"/>
+
+      <!-- highlight the case -->
+      <circle cx="305" cy="130.31" r="4.5" fill="#B24714"/>
+      <line x1="305" y1="130.31" x2="305" y2="254" stroke="#B24714" stroke-width="1" stroke-dasharray="3 3" opacity=".6"/>
+      <text x="313" y="126" font-family="IBM Plex Mono, monospace" font-size="11" fill="#B24714">本稿の代表条件 39.5 kg/h</text>
+
+      <text x="82" y="36" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".62">Q = ∫∫w dA（断面を通る量）</text>
+      <text x="82" y="80" font-family="IBM Plex Mono, monospace" font-size="11" fill="#B24714">Q_axial（本当の押出量）</text>
+    </svg>
+    <figcaption>
+      <b>押出量特性線（ニュートン流体・40 mm 機・100 rpm）。</b>
+      背圧が上がるほど押出量が減る一次関数。左端（負の背圧）は口金が抵抗ゼロの状態、
+      右へ行くほど細いダイを付けた状態にあたる。2 本の線の差は §06 で説明します。
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ 06 -->
+<section id="s6">
+  <h2><span class="num">06</span>隙間のパラドックス</h2>
+
+  <p>
+    フライトの先端とバレルの間には必ず隙間があります（この機械では 0.1 mm）。
+    加工上どうしても空くのですが、押出量にどう効くでしょうか。
+  </p>
+
+  <p>
+    直感的には「隙間から漏れるぶん、押出量は減る」。正解です。
+    ところが計算してみると、<strong>断面を通る流量 <code>Q = ∫∫w dA</code> は
+    かえって増えます</strong>。隙間は、下流方向の速度が最も速いバレル直下に
+    追加の通り道を作るからです。
+  </p>
+
+  <p>
+    ではどちらが正しいのか。<strong>「断面を通る量」は押出量ではない</strong>、
+    というのが答えです。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 700 250" role="img" aria-label="隙間を越えた材料はL_turn分だけ上流に戻るので、真の押出量は断面流量から漏れ量×L_turnを引いたものになる">
+      <defs>
+        <marker id="a6m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="#B24714"/>
+        </marker>
+        <marker id="a6l" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="#0F6B76"/>
+        </marker>
+      </defs>
+
+      <text x="30" y="22" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor" opacity=".62">展開図を上から見る（水路 3 本ぶん）</text>
+
+      <!-- three channels as diagonal bands -->
+      <g stroke="#69716C" stroke-width="6" opacity=".85">
+        <line x1="40" y1="200" x2="660" y2="52"/>
+        <line x1="40" y1="145" x2="660" y2="-3"/>
+        <line x1="40" y1="255" x2="660" y2="107"/>
+      </g>
+
+      <!-- forward flow along channel -->
+      <line x1="90" y1="212" x2="470" y2="121" stroke="#B24714" stroke-width="3" marker-end="url(#a6m)"/>
+      <text x="200" y="238" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#B24714">水路に沿って下流へ（引きずり流れ）</text>
+
+      <!-- leak crossing the flight -->
+      <line x1="430" y1="130" x2="392" y2="70" stroke="#0F6B76" stroke-width="3" marker-end="url(#a6l)"/>
+      <text x="300" y="60" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#0F6B76">隙間を越えて隣の水路へ</text>
+
+      <!-- equivalence bracket -->
+      <path d="M392,70 L392,44 L560,44" fill="none" stroke="#0F6B76" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="400" y="36" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#0F6B76">隣の水路 = 同じ水路の 1 周前　→　下流距離が L_turn = 120 mm 巻き戻る</text>
+    </svg>
+    <figcaption>
+      <b>漏れは「隣へ移る」ではなく「1 周ぶん巻き戻る」。</b>
+      展開図では隣り合う水路に見えるが、実物は同じ螺旋の 1 周前と 1 周後。
+      だから隙間を 1 回越えるたびに、材料は下流方向に <code>L_turn = 120 mm</code> 戻される。
+    </figcaption>
+  </figure>
+
+  <p>
+    これを式にすると、真の押出量（機械の軸方向を通る正味の量）は
+  </p>
+
+  <div class="formula">Q_axial = Q + L_turn × Q_leak
+         ↑          ↑        ↑
+     本当の押出量   断面流量   漏れ流量（負）</div>
+
+  <p>
+    実測すると、隙間があると <code>Q</code> は 0.3% 増えるのに、
+    <code>Q_axial</code> は <strong>3.0% 減る</strong>。
+    古典的な「隙間は押出量を減らす」は、こちらの量の話だったのです。
+  </p>
+
+  <div class="data">
+    <table>
+      <caption>隙間の有無による比較（背圧 5 MPa/m）</caption>
+      <thead><tr><th>量</th><th style="text-align:right">隙間ゼロ</th><th style="text-align:right">隙間 0.1 mm</th><th style="text-align:right">変化</th></tr></thead>
+      <tbody>
+        <tr><td>断面流量 <span class="mono">Q</span></td><td class="num">40.73 kg/h</td><td class="num">40.85 kg/h</td><td class="num">+0.3 %</td></tr>
+        <tr><td>漏れ流量 <span class="mono">Q_leak</span></td><td class="num">0</td><td class="num">−3.23×10⁻⁶ m²/s</td><td class="num">—</td></tr>
+        <tr><td><strong>押出量 <span class="mono">Q_axial</span></strong></td><td class="num">40.73 kg/h</td><td class="num hl">39.53 kg/h</td><td class="num hl">−3.0 %</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="point">
+    <span class="lab">実務への含み</span>
+    スクリューが摩耗して隙間が広がると、押出量が落ちて生産性が下がる——
+    これは現場でよく知られた話です。その仕組みが「漏れた材料が 1 周ぶん戻される」
+    ことにあると、量として説明できます。
+  </div>
+</section>
+
+<!-- ============================================================ 07 -->
+<section id="s7">
+  <h2><span class="num">07</span>混ぜているのは渦</h2>
+
+  <p>
+    押出機は運ぶだけでなく、混ぜる機械でもあります。顔料、充填材、添加剤——
+    均一に分散していないと製品にならない。では何が混ぜているのか。
+  </p>
+
+  <p>
+    §03 で分けたバレル速度の<strong>横断方向成分 <code>−V sinφ</code></strong> です。
+    バレルは水路を斜めに滑るので、材料を横方向に押しやる。
+    しかし両側はフライトで塞がれているので行き場がない。結果、
+    <strong>断面の中でぐるぐる回る渦</strong>ができます。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 700 260" role="img" aria-label="断面内の循環流。上部でバレルに引かれて左へ、フライトで下降し、底を右へ戻り、反対側で上昇する閉じたループ">
+      <defs>
+        <marker id="a7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="#0F6B76"/>
+        </marker>
+        <marker id="a7m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="#B24714"/>
+        </marker>
+        <pattern id="hatch7" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+          <line x1="0" y1="0" x2="0" y2="7" stroke="#69716C" stroke-width="2.2" opacity=".55"/>
+        </pattern>
+      </defs>
+
+      <rect x="120" y="52" width="460" height="24" fill="url(#hatch7)" stroke="#69716C" stroke-width="2"/>
+      <rect x="120" y="184" width="460" height="24" fill="url(#hatch7)" stroke="#69716C" stroke-width="2"/>
+      <rect x="96"  y="76" width="24" height="108" fill="url(#hatch7)" stroke="#69716C" stroke-width="2"/>
+      <rect x="580" y="76" width="24" height="108" fill="url(#hatch7)" stroke="#69716C" stroke-width="2"/>
+
+      <line x1="430" y1="64" x2="230" y2="64" stroke="#B24714" stroke-width="3" marker-end="url(#a7m)"/>
+      <text x="330" y="42" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="#B24714">バレルの横断方向成分 −V sinφ = −0.064 m/s</text>
+
+      <!-- circulation loop -->
+      <g stroke="#0F6B76" fill="none" stroke-width="2.6">
+        <path d="M470,100 L220,100" marker-end="url(#a7)"/>
+        <path d="M180,110 Q160,130 180,152" marker-end="url(#a7)"/>
+        <path d="M230,162 L470,162" marker-end="url(#a7)"/>
+        <path d="M520,152 Q540,130 520,110" marker-end="url(#a7)"/>
+      </g>
+      <ellipse cx="350" cy="131" rx="150" ry="34" fill="none" stroke="#0F6B76" stroke-width="1" stroke-dasharray="4 4" opacity=".45"/>
+      <ellipse cx="350" cy="131" rx="80" ry="16" fill="none" stroke="#0F6B76" stroke-width="1" stroke-dasharray="4 4" opacity=".35"/>
+
+      <text x="350" y="94" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#0F6B76">上層は左へ運ばれ</text>
+      <text x="350" y="180" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="#0F6B76">下層は右へ戻る</text>
+
+      <text x="330" y="232" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor">この渦が、材料を何度もバレル直下の高せん断域に連れ戻す</text>
+      <text x="330" y="250" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="currentColor" opacity=".62">＝ 混練の主機構。渦を回りながら、全体は紙面の奥へ進んでいく</text>
+    </svg>
+    <figcaption>
+      <b>断面内の循環流。</b>材料は下流へ進みながら、同時にこの渦を何周も回る。
+      毎周バレル直下（せん断速度が最大の場所）を通るので、
+      <b>らせん階段を上るように混ぜられていく</b>。
+      計算では、代表条件で材料が受ける<b>累積せん断ひずみの中央値が 368</b>——
+      材料の層が 368 倍に引き伸ばされて薄くなった、という意味です。
+    </figcaption>
+  </figure>
+
+  <p>
+    変形の「質」も測れます。<em>混合指数 λ</em> は 0 なら純粋な回転（混ざらない）、
+    0.5 なら単純せん断、1 なら純粋な伸長（最もよく分散する）。
+    この計量部では <code>λ = 0.500</code>——教科書どおり、ほぼ完全な単純せん断でした。
+  </p>
+
+  <div class="point">
+    <span class="lab">なぜ混練エレメントを付けるのか</span>
+    λ = 0.5 の単純せん断は、混ぜるという意味では効率が良くありません。
+    伸長流れ（λ → 1）の方が凝集体をちぎるのに有効です。
+    実機のスクリューにマドックやダルメージといった<strong>混練エレメント</strong>を
+    挟むのは、流れをせん断から伸長寄りに変えるためです。
+  </div>
+</section>
+
+<!-- ============================================================ 08 -->
+<section id="s8">
+  <h2><span class="num">08</span>滞留時間分布</h2>
+
+  <p>
+    ここが本稿の目的地です。<strong>ある材料が計量部に入ってから出るまで、
+    何秒かかるか。</strong>全部が同じ時間なら理想的ですが、実際はばらつきます。
+    ばらつきが大きいと、一部の材料だけ長く熱を受けて<strong>熱劣化</strong>し、
+    製品に焼けやゲルとして現れます。
+  </p>
+
+  <p>
+    計量部を軸方向 200 mm（＝スクリュー径の 5 倍）とし、
+    入口断面に流量比例で 4186 個の粒子を撒いて、流れに乗せて追跡しました。
+  </p>
+
+  <div class="stats">
+    <div class="stat"><span class="v">5.1<span class="u"> s</span></span><span class="k">最短（最速の材料）</span></div>
+    <div class="stat"><span class="v">6.1<span class="u"> s</span></span><span class="k">中央値</span></div>
+    <div class="stat"><span class="v">7.8<span class="u"> s</span></span><span class="k">平均</span></div>
+    <div class="stat"><span class="v">10.8<span class="u"> s</span></span><span class="k">90 パーセンタイル</span></div>
+    <div class="stat"><span class="v">2203<span class="u"> s</span></span><span class="k">最長（壁際）</span></div>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 560 290" role="img" aria-label="滞留時間分布E(t)。5秒過ぎに鋭いピークがあり、10秒以降になだらかな裾が伸びる">
+      <line x1="64" y1="20" x2="64" y2="246" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
+      <line x1="64" y1="246" x2="542" y2="246" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
+      <polyline fill="#B24714" fill-opacity=".16" stroke="#B24714" stroke-width="2.2" stroke-linejoin="round"
+        points="64,246 66.4,226.0 76.0,226.0 85.5,200.8 95.1,98.8 104.6,42.1 114.2,87.0 123.8,134.8 133.3,172.5 142.9,182.5 152.4,185.4 162.0,185.3 171.6,213.3 181.1,222.3 190.7,223.0 200.2,222.8 209.8,213.7 219.3,204.6 228.9,198.8 238.5,210.4 248.0,217.8 257.6,223.9 267.1,224.2 276.7,225.0 286.3,225.5 295.8,225.8 305.4,225.8 315.0,225.9 324.5,226.0 334.1,226.0 343.6,226.0 353.2,225.9 362.8,226.0 372.3,226.0 381.9,226.0 391.4,226.0 401.0,225.9 410.6,225.7 420.1,225.6 429.7,225.5 439.2,225.6 448.8,225.8 458.3,225.9 467.9,225.8 477.5,225.9 487.0,225.9 496.6,225.4 506.2,224.4 515.7,223.1 525.3,223.7 534.8,224.5 542,246"/>
+
+      <g stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" opacity=".55">
+        <line x1="115" y1="30" x2="115" y2="246"/>
+        <line x1="154" y1="30" x2="154" y2="246"/>
+        <line x1="226" y1="60" x2="226" y2="246"/>
+      </g>
+      <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor">
+        <text x="119" y="40">中央値 6.1 s</text>
+        <text x="158" y="56">平均 7.8 s</text>
+        <text x="230" y="72">90% 10.8 s</text>
+      </g>
+
+      <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62" text-anchor="middle">
+        <text x="64" y="262">4</text><text x="160" y="262">8</text><text x="255" y="262">12</text>
+        <text x="351" y="262">16</text><text x="446" y="262">20</text><text x="542" y="262">24</text>
+        <text x="303" y="282">滞留時間 [秒]</text>
+      </g>
+      <text x="24" y="133" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62" transform="rotate(-90 24 133)" text-anchor="middle">材料の割合</text>
+      <text x="470" y="212" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62" text-anchor="end">24 秒より長く留まる材料が 3.2%（グラフ外へ続く）</text>
+    </svg>
+    <figcaption>
+      <b>滞留時間分布 E(t)。</b>大半の材料は 5〜12 秒で通り抜ける。
+      鋭いピークは、断面の大部分を占める「ふつうに流れる材料」。
+      問題は右へ長く伸びる裾で、<b>3.2% の材料は 24 秒以上留まる</b>。
+    </figcaption>
+  </figure>
+
+  <p>
+    裾の正体を見るには、横軸を対数にして累積分布を描くのが早い。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 560 230" role="img" aria-label="累積滞留時間分布を対数軸で表示。95%までは13秒以内だが、残りの数パーセントが数百秒から2000秒まで伸びる">
+      <g stroke="currentColor" opacity=".13" stroke-width="1">
+        <line x1="116" y1="18" x2="116" y2="188"/><line x1="198" y1="18" x2="198" y2="188"/>
+        <line x1="288" y1="18" x2="288" y2="188"/><line x1="370" y1="18" x2="370" y2="188"/>
+        <line x1="460" y1="18" x2="460" y2="188"/>
+        <line x1="64" y1="146" x2="542" y2="146"/><line x1="64" y1="103" x2="542" y2="103"/>
+        <line x1="64" y1="60" x2="542" y2="60"/>
+      </g>
+      <line x1="64" y1="18" x2="64" y2="188" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
+      <line x1="64" y1="188" x2="542" y2="188" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
+
+      <polyline fill="none" stroke="#0F6B76" stroke-width="2.6" stroke-linejoin="round"
+        points="64.8,188.0 67.7,185.5 68.7,183.1 69.2,180.6 69.3,178.1 69.8,175.7 70.4,173.2 70.9,170.8 71.4,168.3 71.5,165.8 71.7,163.4 71.8,160.9 71.9,158.4 72.0,156.0 72.2,153.5 72.4,151.1 72.7,148.6 72.9,146.1 73.3,143.7 73.6,141.2 73.9,138.7 74.0,136.3 74.1,133.8 74.3,131.4 74.7,128.9 75.2,126.4 75.7,124.0 76.7,121.5 77.3,119.0 77.8,116.6 78.4,114.1 78.6,111.7 78.9,109.2 79.0,106.7 79.2,104.3 79.5,101.8 79.8,99.3 80.3,96.9 81.1,94.4 82.2,92.0 82.8,89.5 83.5,87.0 84.5,84.6 86.4,82.1 87.4,79.6 88.2,77.2 88.9,74.7 89.6,72.3 89.8,69.8 90.1,67.3 94.3,64.9 96.7,62.4 97.2,59.9 97.5,57.5 97.6,55.0 97.8,52.6 98.7,50.1 100.1,47.6 103.6,45.2 116.1,42.7 118.8,40.2 120.0,37.8 121.1,35.3 122.7,32.9 124.3,30.4 125.4,27.9 171.7,25.5 183.1,23.0 186.3,20.5 320.7,18.1"/>
+
+      <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62" text-anchor="middle">
+        <text x="64" y="204">5</text><text x="116" y="204">10</text><text x="198" y="204">30</text>
+        <text x="288" y="204">100</text><text x="370" y="204">300</text><text x="460" y="204">1000</text><text x="542" y="204">3000</text>
+        <text x="303" y="224">滞留時間 [秒]（対数）</text>
+      </g>
+      <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62" text-anchor="end">
+        <text x="56" y="192">0%</text><text x="56" y="107">50%</text><text x="56" y="22">100%</text>
+      </g>
+
+      <circle cx="132" cy="27.9" r="3.5" fill="#0F6B76"/>
+      <text x="140" y="26" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#0F6B76">95% はここまで（12 秒）</text>
+      <text x="200" y="46" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor">残り 5% が、ここから 2000 秒まで伸びる</text>
+    </svg>
+    <figcaption>
+      <b>累積分布（対数軸）。</b>95% の材料は 12 秒以内に出ていく。
+      しかし残りは数百秒から 2000 秒——<b>約 6 分間</b>も機械の中に居続ける。
+      熱劣化はこの層で起きます。
+    </figcaption>
+  </figure>
+
+  <h3>裾はどこから来るのか</h3>
+
+  <p>
+    §04 の速度分布で見た性質が効いてきます。<strong>バレル面での軸方向速度は
+    ちょうどゼロ</strong>でした。バレルは周方向にしか動かないので、
+    そこに貼りついた材料はぐるぐる回るだけで、軸方向に一切進みません。
+    スクリュー根元でも同じ（壁では速度ゼロ）。
+  </p>
+
+  <p>
+    つまり<strong>壁際に「なかなか出ていかない層」が必ずできる</strong>。
+    量としてはごくわずかですが、滞留時間は理論上無限に伸びます。
+  </p>
+
+  <div class="point">
+    <span class="lab">計算で見つかったこと</span>
+    もし隙間がゼロだったら、この淀みはもっと悪くなります。
+    壁沿いの材料が周方向にも逃げられず、断面の隅に<strong>閉じ込められた渦</strong>が
+    できるからです。計算上、隙間ゼロだと平均滞留時間が格子を細かくするほど発散し、
+    隙間があると素直に収束しました。
+    <strong>スクリューの隙間は、加工公差の話であると同時に、
+    壁際の材料が淀まないための条件でもある</strong>——という示唆です。
+  </div>
+
+  <div class="data">
+    <table>
+      <caption>混練性の指標（軸方向 200 mm、背圧 5 MPa/m）</caption>
+      <thead><tr><th>指標</th><th style="text-align:right">10%</th><th style="text-align:right">中央値</th><th style="text-align:right">90%</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td>滞留時間 [s]</td><td class="num">5.5</td><td class="num">6.1</td><td class="num">10.8</td><td>ばらつき（p90/p10）= 1.96</td></tr>
+        <tr><td>累積せん断ひずみ</td><td class="num">326</td><td class="num">368</td><td class="num">638</td><td>層が何倍に引き伸ばされたか</td></tr>
+        <tr><td>混合指数 λ</td><td class="num" colspan="3">0.500（平均）</td><td>0.5 = 単純せん断</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ 09 -->
+<section id="s9">
+  <h2><span class="num">09</span>樹脂は水ではない</h2>
+
+  <p>
+    ここまで粘度を一定（1000 Pa·s、水の 100 万倍）として説明してきました。
+    実際の溶融樹脂は<strong>速く動かすほど柔らかくなる</strong>——
+    <em>せん断減粘</em>という性質を持ちます。ケチャップやシャンプーと同じです。
+  </p>
+
+  <p>
+    べき乗則モデル <code>μ = K γ̇^(n−1)</code>（<code>K = 2×10⁴</code>、<code>n = 0.4</code>）
+    で解き直すと、同じ断面の中で粘度がこれだけ違いました。
+  </p>
+
+  <div class="stats">
+    <div class="stat"><span class="v">25324<span class="u"> Pa·s</span></span><span class="k">最大（溝の底、ほぼ静止）</span></div>
+    <div class="stat"><span class="v">185<span class="u"> Pa·s</span></span><span class="k">最小（隙間、高せん断）</span></div>
+    <div class="stat"><span class="v">137<span class="u"> 倍</span></span><span class="k">断面内の粘度差</span></div>
+    <div class="stat"><span class="v">34.6<span class="u"> kg/h</span></span><span class="k">押出量（−12%）</span></div>
+  </div>
+
+  <p>
+    隙間ではせん断速度が最大 2451 s⁻¹ に達し、そこの樹脂は溝の底より
+    <strong>137 倍も柔らかく</strong>なっています。だから漏れは、粘度一定で見積もるより
+    起きやすい。押出量はニュートン仮定の 39.5 kg/h から 34.6 kg/h に落ちました。
+  </p>
+
+  <div class="point">
+    <span class="lab">解き方の勘所</span>
+    粘度が速度に依存し、速度が粘度に依存する——この鶏と卵は
+    「粘度を仮に決めて解く → 出た速度から粘度を更新する」を繰り返して解きます。
+    今回は 38 回で収束しました。粘度を一気に更新せず半分ずつ混ぜるのがコツで、
+    そうしないと振動して収束しません。
+  </div>
+</section>
+
+<!-- ============================================================ 10 -->
+<section id="s10">
+  <h2><span class="num">10</span>どう確かめたか</h2>
+
+  <p>
+    数値計算は、間違っていてもそれらしい絵が出ます。
+    だから「合っている」と言うには、答えを知っている問題で先に確かめる必要があります。
+    今回は 4 段の階段を用意しました。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 700 300" role="img" aria-label="検証の階段。G1とG2は解析解、G2bは1次元厳密解、G3はOpenFOAM、G4は厳密な保存則と比較する">
+      <defs>
+        <marker id="a10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <g font-family="IBM Plex Mono, monospace" font-size="11.5">
+        <!-- steps -->
+        <rect x="40"  y="216" width="150" height="52" fill="none" stroke="#B24714" stroke-width="2"/>
+        <text x="52" y="238" fill="#B24714" font-size="13">G1 / G2</text>
+        <text x="52" y="256" fill="currentColor">古典解と一致</text>
+
+        <rect x="200" y="164" width="150" height="52" fill="none" stroke="#B24714" stroke-width="2"/>
+        <text x="212" y="186" fill="#B24714" font-size="13">G2b</text>
+        <text x="212" y="204" fill="currentColor">1D 厳密解に 2 次収束</text>
+
+        <rect x="360" y="112" width="150" height="52" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="5 4" opacity=".55"/>
+        <text x="372" y="134" fill="currentColor" opacity=".62" font-size="13">G3</text>
+        <text x="372" y="152" fill="currentColor" opacity=".62">OpenFOAM と一致</text>
+
+        <rect x="520" y="60" width="150" height="52" fill="none" stroke="#B24714" stroke-width="2"/>
+        <text x="532" y="82" fill="#B24714" font-size="13">G4</text>
+        <text x="532" y="100" fill="currentColor">保存則と一致</text>
+      </g>
+
+      <g stroke="currentColor" stroke-width="1.6" marker-end="url(#a10)" opacity=".6">
+        <line x1="190" y1="230" x2="200" y2="196"/>
+        <line x1="350" y1="178" x2="360" y2="144"/>
+        <line x1="510" y1="126" x2="520" y2="92"/>
+      </g>
+
+      <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".62">
+        <text x="40" y="288">流量が級数解と</text><text x="40" y="302">誤差 0.007%</text>
+        <text x="200" y="236">断面内の速度が</text><text x="200" y="250">次数 2.00 で収束</text>
+        <text x="360" y="184">未実施</text><text x="360" y="198">（環境の問題）</text>
+        <text x="520" y="132">平均滞留時間が</text><text x="520" y="146">理論値と 0.5%</text>
+      </g>
+
+      <text x="40" y="34" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">答えを知っている問題から、知らない問題へ</text>
+      <line x1="40" y1="44" x2="670" y2="44" stroke="currentColor" stroke-width="1" opacity=".25"/>
+    </svg>
+    <figcaption>
+      <b>検証の階段。</b>左の 2 段は 60 年前から知られている解析解との比較。
+      右端は「材料の平均滞留時間 = 体積 ÷ 流量」という<b>厳密に成り立つ保存則</b>との比較で、
+      補間の誤差も、時間積分のミスも、粒子の撒き方の誤りも、これ 1 本で同時に捕まる。
+      G3（第三者ソルバーとの突き合わせ）は OpenFOAM の実行環境に不具合があり未実施。
+    </figcaption>
+  </figure>
+
+  <div class="data">
+    <table>
+      <caption>検証結果（合格は比 &lt; 1.00）</caption>
+      <thead><tr><th>ゲート</th><th>何と比べたか</th><th style="text-align:right">閾値</th><th style="text-align:right">実測 / 閾値</th></tr></thead>
+      <tbody>
+        <tr><td>G1</td><td>純引きずり流量 ↔ 形状係数の級数解</td><td class="num">0.1 %</td><td class="num hl">0.07</td></tr>
+        <tr><td>G2</td><td>引きずり＋圧力の直線全体（5 点）</td><td class="num">0.1 %</td><td class="num hl">0.07 – 0.08</td></tr>
+        <tr><td>G2b</td><td>断面内 1D 厳密解への収束次数</td><td class="num">次数 2</td><td class="num hl">2.00</td></tr>
+        <tr><td>G3</td><td>OpenFOAM（第三者ソルバー）</td><td class="num">1 %</td><td class="num">未実施</td></tr>
+        <tr><td>G4a</td><td>1D 流れでの粒子軌跡</td><td class="num">10⁻⁸</td><td class="num hl">合格</td></tr>
+        <tr><td>G4b</td><td>平均滞留時間 ↔ 体積 ÷ 流量</td><td class="num">1.5 %</td><td class="num hl">0.33</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="footnote">
+    検証の途中で 2 つの間違いが見つかりました。ひとつは幾何定数
+    <code>L_turn</code>（隣の溝までの下流距離）を <code>πD/sinφ</code> と誤っていたこと——
+    正しくは <code>πD·cosφ</code> で、3.46 倍の過大評価でした。もうひとつは
+    圧力流れの形状係数 <code>F_p</code> の級数の形。どちらも
+    <strong>解析解との比較（G1/G2）が捕まえました</strong>。
+    こういう間違いは、絵を見ているだけでは絶対に見つかりません。
+  </p>
+</section>
+
+<footer>
+  <p>
+    計算: xkep-cae-fluid / extruder パッケージ　テスト 438 件通過<br>
+    条件: D=40 mm・リード 40 mm・H=4 mm・e=4 mm・δ=0.1 mm・N=100 rpm・μ=1000 Pa·s・ρ=950 kg/m³<br>
+    格子 124×42 セル（隙間方向 10 分割）　CPU 1〜2 コア・メモリ 200 MB 以内
+  </p>
+</footer>
+
+</div>
