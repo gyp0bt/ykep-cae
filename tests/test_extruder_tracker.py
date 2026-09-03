@@ -231,3 +231,41 @@ class TestTrackerPhysics:
         tr = track(flow, 0.05, max_steps=200)
         assert tr.extrapolated.any()
         assert np.all(tr.escaped[tr.extrapolated])
+
+
+class TestStreamlineDrift:
+    """時間刻みと流線ドリフトの関係（G5 で見つかった機構の記録）.
+
+    ψ の双一次補間場はセル境界で速度勾配が不連続なので、セルを跨ぐ RK4 ステップは
+    流線を横切る誤差を残す。短い区間（G4b、周回 1〜2 回）では見えないが、
+    周回を重ねると粒子が壁際へ流れ込み、⟨t⟩ と裾が系統的に伸びる。
+    """
+
+    @staticmethod
+    def _psi_drift(flow, tr) -> np.ndarray:
+        from xkep_cae_fluid.extruder.tracker import _Interpolator
+
+        interp = _Interpolator(flow)
+        spec = flow.grid.spec
+        cot = math.cos(spec.phi) / math.sin(spec.phi)
+        x0, y0, _ = ParticleTrackerProcess._seed(interp, flow, cot, 1)
+
+        def psi_at(x, y):
+            i, j = interp.cell_of(x, y)
+            s = (x - interp.x_node[i]) / interp.dx[i]
+            t = (y - interp.y_node[j]) / interp.dy[j]
+            return interp._bilinear(interp.psi, i, j, s, t)
+
+        return np.abs(psi_at(tr.x, tr.y) - psi_at(x0, y0)) / np.abs(flow.psi).max()
+
+    def test_smaller_cfl_keeps_particles_on_their_streamline(self):
+        """閉チャネル H=1 mm、z=0.5 m（周回 ≈ 5）: cfl 1.0 → 0.25 で |Δψ| の中央値が 1/4 以下."""
+        spec = replace(_BASE, H=0.001, delta=0.0, nx_channel=40, nx_land=8, ny_bulk=16, n_gap=0)
+        flow = flow_of(spec, 0.0)
+        drift = {}
+        for cfl in (1.0, 0.25):
+            tr = track(flow, 0.5, cfl=cfl)
+            ok = tr.escaped & ~tr.extrapolated
+            drift[cfl] = float(np.median(self._psi_drift(flow, tr)[ok]))
+        assert drift[1.0] > 0.04  # 既定値では流線を 4% 以上外れる（実測 8%）
+        assert drift[0.25] < 0.25 * drift[1.0]

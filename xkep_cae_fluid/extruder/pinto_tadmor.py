@@ -40,6 +40,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from xkep_cae_fluid.extruder.rtd import weighted_ecdf, weighted_quantile
+
 XI_SPLIT = 2.0 / 3.0
 """横断速度が符号反転する高さ。再循環の停留線."""
 
@@ -139,4 +141,88 @@ def pinto_tadmor_rtd(r: float = 0.0, n_xi: int = 4000) -> PintoTadmorRTD:
         t_p90_ratio=float(p90),
         tbar_over_L_Vz=tbar,
         r=float(r),
+    )
+
+
+@dataclass(frozen=True)
+class RTDComparison:
+    """ykep の追跡結果を文献曲線と同じ規格化で並べた比較.
+
+    Parameters
+    ----------
+    t_over_tbar : np.ndarray
+        ykep の滞留時間 / t_ref、昇順（脱出粒子のみ）
+    F : np.ndarray
+        その重み付き ECDF（区間中点）
+    p10_ratio, p50_ratio, p90_ratio : float
+        ykep の分位点 / t_ref
+    dev_p10, dev_p50, dev_p90 : float
+        \\|ykep 分位点 ÷ 文献分位点 − 1\\|
+    curve_l1 : float
+        分位関数の相対偏差 \\|t_ykep(F)/t_PT(F) − 1\\| を F ∈ f_range で平均したもの。
+        **横方向（t 軸）で比べる。** 文献曲線は t_min 直上で F が 0 → 0.1 まで
+        ほぼ垂直に立つので、縦方向 \\|F_ykep − F_PT\\| は t の 0.2% のずれで 0.1 を
+        超えてしまい指標にならない。
+    curve_max : float
+        同じ偏差の最大値。種まきが 1 セル 1 粒子なので裾側（F > 0.6）では
+        滞留時間が種の行ごとに束になり ECDF が階段状になる。最大値はその階段幅を
+        拾うので判定には平均（curve_l1）を使い、最大値は観察として残す。
+    f_range : tuple[float, float]
+        曲線偏差を評価した F の範囲
+    """
+
+    t_over_tbar: np.ndarray
+    F: np.ndarray
+    p10_ratio: float
+    p50_ratio: float
+    p90_ratio: float
+    dev_p10: float
+    dev_p50: float
+    dev_p90: float
+    curve_l1: float
+    curve_max: float
+    f_range: tuple[float, float]
+
+
+def compare_rtd(
+    t_res: np.ndarray,
+    weight: np.ndarray,
+    t_ref: float,
+    pt: PintoTadmorRTD,
+    *,
+    f_range: tuple[float, float] = (0.05, 0.9),
+    n_f: int = 400,
+) -> RTDComparison:
+    """追跡結果 (t_res, weight) を t_ref で規格化して文献曲線 pt と比べる.
+
+    t_ref には「側壁の無い」平均滞留時間 t̄_∞ = t̄_theory·F_d を渡す。
+    側壁は流量を F_d 倍に減らして t̄_theory = V/Q を 1/F_d 倍に延ばすが、
+    分位点を担う溝中央の流線は側壁を知らないので、絶対時間は文献の
+    t̄_∞ = HWL/Q_∞ に対して決まる。H/W → 0 で F_d → 1 なので極限の主張は
+    どちらの規格化でも同じだが、F_d を掛けた方が側壁の一次効果を先に除ける。
+    """
+    if t_ref <= 0.0:
+        msg = f"t_ref は正が必要: {t_ref}"
+        raise ValueError(msg)
+    lo, hi = f_range
+    if not (0.0 < lo < hi < 1.0):
+        msg = f"f_range は 0 < lo < hi < 1 が必要: {f_range}"
+        raise ValueError(msg)
+    t_red = np.asarray(t_res, dtype=float) / t_ref
+    v, F = weighted_ecdf(t_red, np.asarray(weight, dtype=float))
+    p10, p50, p90 = (float(x) for x in weighted_quantile(t_red, weight, [0.1, 0.5, 0.9]))
+    f_grid = np.linspace(lo, hi, n_f)
+    dev = np.abs(np.interp(f_grid, F, v) / np.interp(f_grid, pt.F, pt.t_over_tbar) - 1.0)
+    return RTDComparison(
+        t_over_tbar=v,
+        F=F,
+        p10_ratio=p10,
+        p50_ratio=p50,
+        p90_ratio=p90,
+        dev_p10=abs(p10 / pt.t_p10_ratio - 1.0),
+        dev_p50=abs(p50 / pt.t_p50_ratio - 1.0),
+        dev_p90=abs(p90 / pt.t_p90_ratio - 1.0),
+        curve_l1=float(dev.mean()),
+        curve_max=float(dev.max()),
+        f_range=(lo, hi),
     )

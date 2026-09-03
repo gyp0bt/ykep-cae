@@ -33,7 +33,12 @@ from xkep_cae_fluid.extruder.data import (
 )
 from xkep_cae_fluid.extruder.down_channel import DownChannelFlowProcess
 from xkep_cae_fluid.extruder.geometry import ScrewGeometryProcess
-from xkep_cae_fluid.extruder.pinto_tadmor import PintoTadmorRTD, pinto_tadmor_rtd
+from xkep_cae_fluid.extruder.pinto_tadmor import (
+    PintoTadmorRTD,
+    RTDComparison,
+    compare_rtd,
+    pinto_tadmor_rtd,
+)
 from xkep_cae_fluid.extruder.rtd import RTDProcess, weighted_ecdf
 from xkep_cae_fluid.extruder.shape_factors import (
     metering_flow_rate,
@@ -69,12 +74,14 @@ __all__ = [
     "ParticleTrackerProcess",
     "PintoTadmorRTD",
     "PowerLawViscosity",
+    "RTDComparison",
     "RTDInput",
     "RTDProcess",
     "RTDResult",
     "ScrewGeometryProcess",
     "ScrewSpec",
     "ViscosityModelStrategy",
+    "compare_rtd",
     "metering_flow_rate",
     "mixing_index",
     "pinto_tadmor_rtd",

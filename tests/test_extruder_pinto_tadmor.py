@@ -5,7 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from xkep_cae_fluid.extruder.pinto_tadmor import PintoTadmorRTD, pinto_tadmor_rtd
+from xkep_cae_fluid.extruder.pinto_tadmor import (
+    PintoTadmorRTD,
+    RTDComparison,
+    compare_rtd,
+    pinto_tadmor_rtd,
+)
 
 
 class TestExactRelations:
@@ -59,3 +64,40 @@ class TestArguments:
     def test_rejects_too_few_points(self):
         with pytest.raises(ValueError, match="n_xi"):
             pinto_tadmor_rtd(0.0, n_xi=8)
+
+
+class TestCompareRTD:
+    """比較関数の自己整合: 文献曲線を自分自身と比べれば偏差はゼロ."""
+
+    @staticmethod
+    def _self_sample(pt: PintoTadmorRTD, t_ref: float) -> tuple[np.ndarray, np.ndarray]:
+        # F を等間隔に切って分位関数を標本化 → 等重みの「追跡結果」を作る
+        F = np.linspace(0.0005, 0.9995, 2000)
+        return np.interp(F, pt.F, pt.t_over_tbar) * t_ref, np.ones_like(F)
+
+    def test_self_comparison_has_no_deviation(self):
+        pt = pinto_tadmor_rtd(0.0)
+        t_res, w = self._self_sample(pt, t_ref=3.7)
+        cmp = compare_rtd(t_res, w, 3.7, pt)
+        assert isinstance(cmp, RTDComparison)
+        assert cmp.dev_p10 < 2e-3
+        assert cmp.dev_p50 < 2e-3
+        assert cmp.dev_p90 < 2e-3
+        assert cmp.curve_l1 < 2e-3
+        assert cmp.curve_max < 5e-3
+
+    def test_wrong_reference_time_shows_up_as_uniform_deviation(self):
+        """t_ref を 10% 間違えると全分位点が 10% ずれる（規格化の感度）."""
+        pt = pinto_tadmor_rtd(0.0)
+        t_res, w = self._self_sample(pt, t_ref=1.0)
+        cmp = compare_rtd(t_res, w, 1.1, pt)
+        assert cmp.dev_p50 == pytest.approx(1.0 - 1.0 / 1.1, abs=3e-3)
+        assert cmp.curve_l1 == pytest.approx(1.0 - 1.0 / 1.1, abs=3e-3)
+
+    def test_rejects_bad_arguments(self):
+        pt = pinto_tadmor_rtd(0.0)
+        t_res, w = self._self_sample(pt, t_ref=1.0)
+        with pytest.raises(ValueError, match="t_ref"):
+            compare_rtd(t_res, w, 0.0, pt)
+        with pytest.raises(ValueError, match="f_range"):
+            compare_rtd(t_res, w, 1.0, pt, f_range=(0.5, 0.2))
