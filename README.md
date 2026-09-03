@@ -15,7 +15,7 @@ FDM（差分法）・FVM（有限体積法）による流体ソルバー基盤�
 
 ## 現在の状態
 
-**438 テスト** -- 2026-09-03 [単軸押出解析 Phase 1/1.5 実装](docs/design/single-screw-extruder.md)（展開チャネル 2.5D、ゲート G1〜G4 全通過、OpenFOAM 検算済み / [status-28](docs/status/status-28.md) / [図解レポート](docs/reports/extruder/README.md)） | 契約違反 **0件**（17プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**460 テスト** -- 2026-09-04 [単軸押出解析 Phase 1/1.5 + G5 文献照合](docs/design/single-screw-extruder.md)（展開チャネル 2.5D、ゲート G1〜G5 全通過、OpenFOAM 検算・Pinto–Tadmor RTD 照合済み / [status-29](docs/status/status-29.md) / [図解レポート](docs/reports/extruder/README.md)） | 契約違反 **0件**（17プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 ## パッケージ構成
 
@@ -48,7 +48,7 @@ xkep_cae_fluid/
 |   +-- geometry.py    # AquariumGeometryProcess（90×30×45 cm + 底床/ガラス/水マスク + z-refinement）
 |   +-- heater.py      # HeaterProcess（定熱流束 + 定温ヒステリシス）
 |   +-- filter.py      # AquariumFilterProcess + InternalFaceBC（外部フィルター循環, Q[L/h]）
-+-- extruder/          # 単軸押出 2.5D 断面解析（Phase 7、status-28）
++-- extruder/          # 単軸押出 2.5D 断面解析（Phase 7、status-28/29）
 |   +-- geometry.py    # ScrewGeometryProcess（展開チャネル + 隙間の等比格子）
 |   +-- shape_factors.py  # 形状係数 Fd/Fp の級数解（ゲート G1/G2 の真値）
 |   +-- down_channel.py   # DownChannelFlowProcess（w: 可変係数 Poisson）

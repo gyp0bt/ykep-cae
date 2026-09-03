@@ -10,6 +10,24 @@
 
 **Spec:** `docs/design/extruder-g5-literature-rtd.md`
 
+## 実行結果（2026-09-04、全タスク完了）
+
+計画どおりに Task 1–6 を実施し、G5 は全項目 比 < 1.00 で通過（[status-29](../status/status-29.md)、
+[レポート](../reports/extruder/g5-literature-rtd.md)）。実行中に**計画から変えた点**は
+次の 3 つで、いずれも文献モデルの仮定を ykep 側で満たすための条件（設計 §3.2 に反映済み）。
+
+| 計画 | 実際 | 理由（メカニズム） |
+|---|---|---|
+| 隙間あり δ/H 固定、z = 0.05 m、既定 cfl | **閉チャネル δ = 0、z = 0.5 m、cfl = 0.1** | 隙間の速い経路の流量比 ≈ 2tanφ(δ/H)L/W は H/W → 0 で消えない。周回 1〜2 回では t_min が 3/4 でなく 2/3 に落ちる。既定 cfl = 1.0 は流線ドリフトで裾を汚す |
+| t/t̄_theory で規格化 | **t/(t̄_theory·F_d)** | 側壁は流量を F_d 倍に減らすが溝中央の流線は側壁を知らない |
+| 曲線は max で判定 | **L1 平均で判定、max は観察** | 1 粒子/セルの種まきで F > 0.6 が階段になり max が汚れる |
+
+Task 4 の `result.json` スキーマも上記に合わせて変わっている（`t_ref`, `*_over_ref`,
+`n_loops`, `extrapolated_weight_fraction` 等。実体は `experiments/extruder/g5_literature.py`）。
+以下は着手時の計画のまま残す。
+
+---
+
 ## Global Constraints
 
 - 実行は `cd ~/work/ykep-cae && PYTHONPATH=. OMP_NUM_THREADS=2 .venv/bin/python`。メモリ 4 GB 以内。
@@ -33,7 +51,7 @@
 - Produces: `pinto_tadmor_rtd(r: float = 0.0, n_xi: int = 4000) -> PintoTadmorRTD`、
   `PintoTadmorRTD(t_over_tbar: np.ndarray, F: np.ndarray, t_min_ratio: float, t_p10_ratio: float, t_p50_ratio: float, t_p90_ratio: float, tbar_over_L_Vz: float, r: float)`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```python
 """Pinto–Tadmor 型 RTD モデル（真値の供給源）のテスト."""
@@ -99,12 +117,12 @@ class TestArguments:
             pinto_tadmor_rtd(0.0, n_xi=8)
 ```
 
-- [ ] **Step 2: 失敗を確認**
+- [x] **Step 2: 失敗を確認**
 
 Run: `PYTHONPATH=. .venv/bin/python -m pytest tests/test_extruder_pinto_tadmor.py -q`
 Expected: `ModuleNotFoundError: xkep_cae_fluid.extruder.pinto_tadmor`
 
-- [ ] **Step 3: 実装**
+- [x] **Step 3: 実装**
 
 ```python
 """Pinto–Tadmor 1970 型の計量部 RTD（文献モデル、真値の供給源）.
@@ -253,12 +271,12 @@ def pinto_tadmor_rtd(r: float = 0.0, n_xi: int = 4000) -> PintoTadmorRTD:
 
 `__init__.py` に `from xkep_cae_fluid.extruder.pinto_tadmor import PintoTadmorRTD, pinto_tadmor_rtd` と `__all__` の 2 項目を追加。
 
-- [ ] **Step 4: 合格を確認**
+- [x] **Step 4: 合格を確認**
 
 Run: `PYTHONPATH=. .venv/bin/python -m pytest tests/test_extruder_pinto_tadmor.py -q`
 Expected: 全件 PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add xkep_cae_fluid/extruder/pinto_tadmor.py xkep_cae_fluid/extruder/__init__.py tests/test_extruder_pinto_tadmor.py
@@ -277,7 +295,7 @@ git commit -m "feat(extruder): Pinto–Tadmor 型 RTD の再導出 — t_min/t̄
 **Interfaces:**
 - Produces: `weighted_ecdf(values: np.ndarray, weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]`（昇順の値と、区間中点の累積割合 F）
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```python
 class TestWeightedEcdf:
@@ -300,12 +318,12 @@ class TestWeightedEcdf:
 
 import 行に `weighted_ecdf` を足す。
 
-- [ ] **Step 2: 失敗を確認**
+- [x] **Step 2: 失敗を確認**
 
 Run: `PYTHONPATH=. .venv/bin/python -m pytest tests/test_extruder_rtd.py -q -k Ecdf`
 Expected: `ImportError: cannot import name 'weighted_ecdf'`
 
-- [ ] **Step 3: 実装**
+- [x] **Step 3: 実装**
 
 ```python
 def weighted_ecdf(values: np.ndarray, weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -324,12 +342,12 @@ def weighted_ecdf(values: np.ndarray, weights: np.ndarray) -> tuple[np.ndarray, 
     return v, (np.cumsum(w) - 0.5 * w) / total
 ```
 
-- [ ] **Step 4: 合格を確認**
+- [x] **Step 4: 合格を確認**
 
 Run: `PYTHONPATH=. .venv/bin/python -m pytest tests/test_extruder_rtd.py -q -k "Ecdf or Quantile"`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add xkep_cae_fluid/extruder/rtd.py xkep_cae_fluid/extruder/__init__.py tests/test_extruder_rtd.py
@@ -347,7 +365,7 @@ git commit -m "feat(extruder): weighted_ecdf — ビン幅に依らない F 曲�
 - Consumes: `pinto_tadmor_rtd`, `weighted_ecdf`, 既存 `ExtruderFlowProcess / ParticleTrackerProcess / RTDProcess`
 - Produces: モジュール定数 `SHALLOW_SERIES`（H の列）と関数 `reduced_curve(track, rtd) -> (t/t̄_theory, F)`。Task 4 が同じ定義を使う
 
-- [ ] **Step 1: テストを書く（最初は閾値で落ちるかもしれない = 実測して判定する）**
+- [x] **Step 1: テストを書く（最初は閾値で落ちるかもしれない = 実測して判定する）**
 
 ```python
 """ゲート G5: Pinto–Tadmor 文献 RTD との照合（浅溝極限への収束）.
@@ -451,7 +469,7 @@ class TestGateG5:
         assert float(np.max(np.abs(F[keep] - F_pt))) / TOL_CURVE < 1.0
 ```
 
-- [ ] **Step 2: 実行して実測を見る**
+- [x] **Step 2: 実行して実測を見る**
 
 Run: `PYTHONPATH=. OMP_NUM_THREADS=2 .venv/bin/python -m pytest tests/test_extruder_literature_rtd.py -q --durations=5 2>&1 | tee logs/g5-pytest.log`
 
@@ -462,7 +480,7 @@ Run: `PYTHONPATH=. OMP_NUM_THREADS=2 .venv/bin/python -m pytest tests/test_extru
 
 30 s を超えたら `TestGateG5` に `@pytest.mark.slow`。
 
-- [ ] **Step 3: コミット**
+- [x] **Step 3: コミット**
 
 ```bash
 git add tests/test_extruder_literature_rtd.py
@@ -480,7 +498,7 @@ git commit -m "test(extruder): ゲート G5 — 浅溝極限で Pinto–Tadmor �
 - Consumes: Task 1–3 の関数（テストモジュールからは import せず、同じ定義を本ファイルに持つ）
 - Produces: `<out>/result.json` — `{"pt": {...}, "cases": [{"label", "H", "H_over_W", "delta", "G", "r", "n_particles", "seconds", "t_mean_ratio", "quantiles": {"p10","p50","p90"}, "dev": {...}, "curve": {"t": [...], "F": [...]}}], "meta": {...}}`。Task 5 が読む
 
-- [ ] **Step 1: 実装**
+- [x] **Step 1: 実装**
 
 ```python
 """ゲート G5 のフル解像度系列: Pinto–Tadmor 文献 RTD との照合.
@@ -618,12 +636,12 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: 実行（バックグラウンド、ログは logs/）**
+- [x] **Step 2: 実行（バックグラウンド、ログは logs/）**
 
 Run: `PYTHONPATH=. OMP_NUM_THREADS=2 .venv/bin/python experiments/extruder/g5_literature.py --out /tmp/of-g5 > logs/g5-literature.log 2>&1`
 Expected: 5 ケースが各 1–3 分で終わり、系列 3 本の `ratios` がすべて < 1.0（最浅）。r=−0.3 の分位点が G=0 の最浅と数 % 以内なら「普遍性は有限幅でも保たれる」と書ける。
 
-- [ ] **Step 3: コミット**
+- [x] **Step 3: コミット**
 
 ```bash
 git add experiments/extruder/g5_literature.py
@@ -642,7 +660,7 @@ git commit -m "feat(extruder): G5 フル解像度系列スクリプト"
 **Interfaces:**
 - Consumes: `/tmp/of-g5/result.json`（Task 4 のスキーマ）
 
-- [ ] **Step 1: 実装**
+- [x] **Step 1: 実装**
 
 `g3_report.py` の骨格（`_git`, `_load`, `_mark`, `_fmt_ratio`, argparse `--work --out`）を再利用し、以下を組む。
 
@@ -693,7 +711,7 @@ def curve_svg(res: dict) -> str:
 3. メカニズム: (a) なぜ r によらないか（恒等式 3ξ(1−ξ) = ξ − (3ξ²−2ξ) と 1 周の横断変位 0）、(b) 側壁が裾を伸ばす（Bigg & Middleman 1974: 側壁近傍の遅い流線が長時間側に足される。系列で偏差が H/W にほぼ比例して縮むことを表で示す）、(c) 隙間が短時間側を広げる（closed ケースとの差）、(d) 実測との鎖（Wolf & White 1976 の放射性トレーサ実験が計量部について Pinto–Tadmor 曲線を確認、と記す。数値の転記はしない）、(e) t_min/t̄ = 3/4 の意味（最速は停留高さ ξ = 2/3 の粒子）
 4. 再現手順: `g5_literature.py --out /tmp/of-g5`（所要時間を実測で書く）→ `g5_report.py --work /tmp/of-g5 --out docs/reports/extruder/g5-literature-rtd.md`
 
-- [ ] **Step 2: 生成 → mdview → Artifact**
+- [x] **Step 2: 生成 → mdview → Artifact**
 
 ```bash
 PYTHONPATH=. .venv/bin/python experiments/extruder/g5_report.py --work /tmp/of-g5 --out docs/reports/extruder/g5-literature-rtd.md
@@ -702,7 +720,7 @@ PYTHONPATH=. .venv/bin/python experiments/extruder/g5_report.py --work /tmp/of-g
 
 `/tmp/mdview/g5-literature-rtd.html` の `<title>` `<style>` と `<body>` の中身だけを `docs/reports/extruder/g5-literature-rtd.html` に取り出し、`Artifact` で公開（favicon 📚）。URL を `docs/reports/extruder/README.md` の表に追加（G3 行と同じ書式）。
 
-- [ ] **Step 3: コミット**
+- [x] **Step 3: コミット**
 
 ```bash
 git add experiments/extruder/g5_report.py docs/reports/extruder/g5-literature-rtd.md docs/reports/extruder/g5-literature-rtd.html docs/reports/extruder/README.md
@@ -719,7 +737,7 @@ git commit -m "docs(extruder): G5 文献 RTD 照合レポート"
 - Modify: `docs/plans/2026-09-02-single-screw-extruder-impl.md`（§D 前提文）
 - Create: `docs/status/status-29.md`、Modify: `docs/status/status-index.md`, `README.md`
 
-- [ ] **Step 1: 設計文書 §3 表に行を足す**
+- [x] **Step 1: 設計文書 §3 表に行を足す**
 
 ```
 | **G5** | 文献 RTD（Pinto & Tadmor 1970）との照合 | 浅溝極限 H/W → 0 で縮約曲線 F(t/t̄) が収束。詳細 `extruder-g5-literature-rtd.md` |
@@ -727,16 +745,16 @@ git commit -m "docs(extruder): G5 文献 RTD 照合レポート"
 
 §7 の Phase 2 行の前提を「実機データ突き合わせ」→「G5 文献照合 ✅（実機・想定機が無いため差し替え、2026-09-04）」に。
 
-- [ ] **Step 2: roadmap / plan §D**
+- [x] **Step 2: roadmap / plan §D**
 
-roadmap: `- [ ] 実機データとの突き合わせ（Phase 2 の前提）` → `- [x] 文献 RTD 照合 G5（Phase 2 の前提。実機データ突き合わせを差し替え）`。
+roadmap: `- [x] 実機データとの突き合わせ（Phase 2 の前提）` → `- [x] 文献 RTD 照合 G5（Phase 2 の前提。実機データ突き合わせを差し替え）`。
 plan §D: 「Phase 2 に入る前に…実機データと突き合わせること」の段落を「実機・想定機が無いため、文献照合 G5（`docs/design/extruder-g5-literature-rtd.md`）に差し替えた（2026-09-04）」に。
 
-- [ ] **Step 3: status-29**
+- [x] **Step 3: status-29**
 
 `status-28.md` の型で: ヘッダ（日付・ブランチ・テスト数）、G5 の結果表（閾値規格化比）、確定した設計上の論点（下層標本化、t_min/t̄ = 3/4、普遍性の恒等式、側壁効果の H/W 比例）、資源表（各ケースの秒数）、次にやること（Phase 2）。`status-index.md` に行追加、`README.md` のテスト数・日付更新。
 
-- [ ] **Step 4: 全テスト → ruff → コミット → push → PR**
+- [x] **Step 4: 全テスト → ruff → コミット → push → PR**
 
 ```bash
 PYTHONPATH=. OMP_NUM_THREADS=2 .venv/bin/python -m pytest -q -x --ignore=tests/test_benchmark_runner.py 2>&1 | tail -5

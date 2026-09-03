@@ -148,7 +148,7 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] G3: OpenFOAM 同一格子検算（ニュートン・べき乗則、[レポート](reports/extruder/g3-openfoam.md)）
 - [x] Phase 1.5: 粒子追跡 + RTD（G4a/G4b、status-28）
 - [x] 図解レポート 2 本を Artifact 公開（[reports/extruder](reports/extruder/README.md)）
-- [ ] 実機データとの突き合わせ（Phase 2 の前提）
+- [x] 文献 RTD 照合 G5（Phase 2 の前提。実機データが無いので Pinto–Tadmor 1970 との照合に差し替え、2026-09-04 通過）
 - [ ] Phase 2: 粘性発熱 `Φ = μγ̇²` + 温度依存粘度
 - [ ] Phase 3: 混練エレメント（3D、messi + OpenFOAM）
 
