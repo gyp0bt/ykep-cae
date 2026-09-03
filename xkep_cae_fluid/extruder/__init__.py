@@ -34,7 +34,7 @@ from xkep_cae_fluid.extruder.data import (
 from xkep_cae_fluid.extruder.down_channel import DownChannelFlowProcess
 from xkep_cae_fluid.extruder.geometry import ScrewGeometryProcess
 from xkep_cae_fluid.extruder.pinto_tadmor import PintoTadmorRTD, pinto_tadmor_rtd
-from xkep_cae_fluid.extruder.rtd import RTDProcess
+from xkep_cae_fluid.extruder.rtd import RTDProcess, weighted_ecdf
 from xkep_cae_fluid.extruder.shape_factors import (
     metering_flow_rate,
     shape_factor_drag,
@@ -81,4 +81,5 @@ __all__ = [
     "shape_factor_drag",
     "shape_factor_pressure",
     "strain_rate",
+    "weighted_ecdf",
 ]

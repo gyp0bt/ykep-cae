@@ -44,6 +44,23 @@ def weighted_quantile(values: np.ndarray, weights: np.ndarray, q: float | np.nda
     return np.interp(q, cum, v)
 
 
+def weighted_ecdf(values: np.ndarray, weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """重み付き経験分布（昇順の値と区間中点の累積割合）.
+
+    ヒストグラムの F と違ってビン幅に依存しないので、文献曲線との max|ΔF| の
+    比較（ゲート G5）に使う。`weighted_quantile` と同じ中点流儀なので分位点が
+    逆算で一致する。
+    """
+    order = np.argsort(values)
+    v = values[order]
+    w = weights[order]
+    total = w.sum()
+    if total <= 0.0:
+        msg = "重みの総和が 0 以下"
+        raise ValueError(msg)
+    return v, (np.cumsum(w) - 0.5 * w) / total
+
+
 class RTDProcess(PostProcess["RTDInput", "RTDResult"]):
     """粒子追跡結果から滞留時間分布と混練性指標を集計する."""
 

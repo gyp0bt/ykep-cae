@@ -14,7 +14,7 @@ from xkep_cae_fluid.extruder.data import (
     RTDInput,
     ScrewSpec,
 )
-from xkep_cae_fluid.extruder.rtd import RTDProcess, weighted_quantile
+from xkep_cae_fluid.extruder.rtd import RTDProcess, weighted_ecdf, weighted_quantile
 from xkep_cae_fluid.extruder.solver import ExtruderFlowProcess
 from xkep_cae_fluid.extruder.tracker import ParticleTrackerProcess
 from xkep_cae_fluid.extruder.viscosity import NewtonianViscosity
@@ -62,6 +62,24 @@ class TestWeightedQuantile:
     def test_rejects_zero_weight(self):
         with pytest.raises(ValueError, match="重み"):
             weighted_quantile(np.array([1.0]), np.array([0.0]), 0.5)
+
+
+class TestWeightedEcdf:
+    """重み付き経験分布。`weighted_quantile` と同じ中点流儀なので分位点が逆算で一致する."""
+
+    def test_matches_weighted_quantile(self):
+        rng = np.random.default_rng(0)
+        v = rng.uniform(1.0, 3.0, 500)
+        w = rng.uniform(0.1, 1.0, 500)
+        t, F = weighted_ecdf(v, w)
+        assert np.all(np.diff(t) >= 0.0)
+        assert 0.0 < F[0] < F[-1] < 1.0
+        for q in (0.1, 0.5, 0.9):
+            assert np.interp(q, F, t) == pytest.approx(float(weighted_quantile(v, w, q)))
+
+    def test_rejects_zero_weight(self):
+        with pytest.raises(ValueError, match="重み"):
+            weighted_ecdf(np.array([1.0, 2.0]), np.array([0.0, 0.0]))
 
 
 @binds_to(RTDProcess)
