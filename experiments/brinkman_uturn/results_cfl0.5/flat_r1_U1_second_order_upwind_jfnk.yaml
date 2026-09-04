@@ -23,10 +23,11 @@ settings:
   gmres_maxiter: 5
   divergence_ratio: 1000000.0
   line_search: false
+  velocity_floor_ratio: 0.1
 converged: true
 failure_reason: ''
 n_newton: 43
-elapsed_seconds: 9.910955747000116
+elapsed_seconds: 9.723472227000002
 residual_history:
 - 40.82902838759245
 - 137.08294762304962

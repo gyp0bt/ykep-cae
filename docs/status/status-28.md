@@ -135,6 +135,18 @@ flat は uturn より悪い（144×96 U=1 で uturn は停滞、flat は 1e7 ま
 1×・2× の 12 ケース中 11 ケースが収束（cfl_init=5 では 6 ケース）。残る uturn 144×96 U=2 も 150 反復で 3.1e-5 まで単調減少。
 初回残差増幅は uturn では依然 20〜50× あり、cfl_init だけでは根本対策にならない（4× は未試験）。
 
+## 速度・圧力分布（cfl_init=0.5 で収束した場）
+
+`experiments/brinkman_uturn/plot_fields.py` で `results_cfl0.5/*_fields.npz` から描画。図は `experiments/brinkman_uturn/output/*.png`。
+
+- **uturn**: 流路内はほぼ一様なプラグ流（Hele-Shaw 的）。U ターン内側コーナーで剥離し、
+  U=2 では内側に最大 3.3〜3.6 m/s（U_in の 1.7 倍）のジェットと外側に低速域ができる。
+  圧力は往路→復路で線形に降下し、inlet で約 35 kPa（U=0.1 では 1.7 kPa、Hele-Shaw 圧損と整合）。
+- **flat**: inlet ジェットは Brinkman 抵抗で約 0.1〜0.15 m で減衰し（減衰長 ρU h²/(12μ_b) ≈ 0.17 m）、
+  outlet へ短絡する。右側 0.2 m 以降はほぼ静止。圧力は inlet 近傍の局所的な高圧と outlet の低圧のみで、
+  慣性が効くのは左端の狭い領域だけ。
+- 144×96 と 72×48 で場の構造は同じ（メッシュ依存性は小さい）。
+
 ## 次にやること
 
 - [ ] 1 反復目の残差増幅を抑える大域化: 残差が増えた更新を棄却して CFL を下げて再試行（backtracking on CFL）
