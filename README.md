@@ -68,7 +68,7 @@ xkep_cae_fluid/
 |   +-- aquarium_heater_natural_convection.py  # Geometry+Heater+NC 3 段（Phase 6.2b）
 |   +-- aquarium_filter_circulation.py         # Geometry+Heater+Filter+NC 4 段（Phase 6.3b）
 +-- experiments/brinkman_uturn/  # Brinkman U ターン収束性スイープ（sweep.py / diagnose_u2.py / diagnose_local_dtau.py / results / logs）
-+-- nsb/               # 手元構成ミラー（core / solver / utils / geo、離散化は brinkman_flow を共有）+ ルート main.py
++-- nsb/               # 手元構成ミラー（core / solver / utils / geo、離散化は brinkman_flow を共有）+ theory.md（数理ノート）+ ルート main.py
 +-- experiments/nsb/   # nsb パラメータスタディの results / logs
 +-- tests/             # テスト
 ```

@@ -359,4 +359,4 @@ backtracking を素朴に入れると、静止場からの 1 歩目（残差が�
 - `tests/test_brinkman_flow.py`（15 件）
 - `docs/design/brinkman-flow-fvm.md`
 - `experiments/brinkman_uturn/{sweep,diagnose_u2,diagnose_local_dtau,summarize,plot_fields}.py` + `results*/` + `logs/` + `output/`
-- `nsb/{__init__,core,solver,utils,geo}.py` + `nsb/README.md`、ルート `main.py`、`tests/test_nsb.py`（6 件）、`experiments/nsb/{logs,results}/`
+- `nsb/{__init__,core,solver,utils,geo}.py` + `nsb/README.md` + `nsb/theory.md`（数理ノート、総和規約）、ルート `main.py`、`tests/test_nsb.py`（6 件）、`experiments/nsb/{logs,results}/`
