@@ -48,6 +48,7 @@ $$
 | `INTERIOR_MASS_SINK` | $+q_c$（吸出） | $+q_c u_{i,c}$（局所運動量を持ち出す） | `mass_flow` [kg/s]。圧力基準が別に必要 |
 | `INTERIOR_PRESSURE_SINK` | $+C_c (p_c - p_\mathrm{m})$ | $+\max(C_c(p_c - p_\mathrm{m}), 0)\, u_{i,c}$ | `conductance` [kg/(s·Pa)], `pressure`。$p_c < p_\mathrm{m}$ なら逆流注入。圧力基準になる |
 
+  領域内パッチは `weight(x, y) ∈ [0, 1]`（`smooth_disk(cx, cy, r, eps)` 等の滑らかな窓）でも指定でき、位置・径を連続設計変数にできる。重なりは加算。
   圧力基準（`PRESSURE_OUTLET` か `INTERIOR_PRESSURE_SINK`）が 1 つも無い構成は ValueError。
   マスク補助: `west_span(y0, y1)`, `east_span(y0, y1, lx)`, `south_span(x0, x1)`, `north_span(x0, x1, ly)`, `rect_mask`, `disk_mask`。
   質量流量を固定したまま inlet の位置・サイズ・壁を変える探索（冷却流路設計）に使う。

@@ -319,6 +319,37 @@ $$
 （実測 28.6 m/s、$U_\mathrm{in}$ の 14 倍）。正しい Stokes 場は最大 4.9 m/s（flat）/ 4.3 m/s（uturn）、NS 収束解は 3.4 m/s。
 14 倍の噴流から NS を始めると 2 反復目で残差が $2\times10^6$ 倍になり発散した。
 
+## 8b. 設計感度（陰関数定理による随伴）
+
+設計変数 $\theta$（マニホールドの中心 $c_i$、半径 $r$ など）は滑らかな窓関数
+
+$$
+w_c(\theta) = \tfrac12\left(1 + \tanh\frac{r - |x_c - c|}{\varepsilon}\right),
+\qquad
+q_c = \dot m\, \frac{w_c V_c}{\sum_{c'} w_{c'} h_{c'} V_{c'}},
+\qquad
+C_c = C\, \frac{w_c V_c}{\sum_{c'} w_{c'} h_{c'} V_{c'}}
+$$
+
+を通じて残差 $R(x; \theta)$ に入る（$\varepsilon \approx \Delta x$）。収束解 $x(\theta)$ は $R(x(\theta); \theta) = 0$ で陰に定義され、
+
+$$
+\frac{\partial R}{\partial x}\frac{dx}{d\theta} + \frac{\partial R}{\partial \theta} = 0
+\;\Rightarrow\;
+\frac{df}{d\theta} = \frac{\partial f}{\partial \theta} - \lambda^\top \frac{\partial R}{\partial \theta},
+\qquad
+J^\top \lambda = \frac{\partial f}{\partial x},\quad J \equiv \frac{\partial R}{\partial x} .
+$$
+
+- $J$ は**選択スキームの残差そのもの**から彩色中心差分で組む（構造格子、ステンシル半径 2 → 3·25·2 = 150 回の残差評価）。
+  1 次風上の解析ヤコビアン $J_1$ は RC 係数 $d_f$ を凍結しているので感度には使わない（前処理専用）。
+- $\partial R/\partial\theta$ は $\theta$ が少数なので中心差分（$x$ 固定、$\theta$ 1 成分あたり残差 2 回）。
+- $\partial f/\partial\theta$（重み $w_c(\theta)$ を通じた陽な依存）も $x$ 固定の中心差分。
+- 外側の autodiff からは $x(\theta)$ の VJP $\bar\theta = -(\partial R/\partial\theta)^\top \lambda$, $J^\top\lambda = \bar x$ として呼べる（`nsb.adjoint.ImplicitSolve.vjp`）。
+
+検証: 36×24、吸出マニホールド $\theta = (c_x, c_y, r)$、目的関数 = 注入部平均圧力。随伴勾配と全体解き直しの中心差分が
+$c_x$ で相対 $5\times10^{-5}$、$r$ で $1\times10^{-5}$ で一致（`tests/test_nsb_adjoint.py`）。
+
 ## 9. なぜ落ちるか（機構解析）
 
 ### 9.1 静止初期場の残差は「見かけ上」小さい

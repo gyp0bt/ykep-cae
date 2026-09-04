@@ -1,10 +1,10 @@
-# status-29: Brinkman 流路の座標マスク境界条件と質量流入境界（冷却流路設計の前段）
+# status-30: Brinkman 流路の座標マスク境界条件・質量流入・領域内マニホールド・随伴設計感度（冷却流路設計の前段）
 
-[<- README](../../README.md) | [<- status-index](status-index.md) | [設計文書](../design/brinkman-flow-fvm.md) | [nsb/README](../../nsb/README.md) | [前: status-28](status-28.md)
+[<- README](../../README.md) | [<- status-index](status-index.md) | [設計文書](../design/brinkman-flow-fvm.md) | [nsb/README](../../nsb/README.md) | [前: status-28](status-28.md)（status-29 は押出解析、別ブランチ）
 
 **日付**: 2026-09-04
 **ブランチ**: `claude/2dfvm-brinkman-convergence-tn39cz`
-**テスト数**: 320（status-28 の 308 + 12: `tests/test_brinkman_flow.py` +10、`tests/test_nsb.py` +2。`pytest tests/` で 319 passed / 1 xfailed）
+**テスト数**: 322（status-28 の 308 + 14: `tests/test_brinkman_flow.py` +10、`tests/test_nsb.py` +2、`tests/test_nsb_adjoint.py` +2。`pytest tests/` で 321 passed / 1 xfailed）
 **契約違反**: 0 件（登録プロセス 13）
 
 ## 目的
@@ -96,20 +96,49 @@ inlet を outlet から遠ざけるほど（上壁右寄り・右壁）Hele-Shaw
 B の注入部圧力 2465 Pa は「マニホールド間の Hele-Shaw 圧損 + 吸出側の $\dot m/C = 1000$ Pa」で構成される。
 境界 outlet を全く持たない構成（B, C）でも圧力基準が効いて 10 反復以内で収束した。
 
+## マニホールドの位置・径を連続設計変数に（滑らかな窓 + 随伴感度）
+
+- `BoundaryPatch.weight`: 領域内パッチを bool マスクの代わりに滑らかな窓 $w(x,y)\in[0,1]$ で指定。
+  `smooth_disk(cx, cy, r, eps)` は $w = \tfrac12(1+\tanh((r-d)/\varepsilon))$（$\varepsilon \approx \Delta x$）。
+  ソースは $w_c V_c/\sum w_c h_c V_c$ で按分。領域内パッチの重なりは加算に変更（窓の裾が重なるため）。
+- `nsb/adjoint.py`:
+  - `colored_fd_jacobian`: 選択スキーム（SOU + リミター + RC + マニホールド）の残差から彩色中心差分で厳密な疎ヤコビアン
+    （構造格子、ステンシル半径 2、残差評価 150 回）。12×8 で密 FD と 1e-8 で一致
+  - `ImplicitSolve(build_input)`: `forward(θ)`, `jacobian`, `adjoint`（$J^\top\lambda = \bar x$）, `vjp`（$\bar\theta = -(\partial R/\partial\theta)^\top\lambda$）, `gradient(θ, x, Objective)`
+  - `source_mean_pressure_objective`: 注入部平均圧力（圧損）とその ∂f/∂x
+- 数理は `nsb/theory.md` §8b
+
+### 検証と最適化デモ（`experiments/nsb/manifold_optimize.py`、flat 72×48、ṁ=0.1 kg/s、C=1e-4）
+
+θ = 吸出マニホールドの (cx, cy, r)、注入は (0.15, 0.2) r=0.05 固定、目的関数 = 注入部平均圧力。
+ログ `experiments/nsb/logs/manifold-opt-flat-r1.log`、YAML `results/manifold_optimize.yaml`。
+
+| | ∂f/∂cx | ∂f/∂cy | ∂f/∂r |
+|---|---|---|---|
+| 随伴 | 3331.0 | 1908.5 | −5870.0 |
+| 全体解き直しの中心差分 | 3326.2 | 1897.7 | −5876.8 |
+| 相対誤差 | 1.4e-3 | 5.7e-3 | 1.2e-3 |
+
+（36×24・newton_tol=1e-10 のテストでは cx 5e-5、r 1e-5。72×48 の差は newton_tol=1e-9 と FD 刻みによる）
+forward + 勾配で 3.8 s（forward 10 反復 + ヤコビアン 150 残差評価 + LU 2 回）。
+
+射影勾配法 15 反復（r ≤ 0.08 の射影）: θ0=(0.55, 0.30, 0.04), f=2585 Pa → θ=(0.262, 0.205, 0.08), f=1419 Pa。
+吸出は注入に向かって直進し、径は上限に張り付く（圧損最小化としては当然の解。冷却設計では流量分布の均一性など別の目的関数が要る）。
+
 ## autodiff でラップする際の注意（設計メモ）
 
-- マスク関数は bool を返すので inlet/マニホールド位置に対しては微分不能。位置・幅を設計変数にするなら、
-  (a) 離散候補の列挙、(b) 質量流入速度を面ごとの重み $w_f \in [0,1]$（滑らかな窓関数）で按分する連続緩和、のどちらかが要る。
-  (b) は `BoundaryPatch` に `weight(x, y) -> float` を足せば実装できる（未実装）
-- 流量 $\dot m$、厚さ場 $h$、物性に対しては残差 $R(x; \theta)$ が滑らか（リミターは Venkatakrishnan で微分可能）なので、
-  収束解での随伴 $\partial x/\partial\theta = -J^{-1} \partial R/\partial\theta$ が使える。$J_1$（1 次風上）は既にあるので、
-  随伴には SOU の厳密ヤコビアン $J_2$ か、JFNK と同様に $J_1$ を前処理にした反復が要る
+- bool マスクの境界 inlet 位置は微分不能。領域内マニホールドは `weight`（滑らかな窓）で連続化済み。
+  境界 inlet も面ごとの重み $w_f$ で同様に連続化できる（未実装）
+- 随伴は `ImplicitSolve.vjp` として実装済み（彩色 FD の厳密ヤコビアン $J_2$ を LU）。外側 autodiff の custom VJP から
+  `forward` / `vjp` を呼ぶだけでよい。$\partial R/\partial\theta$ は中心差分なので θ が多い（数百以上）場合は
+  ソース配列 $q_c(\theta)$ に対する解析微分（$\partial R/\partial q$ は定数）に置き換えるとよい
 - 連続式が $h$ を含まないため、$h$ で微分すると質量流入の換算 $u_n(h)$ 経由の依存だけが出る点に注意
 
 ## 次にやること
 
-- [ ] 連続緩和した inlet 重み（`weight(x, y)`）で位置・幅を連続設計変数にする
-- [ ] 収束解での随伴（$J^\top \lambda = \partial f/\partial x$）を `nsb` に追加し、autodiff ラップの土台にする
+- [x] 領域内マニホールドの位置・径を `weight` で連続設計変数にし、随伴（`nsb/adjoint.py`）で勾配 → 本 status
+- [ ] 境界 inlet の位置・幅も面重みで連続化する
+- [ ] 冷却設計向けの目的関数（流量分布の均一性、最小流速）と ∂f/∂x を追加
 - [ ] 熱ソルバーとの連携（流量場 → 熱伝達コンダクタンス → 上下プレート温度）の I/O 契約を決める
 - [ ] Process ソルバー側にも Stokes 初期場・α_u=1 推奨を反映（現状は `nsb` のみ）
 
@@ -117,8 +146,10 @@ B の注入部圧力 2465 Pa は「マニホールド間の Hele-Shaw 圧損 + �
 
 - `xkep_cae_fluid/brinkman_flow/{data,assembly,solver,__init__}.py`
 - `nsb/{core,geo,utils,README}.py|md`、`nsb/theory.md`（§2.1 を任意壁・質量流入に更新）
+- `nsb/adjoint.py`、`tests/test_nsb_adjoint.py`（+2）
 - `tests/test_brinkman_flow.py`（+10）、`tests/test_nsb.py`（+2）
 - `experiments/nsb/inlet_sweep.py` + `logs/inlet-sweep-flat-r1.log` + `results/inlet_sweep_flat_r1.yaml`
 - `experiments/nsb/manifold_demo.py` + `logs/manifold-demo-flat-r1.log` + `results/manifold_*` + `output/manifold_*.png`
+- `experiments/nsb/manifold_optimize.py` + `logs/manifold-opt-flat-r1.log` + `results/manifold_optimize.yaml`
 - `experiments/brinkman_uturn/plot_fields.py`（タグに U が無い npz にも対応）
 - `docs/design/brinkman-flow-fvm.md`（境界条件表 + 領域内マニホールド表）、`nsb/theory.md` §2.5

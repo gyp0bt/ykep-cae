@@ -15,6 +15,9 @@ import numpy as np
 MaskFn = Callable[[np.ndarray, np.ndarray], np.ndarray]
 """境界面中心座標 (x, y)（同形状の配列）を受け取り bool 配列を返す座標マスク関数."""
 
+WeightFn = Callable[[np.ndarray, np.ndarray], np.ndarray]
+"""セル中心座標 (x, y) を受け取り [0, 1] の重み配列を返す滑らかな窓関数（領域内パッチ用）."""
+
 
 class ConvectionSchemeType(Enum):
     """対流面値の補間スキーム."""
@@ -67,7 +70,7 @@ class BoundaryPatch:
     境界面中心に mask(x, y) を評価し、True の面に kind を割り当てる。
     領域内種別（INTERIOR_*）は**セル中心**に mask を評価し、True のセルに紙面垂直方向の
     マニホールド（面内速度ゼロで注入 / 局所速度で吸出）を割り当てる。
-    複数パッチが重なった場合は後のものが優先。どのパッチにも属さない面は WALL。
+    境界パッチが重なった場合は後のものが優先、領域内パッチは重ね合わせ（加算）。どのパッチにも属さない面は WALL。
 
     Parameters
     ----------
@@ -88,21 +91,50 @@ class BoundaryPatch:
         INTERIOR_PRESSURE_SINK のマニホールドコンダクタンス [kg/(s·Pa)]（3 次元値）。
         単位深さでは q_c = conductance · V_c / Σ_c h_c V_c · (p_c - pressure)。
         p_c < pressure なら逆流（面内運動量ゼロで注入）
+    weight : WeightFn | None
+        領域内パッチ用の滑らかな重み w(x, y) ∈ [0, 1]。与えると mask の代わりに使い、
+        ソースを w_c V_c / Σ_c w_c h_c V_c で按分する。位置・径を連続設計変数にするために
+        使う（`smooth_disk` 参照）。境界種別では無視
     name : str
         識別用ラベル
     """
 
     kind: BoundaryKind
-    mask: MaskFn
+    mask: MaskFn | None = None
     velocity: float = 0.0
     mass_flow: float = 0.0
     pressure: float = 0.0
     conductance: float = 0.0
+    weight: WeightFn | None = None
     name: str = ""
+
+    def __post_init__(self) -> None:
+        if self.mask is None and (not self.is_interior or self.weight is None):
+            raise ValueError("mask が必要です（領域内パッチは weight でも可）")
 
     @property
     def is_interior(self) -> bool:
         return self.kind in INTERIOR_KINDS
+
+    def weights(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """セル中心での重み配列（weight があればそれ、無ければ mask を 0/1 に）."""
+        if self.weight is not None:
+            return np.clip(np.asarray(self.weight(x, y), dtype=float), 0.0, 1.0)
+        return np.asarray(self.mask(x, y), dtype=float)
+
+
+def smooth_disk(cx: float, cy: float, r: float, eps: float) -> WeightFn:
+    """中心 (cx, cy)、半径 r の円板の滑らかな窓関数 w = ½(1 + tanh((r − d)/eps)).
+
+    eps は遷移幅 [m]（セル幅程度にすると格子で解像される）。cx, cy, r に対して滑らかなので
+    位置・径を連続設計変数にできる。
+    """
+
+    def w(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        d = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+        return 0.5 * (1.0 + np.tanh((r - d) / eps))
+
+    return w
 
 
 def rect_mask(x0: float, x1: float, y0: float, y1: float) -> MaskFn:

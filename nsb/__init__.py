@@ -6,12 +6,22 @@
 Newton + 擬似時間の制御則だけを `solver.solve_steady` に明示的に書き下している。
 """
 
+from nsb.adjoint import (
+    ImplicitSolve,
+    Objective,
+    colored_fd_jacobian,
+    source_mean_pressure_objective,
+)
 from nsb.core import BC, FaceType, NSBInput, NSBResult, NSBSettings
 from nsb.geo import make_case, make_flat_h, make_uturn_h, run_flat, run_uturn, uturn_bc_preset
 from nsb.solver import solve_steady
 
 __all__ = [
     "BC",
+    "ImplicitSolve",
+    "Objective",
+    "colored_fd_jacobian",
+    "source_mean_pressure_objective",
     "FaceType",
     "NSBInput",
     "NSBResult",

@@ -196,33 +196,38 @@ class BrinkmanDiscretization:
         self.q_src = np.zeros((nx, ny))
         self.q_sink = np.zeros((nx, ny))
         self.c_sink = np.zeros((nx, ny))
-        self.p_sink = np.zeros((nx, ny))
+        self.cp_sink = np.zeros((nx, ny))  # Σ_k c_k p_k（複数の圧力指定パッチが重なっても可）
         self.interior_mask = np.zeros((nx, ny), dtype=bool)
         for patch in patches:
-            hit = np.asarray(patch.mask(X, Y), dtype=bool)
-            hv = float((h[hit] * self.vol).sum())
+            w = patch.weights(X, Y)
+            hv = float((w * h * self.vol).sum())
             if hv <= 0.0:
-                raise ValueError(f"領域内パッチ '{patch.name}' のマスクに一致するセルがありません")
-            share = np.where(hit, self.vol / hv, 0.0)
-            # 後のパッチ優先: 重なったセルの既存値を消す
-            self.q_src[hit] = 0.0
-            self.q_sink[hit] = 0.0
-            self.c_sink[hit] = 0.0
-            self.p_sink[hit] = 0.0
+                raise ValueError(
+                    f"領域内パッチ '{patch.name}' のマスク/重みに一致するセルがありません"
+                )
+            share = w * self.vol / hv
+            # 領域内パッチは加算（滑らかな窓は裾が重なるため、上書きではなく重ね合わせ）
             if patch.kind is BoundaryKind.INTERIOR_MASS_SOURCE:
                 self.q_src += patch.mass_flow * share
             elif patch.kind is BoundaryKind.INTERIOR_MASS_SINK:
                 self.q_sink += patch.mass_flow * share
             else:
                 self.c_sink += patch.conductance * share
-                self.p_sink[hit] = patch.pressure
-            self.interior_mask |= hit
+                self.cp_sink += patch.conductance * share * patch.pressure
+            self.interior_mask |= w > 1e-3
+        with np.errstate(invalid="ignore", divide="ignore"):
+            self.p_sink = np.where(self.c_sink > 0.0, self.cp_sink / self.c_sink, 0.0)
 
     def _interior_velocity_scale(self) -> float:
         """領域内ソースの速度スケール: 総流量 / (ρ · 周長 4√A)。ソースが無ければ 0."""
-        if not (self.q_src > 0.0).any():
+        core = (
+            self.q_src > 1e-3 * self.q_src.max()
+            if self.q_src.max() > 0
+            else np.zeros_like(self.q_src, bool)
+        )
+        if not core.any():
             return 0.0
-        area = float((self.q_src > 0.0).sum()) * self.vol
+        area = float(core.sum()) * self.vol
         return float(self.q_src.sum()) / (self.rho * 4.0 * np.sqrt(area))
 
     def interior_fluxes(self, p: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -230,7 +235,7 @@ class BrinkmanDiscretization:
 
         圧力指定マニホールドは q = c (p - p_sink) で、正なら吸出、負なら注入（運動量ゼロ）。
         """
-        q_c = self.c_sink * (p - self.p_sink)
+        q_c = self.c_sink * p - self.cp_sink
         q_in = self.q_src + np.maximum(-q_c, 0.0)
         q_out = self.q_sink + np.maximum(q_c, 0.0)
         return q_in, q_out
@@ -707,7 +712,7 @@ class BrinkmanDiscretization:
             q_in, q_out = self.interior_fluxes(p_.reshape(self.nx, self.ny))
             q_out = q_out.ravel()
             c = self.c_sink.ravel()
-            q_c = c * (p_ - self.p_sink.ravel())
+            q_c = c * p_ - self.cp_sink.ravel()
             out_active = (q_c > 0.0).astype(float)  # 吸出側のみ運動量項
             J_uu = J_uu + sparse.diags(q_out)
             J_vv = J_vv + sparse.diags(q_out)

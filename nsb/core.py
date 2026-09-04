@@ -13,6 +13,7 @@ from xkep_cae_fluid.brinkman_flow.data import (
     BrinkmanGeometry,
     ConvectionSchemeType,
     MaskFn,
+    WeightFn,
 )
 
 FaceType = (
@@ -48,22 +49,38 @@ class BC:
     def pressure_outlet(mask: MaskFn, p: float = 0.0, name: str = "outlet") -> BoundaryPatch:
         return BoundaryPatch(BoundaryKind.PRESSURE_OUTLET, mask, pressure=p, name=name)
 
-    # --- 領域内マニホールド（紙面垂直方向）: マスクはセル中心で評価 ---
+    # --- 領域内マニホールド（紙面垂直方向）: マスク/重みはセル中心で評価 ---
     @staticmethod
-    def interior_source(mask: MaskFn, mass_flow: float, name: str = "manifold_in") -> BoundaryPatch:
-        """流量指定の注入マニホールド [kg/s]（面内運動量ゼロで注入）."""
+    def interior_source(
+        mask: MaskFn | None,
+        mass_flow: float,
+        name: str = "manifold_in",
+        weight: WeightFn | None = None,
+    ) -> BoundaryPatch:
+        """流量指定の注入マニホールド [kg/s]（面内運動量ゼロで注入）。weight で滑らかな窓も可."""
         return BoundaryPatch(
-            BoundaryKind.INTERIOR_MASS_SOURCE, mask, mass_flow=mass_flow, name=name
+            BoundaryKind.INTERIOR_MASS_SOURCE, mask, mass_flow=mass_flow, weight=weight, name=name
         )
 
     @staticmethod
-    def interior_sink(mask: MaskFn, mass_flow: float, name: str = "manifold_out") -> BoundaryPatch:
+    def interior_sink(
+        mask: MaskFn | None,
+        mass_flow: float,
+        name: str = "manifold_out",
+        weight: WeightFn | None = None,
+    ) -> BoundaryPatch:
         """流量指定の吸出マニホールド [kg/s]（局所運動量を持ち出す）。圧力基準が別に必要."""
-        return BoundaryPatch(BoundaryKind.INTERIOR_MASS_SINK, mask, mass_flow=mass_flow, name=name)
+        return BoundaryPatch(
+            BoundaryKind.INTERIOR_MASS_SINK, mask, mass_flow=mass_flow, weight=weight, name=name
+        )
 
     @staticmethod
     def interior_pressure_sink(
-        mask: MaskFn, conductance: float, p: float = 0.0, name: str = "manifold_p"
+        mask: MaskFn | None,
+        conductance: float,
+        p: float = 0.0,
+        name: str = "manifold_p",
+        weight: WeightFn | None = None,
     ) -> BoundaryPatch:
         """圧力指定マニホールド: q = conductance (p - p_manifold) [kg/s]。圧力基準を与える."""
         return BoundaryPatch(
@@ -71,6 +88,7 @@ class BC:
             mask,
             conductance=conductance,
             pressure=p,
+            weight=weight,
             name=name,
         )
 

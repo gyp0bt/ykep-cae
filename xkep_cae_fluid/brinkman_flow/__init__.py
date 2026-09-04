@@ -16,6 +16,7 @@ from xkep_cae_fluid.brinkman_flow.data import (
     east_span,
     north_span,
     rect_mask,
+    smooth_disk,
     south_span,
     west_span,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "east_span",
     "north_span",
     "rect_mask",
+    "smooth_disk",
     "south_span",
     "west_span",
 ]

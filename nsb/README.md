@@ -14,7 +14,8 @@ Newton + 擬似時間の制御則だけを `solver.solve_steady` に関数とし
 | `utils.py` | ポスト処理、面値⇄セル値変換、要約、npz 保存 |
 | `geo.py` | uturn / flat の厚さ場（inlet/outlet 位置に追従）、BC プリセット（速度 or 質量流量）、`run_uturn`, `run_flat`, `make_case` |
 | `../main.py` | パラメータスタディ（構成 × モデル × 細分化 × 流速） |
-| `theory.md` | 数理ノート: 支配方程式〜離散化〜Newton/擬似時間〜発散機構を総和規約で記述 |
+| `adjoint.py` | 設計感度: 彩色 FD ヤコビアン `colored_fd_jacobian`、陰関数定理の VJP `ImplicitSolve`（forward / jacobian / vjp / gradient）、`Objective` |
+| `theory.md` | 数理ノート: 支配方程式〜離散化〜Newton/擬似時間〜発散機構〜随伴感度を総和規約で記述 |
 
 ## `NSBSettings` の「踏んではいけない線」スイッチ
 
@@ -57,8 +58,27 @@ bc = BC(patches=(
 ))
 ```
 
-任意の `mask(x, y) -> bool`（境界種別は 4 辺の境界面中心、領域内種別はセル中心で評価）を渡せる。飛び飛びの複数 inlet も 1 マスクで指定でき、
-その場合は合計流量を面の $h_f A_f$ で按分した一様速度になる。探索デモ: `experiments/nsb/inlet_sweep.py`、マニホールドデモ: `experiments/nsb/manifold_demo.py`。
+```python
+# 位置・径を連続設計変数に: 滑らかな窓 smooth_disk(cx, cy, r, eps) を weight に渡し、随伴で dθ を得る
+from nsb import ImplicitSolve, source_mean_pressure_objective
+from xkep_cae_fluid.brinkman_flow import smooth_disk
+
+def build(theta):                       # θ = (cx, cy, r) -> NSBInput
+    cx, cy, r = theta
+    bc = BC(patches=(
+        BC.interior_source(disk_mask(0.15, 0.2, 0.05), 0.1),
+        BC.interior_pressure_sink(None, 1e-4, weight=smooth_disk(cx, cy, r, eps=0.7 / 72)),
+    ))
+    return make_case("flat", 1, bc=bc, settings=NSBSettings(velocity_floor=0.05, init_field="stokes", alpha_u=1.0))
+
+prob = ImplicitSolve(build)
+res, x = prob.forward(theta)
+f, dtheta = prob.gradient(theta, x, source_mean_pressure_objective())   # 圧損とその θ 勾配
+theta_bar = prob.vjp(theta, x, x_bar)                                    # 外側 autodiff 用の VJP
+```
+
+任意の `mask(x, y) -> bool`（境界種別は 4 辺の境界面中心、領域内種別はセル中心で評価）を渡せる。領域内パッチは `weight(x, y) ∈ [0,1]` の滑らかな窓でも指定でき、重なりは加算になる。飛び飛びの複数 inlet も 1 マスクで指定でき、
+その場合は合計流量を面の $h_f A_f$ で按分した一様速度になる。探索デモ: `experiments/nsb/inlet_sweep.py`、マニホールドデモ: `experiments/nsb/manifold_demo.py`、位置・径の最適化デモ: `experiments/nsb/manifold_optimize.py`。
 
 ## 使い方
 
