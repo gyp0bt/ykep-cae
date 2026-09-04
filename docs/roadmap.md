@@ -137,6 +137,21 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [ ] Phase 6.8: 水槽システム統合デモ（1〜2 PR）
 - [ ] Phase 6.9: 日周期拡張 + 設計最適化の足場（将来）
 
+## Phase 7: 単軸押出解析（Phase 1 / 1.5 完了）
+
+螺旋対称性で 2.5D に落とした計量部の断面解析と RTD。設計は
+[docs/design/single-screw-extruder.md](design/single-screw-extruder.md)、
+実装計画は [docs/plans/2026-09-02-single-screw-extruder-impl.md](plans/2026-09-02-single-screw-extruder-impl.md)。
+
+- [x] 設計策定（status-27）
+- [x] Phase 1: 幾何 → 形状係数 Fd/Fp → 下流 Poisson → 粘度 Strategy → 断面内 Stokes → Picard 結合（G1/G2/G2b、status-28）
+- [x] G3: OpenFOAM 同一格子検算（ニュートン・べき乗則、[レポート](reports/extruder/g3-openfoam.md)）
+- [x] Phase 1.5: 粒子追跡 + RTD（G4a/G4b、status-28）
+- [x] 図解レポート 2 本を Artifact 公開（[reports/extruder](reports/extruder/README.md)）
+- [x] 文献 RTD 照合 G5（Phase 2 の前提。実機データが無いので Pinto–Tadmor 1970 との照合に差し替え、2026-09-04 通過）
+- [ ] Phase 2: 粘性発熱 `Φ = μγ̇²` + 温度依存粘度
+- [ ] Phase 3: 混練エレメント（3D、messi + OpenFOAM）
+
 ## Phase 8: 2D Brinkman 補正 NS (FVM, Newton–Krylov) 収束性研究 → 冷却流路設計（進行中）
 
 薄流路の深さ平均 2D 流れ（Brinkman 貫通項）を同位置 FVM + Newton–Krylov で定常解析し、

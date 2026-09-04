@@ -4,8 +4,8 @@
 
 **日付**: 2026-09-04
 **ブランチ**: `claude/2dfvm-brinkman-convergence-tn39cz`
-**テスト数**: 322（status-30 の 308 + 14: `tests/test_brinkman_flow.py` +10、`tests/test_nsb.py` +2、`tests/test_nsb_adjoint.py` +2。`pytest tests/` で 321 passed / 1 xfailed）
-**契約違反**: 0 件（登録プロセス 13）
+**テスト数**: 516（master（押出 status-29、460）をマージ後。Brinkman 分は status-30 の 22 + 本 status の 14: `tests/test_brinkman_flow.py` +10、`tests/test_nsb.py` +2、`tests/test_nsb_adjoint.py` +2。マージ後 `pytest tests/` で 515 passed / 1 xfailed）
+**契約違反**: 0 件（登録プロセス 19、master マージ後）
 
 ## 目的
 
@@ -133,6 +133,11 @@ forward + 勾配で 3.8 s（forward 10 反復 + ヤコビアン 150 残差評価
   `forward` / `vjp` を呼ぶだけでよい。$\partial R/\partial\theta$ は中心差分なので θ が多い（数百以上）場合は
   ソース配列 $q_c(\theta)$ に対する解析微分（$\partial R/\partial q$ は定数）に置き換えるとよい
 - 連続式が $h$ を含まないため、$h$ で微分すると質量流入の換算 $u_n(h)$ 経由の依存だけが出る点に注意
+
+## master とのマージ
+
+押出解析（PR #28、status-28/29）がマージされた master を取り込み、本ブランチの status を 28→30、29→31 に改番、
+roadmap の Brinkman を Phase 8 に移した。競合は README の状態行・status-index・roadmap の 3 件（両方残して解消）。
 
 ## 次にやること
 
