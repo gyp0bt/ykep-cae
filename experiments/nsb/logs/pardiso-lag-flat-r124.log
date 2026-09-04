@@ -1,0 +1,25 @@
+# PARDISO 化 + 前処理 LU 遅延更新の実測（flat, U=1, 推奨構成, 4 コア）。スクリプト: scratchpad/thr.py, lagvar.py, lagvar4.py（experiments/nsb/profile_stages.py と同条件）
+
+## MKL スレッド設定の切り分け（72×48）
+env MKL_NUM_THREADS=None KMP_BLOCKTIME=None lag=1: total=15.49s fact=1.49s solve=8.29s (146 calls, 56.8ms) it=13 fact_n=14 gmres=105
+env MKL_NUM_THREADS=None KMP_BLOCKTIME=0 lag=1: total=4.35s fact=1.54s solve=2.21s (146 calls, 15.1ms) it=13 fact_n=14 gmres=105
+env MKL_NUM_THREADS=1 KMP_BLOCKTIME=None lag=1: total=2.61s fact=1.31s solve=0.83s (146 calls, 5.7ms) it=13 fact_n=14 gmres=105
+env MKL_NUM_THREADS=4 KMP_BLOCKTIME=0 lag=4: total=3.49s fact=0.56s solve=2.42s (172 calls, 14.1ms) it=13 fact_n=5 gmres=131
+
+## スレッド分割後（分解=全, 三角解=1）
+env MKL_NUM_THREADS=None KMP_BLOCKTIME=0 lag=1: total=2.89s fact=1.52s solve=0.85s (146 calls, 5.8ms) it=13 fact_n=14 gmres=105
+env MKL_NUM_THREADS=None KMP_BLOCKTIME=0 lag=4: total=2.02s fact=0.55s solve=1.00s (172 calls, 5.8ms) it=13 fact_n=5 gmres=131
+env MKL_NUM_THREADS=None KMP_BLOCKTIME=0 lag=1: total=17.27s fact=5.01s solve=9.73s (270 calls, 36.0ms) it=18 fact_n=19 gmres=210
+env MKL_NUM_THREADS=None KMP_BLOCKTIME=0 lag=4: total=20.48s fact=1.61s solve=15.90s (425 calls, 37.4ms) it=18 fact_n=7 gmres=356
+env MKL_NUM_THREADS=None KMP_BLOCKTIME=0 lag=8: total=19.96s fact=1.35s solve=15.70s (410 calls, 38.3ms) it=18 fact_n=6 gmres=345
+
+## 遅延更新の設定比較 144×96
+refine=2 lag=1 cfl_ratio=0.0: total=17.00s it=18 fact=19 gmres=210 conv=True rel=4.5e-08
+refine=2 lag=4 cfl_ratio=4.0: total=20.70s it=18 fact=9 gmres=335 conv=True rel=2.3e-08
+refine=2 lag=4 cfl_ratio=2.0: total=17.98s it=18 fact=11 gmres=280 conv=True rel=4.5e-08
+refine=2 lag=8 cfl_ratio=4.0: total=18.81s it=18 fact=8 gmres=314 conv=True rel=4.5e-08
+refine=2 lag=4 cfl_ratio=0.0: total=19.75s it=18 fact=7 gmres=356 conv=True rel=2.3e-08
+
+## 288×192
+refine=4 lag=1 cfl_ratio=0.0: total=235.60s it=31 fact=32 gmres=636 conv=True rel=3.6e-07
+refine=4 lag=4 cfl_ratio=2.0: total=221.08s it=36 fact=22 gmres=850 conv=True rel=9.9e-07

@@ -171,7 +171,8 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] 領域内マニホールドの位置・径を連続設計変数に（滑らかな窓 + 随伴 VJP `nsb/adjoint.py`）— status-31
 - [x] `nsb/` を xkep_cae_fluid 非依存に（`data`/`assembly` コピー + `scripts/sync_nsb_from_xkep.py` + 乖離テスト）— status-32
 - [x] nsb 高速化の効果見積り（実測: LU 分解 70〜81% → pypardiso 2.5〜4×、for ループ削減 0%、JAX は autodiff 目的のみ）— status-32
-- [ ] `NSBSettings.lu_backend`（splu / pardiso）と前処理 LU の遅延更新 — status-32 TODO
+- [x] nsb の疎 LU を PARDISO（pypardiso）前提に + 前処理 LU の遅延更新 `precond_lag`（144×96: 40 s → 17 s、MKL スレッド分割）— status-32
+- [ ] 18 コア実機で再計測して `precond_lag` 既定を確定、GMRES 反復数の削減 — status-32 TODO
 - [ ] 境界 inlet の位置・幅の連続化、冷却設計向け目的関数 — status-31 TODO
 - [ ] 熱ソルバー連携（流量場 → 熱伝達コンダクタンス → 上下プレート温度）
 - [ ] 非定常（時間精度）モードで定常解の存在を確認

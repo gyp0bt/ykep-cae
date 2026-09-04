@@ -18,11 +18,13 @@ dependencies = [
 amg = ["pyamg>=5.0"]
 fast = ["numba>=0.57"]
 plot = ["matplotlib>=3.5"]
+nsb = ["pypardiso>=0.4"]  # nsb/（Brinkman-NS 実験パッケージ）の疎 LU。MKL PARDISO 必須
 dev = [
     "pytest>=7.0",
     "pytest-timeout>=2.0",
     "ruff>=0.4",
     "pyyaml>=6.0",
+    "pypardiso>=0.4",
 ]
 
 [tool.pytest.ini_options]

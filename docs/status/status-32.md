@@ -1,16 +1,17 @@
-# status-32: nsb の xkep_cae_fluid からの切り離し（コピー方式）と高速化の効果見積り（実測）
+# status-32: nsb の xkep_cae_fluid からの切り離し（コピー方式）、高速化の効果見積り（実測）、PARDISO 化 + 前処理 LU の遅延更新
 
 [<- README](../../README.md) | [<- status-index](status-index.md) | [nsb/README](../../nsb/README.md) | [前: status-31](status-31.md)
 
 **日付**: 2026-09-04
 **ブランチ**: `claude/nsb-performance-optimization-ajmpkf`
-**テスト数**: 520（`tests/test_nsb_standalone.py` +4。本セッション環境（pyamg / numba 未導入）で `pytest tests/` は 501 passed / 8 skipped / 1 xfailed / 10 failed、失敗 10 件はすべて pyamg・numba の ImportError で nsb と無関係）
+**テスト数**: 531（`tests/test_nsb_standalone.py` +4、`tests/test_nsb_linalg.py` +11。本セッション環境（pyamg / numba 未導入）で `pytest tests/` は 501 passed / 8 skipped / 1 xfailed / 10 failed、失敗 10 件はすべて pyamg・numba の ImportError で nsb と無関係）
 **契約違反**: 0 件（登録プロセス 19）
 
 ## 目的
 
 1. `nsb/` を **xkep_cae_fluid に依存せず単体で持ち出せる**ようにする（共有離散化はコピーで持ち、xkep 側にも残す）
 2. nsb 高速化の候補（for ループ削減 / pypardiso 置換 / JAX 化）が**それぞれどの程度効くか**を実測で見積もる
+3. （見積り後の追加依頼）**pypardiso 前提に切替**（splu への後方互換なし）+ **前処理 LU の遅延更新**を実装し、効果を実測する
 
 ## 1. 切り離し（コピー方式）
 
@@ -92,17 +93,64 @@
 3. **for ループ削減**: 対象がない（既に配列演算）。着手不要
 4. **JAX 化**: 速度目的では非推奨。随伴の厳密化・外側最適化との統合が目的なら検討
 
-いずれも本 status では**見積りのみ**で、ソルバー本体は無変更。
+見積りの後、依頼により 1. と 2. を実装した（§3）。
+
+## 3. PARDISO 化（後方互換なし）+ 前処理 LU の遅延更新
+
+### 実装
+
+- `nsb/linalg.py`（新設）: `PardisoLU`（`factorize(A)` / `solve(b)` / `free()`、`with` 対応）、`pardiso_solve`。
+  pypardiso が無ければ ImportError（splu へのフォールバックは置かない）。libmkl_rt をシステム pip の `/usr/local/lib` 等からも探す
+- `nsb/solver.py`: `LaggedPreconditioner`（分解の使い回しと再分解条件）、`solve_linear` は必要時のみ J1 を組んで再分解。
+  Stokes 初期場の LU も PARDISO。終了時に `free()`。`NSBResult.n_factorizations` / `n_gmres_total` を追加、ログに `pc_age` / `fact`
+- `nsb/core.py`: `NSBSettings.precond_lag`（4）、`precond_refresh_gmres`（30）、`precond_cfl_ratio`（2.0）
+- `nsb/adjoint.py`: 随伴の転置系 $J^T\lambda = \bar x$ も PARDISO（`J.T.tocsr()`）
+- `pyproject.toml`: optional-dependencies に `nsb = ["pypardiso>=0.4"]`、`dev` にも追加（CI で nsb テストが動くように）
+- `tests/test_nsb_linalg.py`（+11）: PardisoLU の API（複数右辺・転置・再分解・解放）、再分解規則、
+  遅延更新ありでも同じ定常解に収束し分解回数だけ減ること
+
+### MKL スレッドの落とし穴（実測で 4〜10 倍の差）
+
+最初の実装では 72×48 で **splu より遅くなった**（11.8 s vs 3.7 s）。三角解 1 回が 57 ms（ベンチの back-to-back では 2.9 ms）。
+原因は MKL/OpenMP スレッドの spin 待ち（`KMP_BLOCKTIME` 既定 200 ms）: GMRES 内で numpy の残差評価と MKL 三角解が
+交互に走るため、spin 中の MKL スレッドが numpy から CPU を奪う。対策と効果（72×48、lag=1、同ログ）:
+
+| 設定 | 三角解 1 回 | 全体 |
+|---|---|---|
+| 既定（4 スレッド、spin 200 ms） | 56.8 ms | 15.5 s |
+| `KMP_BLOCKTIME=0` | 15.1 ms | 4.35 s |
+| `MKL_NUM_THREADS=1` | 5.7 ms | 2.61 s |
+| **採用: 分解=全スレッド、三角解=1 スレッド（`MKL_Set_Num_Threads_Local`）+ `KMP_BLOCKTIME=0`** | 5.8 ms | 2.89 s |
+
+`mkl_set_num_threads*`（小文字）は mkl_rt 経由で segfault したので大文字 API を使う。pypardiso 側のチェック
+（行列同一性・`astype(int32)`）のオーバーヘッドは 0.1 ms 程度で無視できる。
+
+### 効果（flat、U=1、推奨構成、4 コア、ログ `experiments/nsb/logs/pardiso-lag-flat-r124.log`）
+
+| 格子 | splu（旧） | PARDISO lag=1 | PARDISO lag=4, cfl_ratio=2 | 分解回数（lag=1 → 4） | GMRES 総反復（lag=1 → 4） |
+|---|---|---|---|---|---|
+| 72×48 | 3.7 s | 2.89 s | **2.02 s**（1.8×） | 14 → 5 | 105 → 131 |
+| 144×96 | 40.3 s | **17.0 s**（2.4×） | 18.0 s | 19 → 11 | 210 → 280 |
+| 288×192 | 757 s | 236 s（3.2×） | **221 s**（3.4×、Newton 31 → 36 反復） | 32 → 22 | 636 → 850 |
+
+- PARDISO 化だけで 144×96 が 40 s → 17 s、288×192 が 757 s → 236 s。遅延更新の上乗せは 72×48 で 1.4×、144×96 で 0.94×、288×192 で 1.07×（不正確な線形解で Newton が 5 反復増えたが収束）。残りは三角解（270 回 × 36 ms = 9.7 s）と分解（19 回 × 0.26 s = 5.0 s）
+- **遅延更新は SER の CFL 成長局面では効きにくい**: 擬似時間対角 ρV/Δτ が毎反復 1/2 になるので、古い前処理は
+  対角過大で GMRES 反復が +30〜70% 増える（`precond_cfl_ratio` 無制限で 210 → 356）。三角解 1 回 ≒ 分解の 1/7（144×96、4 コア）
+  なので、分解 1 回を節約して GMRES が 7 回増えると相殺。72×48 では得、144×96 では同等
+- 18 コア実機では分解がさらに速くなる一方、三角解は 1 スレッドのままなので、遅延更新の相対的な利得はさらに小さい。
+  `precond_lag=1` に戻すのも選択肢（設定 1 つ）。次に効くのは GMRES 反復数そのもの（`gmres_tol` 1e-3、
+  1 反復あたり 8〜12 回）と Newton 反復数（288×192 で 31 回）
 
 ## 次にやること
 
-- [ ] `NSBSettings.lu_backend = "splu" | "pardiso"` を追加し、`solve_linear` で pypardiso を使う（フォールバック付き）。18 コア実機で再計測
-- [ ] 前処理 LU の遅延更新（残差比で再分解を判断）と収束性の確認
+- [ ] 18 コア実機で `python experiments/nsb/profile_stages.py` を再計測し、`precond_lag` の既定（4 か 1）を確定する
+- [ ] GMRES 反復数の削減（`gmres_tol` 緩和と Newton 収束の兼ね合い、defect correction "lu" モードとの比較）
 - [ ] 288×192 の Newton 反復数増加（31 回）の原因切り分け（SER の頭打ち / 粗格子初期場）
 - status-31 からの持ち越し: 境界 inlet の連続化、冷却設計向け目的関数、熱ソルバー連携、Process 側への Stokes 初期場反映
 
 ## ファイル
 
+- `nsb/linalg.py`（新設）、`nsb/{solver,core,adjoint}.py`（PARDISO 化・遅延更新）、`tests/test_nsb_linalg.py`（+11）、`pyproject.toml`
 - `nsb/{data,assembly}.py`（コピー新設）、`nsb/{__init__,core,geo,solver,adjoint,utils}.py`（import 切替）、`nsb/README.md`
 - `scripts/sync_nsb_from_xkep.py`（新設）、`tests/test_nsb_standalone.py`（+4）
 - `tests/test_nsb.py`（`to_xkep_flow_input` 追加）、`tests/test_nsb_adjoint.py`、`experiments/nsb/{inlet_sweep,manifold_demo,manifold_optimize}.py`（import 切替）
