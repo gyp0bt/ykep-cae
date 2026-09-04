@@ -44,6 +44,11 @@ xkep_cae_fluid/
 |   +-- data.py        # ScalarFieldSpec / ScalarBoundarySpec / Input / Result
 |   +-- assembly.py    # 疎行列アセンブリ（対流-拡散-ソース、Dirichlet/Neumann/Robin BC）
 |   +-- solver.py      # ScalarTransportProcess (陰的Euler + BiCGSTAB+ILU)
++-- brinkman_flow/     # 2D Brinkman 補正 Navier-Stokes (FVM, Newton–Krylov) — 収束破綻の再現実験
+|   +-- data.py        # BrinkmanFlowInput / Result / SolverSettings / ThicknessSpec
+|   +-- geometry.py    # UTurnThicknessProcess（flat / uturn 厚さ場）
+|   +-- assembly.py    # 同位置 FVM 残差（1次/2次風上+Venkatakrishnan）+ 1次風上ヤコビアン + Rhie-Chow
+|   +-- solver.py      # BrinkmanFlowFVMProcess（Newton + GMRES/LU(J1) + 擬似時間 + 陰的緩和）
 +-- aquarium/          # 水槽設計 CAE ドメイン（Phase 6.2 / 6.3）
 |   +-- geometry.py    # AquariumGeometryProcess（90×30×45 cm + 底床/ガラス/水マスク + z-refinement）
 |   +-- heater.py      # HeaterProcess（定熱流束 + 定温ヒステリシス）
@@ -62,6 +67,7 @@ xkep_cae_fluid/
 |   +-- benchmark_solver_methods.py      # ソルバー手法別ベンチマーク
 |   +-- aquarium_heater_natural_convection.py  # Geometry+Heater+NC 3 段（Phase 6.2b）
 |   +-- aquarium_filter_circulation.py         # Geometry+Heater+Filter+NC 4 段（Phase 6.3b）
++-- experiments/brinkman_uturn/  # Brinkman U ターン収束性スイープ（sweep.py / diagnose_u2.py / results / logs）
 +-- tests/             # テスト
 ```
 
