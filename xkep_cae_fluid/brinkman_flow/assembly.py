@@ -14,7 +14,38 @@ from dataclasses import dataclass
 import numpy as np
 from scipy import sparse
 
-from xkep_cae_fluid.brinkman_flow.data import BrinkmanFlowInput, ConvectionSchemeType
+from xkep_cae_fluid.brinkman_flow.data import (
+    BoundaryKind,
+    BoundaryPatch,
+    BrinkmanFlowInput,
+    ConvectionSchemeType,
+)
+
+
+@dataclass
+class BoundarySide:
+    """領域 1 辺の境界面配列（W/E: 長さ ny、S/N: 長さ nx）.
+
+    un: 内向き法線方向の流入速度（inlet 以外は 0）、p: outlet 圧力（他は未使用）。
+    is_outlet の面は速度ゼロ勾配・圧力 Dirichlet、それ以外は速度 Dirichlet・圧力ゼロ勾配。
+    """
+
+    kind: np.ndarray  # object 配列 (BoundaryKind)
+    is_outlet: np.ndarray
+    un: np.ndarray
+    p: np.ndarray
+    x: np.ndarray  # 面中心座標
+    y: np.ndarray
+
+    @property
+    def is_dirichlet(self) -> np.ndarray:
+        return ~self.is_outlet
+
+    @property
+    def is_inlet(self) -> np.ndarray:
+        return np.array(
+            [k in (BoundaryKind.VELOCITY_INLET, BoundaryKind.MASS_FLOW_INLET) for k in self.kind]
+        )
 
 
 @dataclass
@@ -50,29 +81,90 @@ class BrinkmanDiscretization:
         self.rho, self.mu = inp.rho, inp.mu
         self.drag = inp.brinkman_factor * inp.mu_brinkman / inp.thickness**2  # (nx, ny) [kg/(m³s)]
 
-        yc = (np.arange(self.ny) + 0.5) * self.dy
-        g = inp.geometry
-        self.inlet_mask = (yc > g.inlet_y0) & (yc < g.inlet_y1)  # (ny,)
-        self.outlet_mask = (yc > g.outlet_y0) & (yc < g.outlet_y1)
-        if not self.inlet_mask.any() or not self.outlet_mask.any():
-            raise ValueError("inlet / outlet に対応するセルが存在しません（分割数不足）")
+        self.sides = self._resolve_boundaries(inp.effective_boundaries())
+        W, E, S, N = self.sides["W"], self.sides["E"], self.sides["S"], self.sides["N"]
+        n_in = sum(int(sd.is_inlet.sum()) for sd in self.sides.values())
+        n_out = sum(int(sd.is_outlet.sum()) for sd in self.sides.values())
+        if n_in == 0 or n_out == 0:
+            raise ValueError(
+                "inlet / outlet に対応する境界面が存在しません（マスクか分割数を確認）"
+            )
+        # 擬似時間の速度スケール（最大流入速度）
+        self.u_scale = max(float(np.abs(sd.un).max()) for sd in self.sides.values())
 
-        # 左壁の境界値（u, v）と、拡散のディリクレ係数
-        self.u_left = np.where(self.inlet_mask, inp.u_inlet, 0.0)
-        self.v_left = np.zeros(self.ny)
-        self.left_dirichlet = ~self.outlet_mask  # outlet はゼロ勾配
+        # 境界面の速度成分（W: u=+un, E: u=-un, S: v=+un, N: v=-un）
+        self.u_w, self.v_w = W.un, np.zeros(self.ny)
+        self.u_e, self.v_e = -E.un, np.zeros(self.ny)
+        self.u_s, self.v_s = np.zeros(self.nx), S.un
+        self.u_n, self.v_n = np.zeros(self.nx), -N.un
 
         dxx = self.mu * self.dy / self.dx
         dyy = self.mu * self.dx / self.dy
         diff_diag = np.full((self.nx, self.ny), 2.0 * dxx + 2.0 * dyy)
-        diff_diag[0, :] += np.where(self.left_dirichlet, dxx, -dxx)  # Dirichlet: 2D, outlet: 0
-        diff_diag[-1, :] += dxx
-        diff_diag[:, 0] += dyy
-        diff_diag[:, -1] += dyy
+        # 境界面: Dirichlet は 2μA/d（内部の 2 倍）、outlet（ゼロ勾配）は 0
+        diff_diag[0, :] += np.where(W.is_dirichlet, dxx, -dxx)
+        diff_diag[-1, :] += np.where(E.is_dirichlet, dxx, -dxx)
+        diff_diag[:, 0] += np.where(S.is_dirichlet, dyy, -dyy)
+        diff_diag[:, -1] += np.where(N.is_dirichlet, dyy, -dyy)
         self.diff_diag = diff_diag
         self._dxx, self._dyy = dxx, dyy
 
         self._build_operators()
+
+    # ------------------------------------------------------------------
+    # 境界パッチの解決
+    # ------------------------------------------------------------------
+    def _resolve_boundaries(self, patches: tuple[BoundaryPatch, ...]) -> dict[str, BoundarySide]:
+        """座標マスクを 4 辺の境界面中心で評価し、面ごとの種別・流入速度・圧力に展開する.
+
+        MASS_FLOW_INLET は u_n = mass_flow / (ρ Σ_f h_f A_f)（h_f は隣接セルの厚さ）で
+        パッチ内一様の流入速度に換算する。
+        """
+        nx, ny = self.nx, self.ny
+        lx, ly = self.inp.geometry.lx, self.inp.geometry.ly
+        xc = (np.arange(nx) + 0.5) * self.dx
+        yc = (np.arange(ny) + 0.5) * self.dy
+        h = self.inp.thickness
+        # (x, y, 隣接セル厚さ, 面積)
+        geom = {
+            "W": (np.zeros(ny), yc, h[0, :], self.dy),
+            "E": (np.full(ny, lx), yc, h[-1, :], self.dy),
+            "S": (xc, np.zeros(nx), h[:, 0], self.dx),
+            "N": (xc, np.full(nx, ly), h[:, -1], self.dx),
+        }
+        sides: dict[str, BoundarySide] = {}
+        for key, (x, y, _hf, _a) in geom.items():
+            m = x.size
+            sides[key] = BoundarySide(
+                kind=np.array([BoundaryKind.WALL] * m, dtype=object),
+                is_outlet=np.zeros(m, dtype=bool),
+                un=np.zeros(m),
+                p=np.zeros(m),
+                x=x,
+                y=y,
+            )
+        for patch in patches:
+            hits = {
+                key: np.asarray(patch.mask(x, y), dtype=bool) for key, (x, y, _, _) in geom.items()
+            }
+            if patch.kind is BoundaryKind.MASS_FLOW_INLET:
+                area_h = sum(float((geom[k][2][hit] * geom[k][3]).sum()) for k, hit in hits.items())
+                if area_h <= 0.0:
+                    raise ValueError(
+                        f"MASS_FLOW_INLET '{patch.name}' のマスクに一致する境界面がありません"
+                    )
+                un = patch.mass_flow / (self.rho * area_h)
+            elif patch.kind is BoundaryKind.VELOCITY_INLET:
+                un = patch.velocity
+            else:
+                un = 0.0
+            for key, hit in hits.items():
+                sd = sides[key]
+                sd.kind[hit] = patch.kind
+                sd.is_outlet[hit] = patch.kind is BoundaryKind.PRESSURE_OUTLET
+                sd.un[hit] = un
+                sd.p[hit] = patch.pressure if patch.kind is BoundaryKind.PRESSURE_OUTLET else 0.0
+        return sides
 
     # ------------------------------------------------------------------
     # 定数オペレータ
@@ -150,24 +242,26 @@ class BrinkmanDiscretization:
             (nfy, n),
         )
 
-        # 速度の面補間（線形部）: 内部 0.5/0.5、outlet 面はセル値（ゼロ勾配）、他境界 0
-        out_j = j_all[self.outlet_mask]
-        self.Ux = self.Ax + mat(
-            fx_left[self.outlet_mask], c_left[self.outlet_mask], np.ones(len(out_j)), (nfx, n)
-        )
-        self.Uy = self.Ay.copy()
+        W, E, S, N = self.sides["W"], self.sides["E"], self.sides["S"], self.sides["N"]
 
-        # 圧力の面補間: 内部 0.5/0.5、壁/inlet はセル値、outlet は 0
-        nout_j = ~self.outlet_mask
-        self.Px = (
-            self.Ax
-            + mat(fx_left[nout_j], c_left[nout_j], np.ones(nout_j.sum()), (nfx, n))
-            + mat(fx_right, c_right, np.ones(ny), (nfx, n))
+        # 速度の面補間（線形部）: 内部 0.5/0.5、outlet 面はセル値（ゼロ勾配）、Dirichlet 面は定数（行列は 0）
+        self.Ux = self.Ax + sum(
+            mat(f[m], c[m], np.ones(int(m.sum())), (nfx, n))
+            for f, c, m in ((fx_left, c_left, W.is_outlet), (fx_right, c_right, E.is_outlet))
         )
-        self.Py = (
-            self.Ay
-            + mat(fy_bot, c_bot, np.ones(nx), (nfy, n))
-            + mat(fy_top, c_top, np.ones(nx), (nfy, n))
+        self.Uy = self.Ay + sum(
+            mat(f[m], c[m], np.ones(int(m.sum())), (nfy, n))
+            for f, c, m in ((fy_bot, c_bot, S.is_outlet), (fy_top, c_top, N.is_outlet))
+        )
+
+        # 圧力の面補間: 内部 0.5/0.5、壁/inlet はセル値（ゼロ勾配）、outlet は定数（行列は 0）
+        self.Px = self.Ax + sum(
+            mat(f[m], c[m], np.ones(int(m.sum())), (nfx, n))
+            for f, c, m in ((fx_left, c_left, W.is_dirichlet), (fx_right, c_right, E.is_dirichlet))
+        )
+        self.Py = self.Ay + sum(
+            mat(f[m], c[m], np.ones(int(m.sum())), (nfy, n))
+            for f, c, m in ((fy_bot, c_bot, S.is_dirichlet), (fy_top, c_top, N.is_dirichlet))
         )
 
         # 面勾配（内部のみ、RC 用）
@@ -184,17 +278,36 @@ class BrinkmanDiscretization:
             (nfy, n),
         )
 
-        # 速度の面勾配（拡散用、Dirichlet 境界は 2/d、outlet は 0）
-        dl = self.left_dirichlet
+        # 速度の面勾配（拡散用、Dirichlet 境界は ±2/d、outlet は 0）
         self.Fgx_vel = (
             self.Fgx_int
-            + mat(fx_left[dl], c_left[dl], np.full(dl.sum(), 2.0 / self.dx), (nfx, n))
-            + mat(fx_right, c_right, np.full(ny, -2.0 / self.dx), (nfx, n))
+            + mat(
+                fx_left[W.is_dirichlet],
+                c_left[W.is_dirichlet],
+                np.full(int(W.is_dirichlet.sum()), 2.0 / self.dx),
+                (nfx, n),
+            )
+            + mat(
+                fx_right[E.is_dirichlet],
+                c_right[E.is_dirichlet],
+                np.full(int(E.is_dirichlet.sum()), -2.0 / self.dx),
+                (nfx, n),
+            )
         )
         self.Fgy_vel = (
             self.Fgy_int
-            + mat(fy_bot, c_bot, np.full(nx, 2.0 / self.dy), (nfy, n))
-            + mat(fy_top, c_top, np.full(nx, -2.0 / self.dy), (nfy, n))
+            + mat(
+                fy_bot[S.is_dirichlet],
+                c_bot[S.is_dirichlet],
+                np.full(int(S.is_dirichlet.sum()), 2.0 / self.dy),
+                (nfy, n),
+            )
+            + mat(
+                fy_top[N.is_dirichlet],
+                c_top[N.is_dirichlet],
+                np.full(int(N.is_dirichlet.sum()), -2.0 / self.dy),
+                (nfy, n),
+            )
         )
 
         # セル勾配（圧力）
@@ -216,27 +329,33 @@ class BrinkmanDiscretization:
         return x[:n].reshape(shape), x[n : 2 * n].reshape(shape), x[2 * n :].reshape(shape)
 
     def _linear_face_values(self, u: np.ndarray, v: np.ndarray, p: np.ndarray):
+        """線形補間の面値。境界面: outlet は速度セル値・圧力指定値、他は速度指定値・圧力セル値."""
         nx, ny = self.nx, self.ny
+        W, E, S, N = self.sides["W"], self.sides["E"], self.sides["S"], self.sides["N"]
         ufx = np.empty((nx + 1, ny))
         vfx = np.empty((nx + 1, ny))
         ufx[1:-1] = 0.5 * (u[:-1] + u[1:])
         vfx[1:-1] = 0.5 * (v[:-1] + v[1:])
-        ufx[0] = np.where(self.outlet_mask, u[0], self.u_left)
-        vfx[0] = np.where(self.outlet_mask, v[0], self.v_left)
-        ufx[-1] = 0.0
-        vfx[-1] = 0.0
-        ufy = np.zeros((nx, ny + 1))
-        vfy = np.zeros((nx, ny + 1))
+        ufx[0] = np.where(W.is_outlet, u[0], self.u_w)
+        vfx[0] = np.where(W.is_outlet, v[0], self.v_w)
+        ufx[-1] = np.where(E.is_outlet, u[-1], self.u_e)
+        vfx[-1] = np.where(E.is_outlet, v[-1], self.v_e)
+        ufy = np.empty((nx, ny + 1))
+        vfy = np.empty((nx, ny + 1))
         ufy[:, 1:-1] = 0.5 * (u[:, :-1] + u[:, 1:])
         vfy[:, 1:-1] = 0.5 * (v[:, :-1] + v[:, 1:])
+        ufy[:, 0] = np.where(S.is_outlet, u[:, 0], self.u_s)
+        vfy[:, 0] = np.where(S.is_outlet, v[:, 0], self.v_s)
+        ufy[:, -1] = np.where(N.is_outlet, u[:, -1], self.u_n)
+        vfy[:, -1] = np.where(N.is_outlet, v[:, -1], self.v_n)
         pfx = np.empty((nx + 1, ny))
         pfx[1:-1] = 0.5 * (p[:-1] + p[1:])
-        pfx[0] = np.where(self.outlet_mask, 0.0, p[0])
-        pfx[-1] = p[-1]
+        pfx[0] = np.where(W.is_outlet, W.p, p[0])
+        pfx[-1] = np.where(E.is_outlet, E.p, p[-1])
         pfy = np.empty((nx, ny + 1))
         pfy[:, 1:-1] = 0.5 * (p[:, :-1] + p[:, 1:])
-        pfy[:, 0] = p[:, 0]
-        pfy[:, -1] = p[:, -1]
+        pfy[:, 0] = np.where(S.is_outlet, S.p, p[:, 0])
+        pfy[:, -1] = np.where(N.is_outlet, N.p, p[:, -1])
         return ufx, vfx, ufy, vfy, pfx, pfy
 
     def compute_state(
@@ -388,27 +507,31 @@ class BrinkmanDiscretization:
         def div(fxv: np.ndarray, fyv: np.ndarray) -> np.ndarray:
             return fxv[1:] - fxv[:-1] + fyv[:, 1:] - fyv[:, :-1]
 
-        def diffusion(phi: np.ndarray, phi_left: np.ndarray) -> np.ndarray:
-            # 面勾配（+x, +y 方向）
+        W, E, S, N = self.sides["W"], self.sides["E"], self.sides["S"], self.sides["N"]
+
+        def diffusion(
+            phi: np.ndarray, bw: np.ndarray, be: np.ndarray, bs: np.ndarray, bn: np.ndarray
+        ) -> np.ndarray:
+            # 面勾配（+x, +y 方向）。Dirichlet 面は (境界値 - セル値)/(d/2)、outlet 面は 0
             gxf = np.empty((self.nx + 1, self.ny))
             gxf[1:-1] = (phi[1:] - phi[:-1]) / dx
-            gxf[0] = np.where(self.left_dirichlet, (phi[0] - phi_left) / (0.5 * dx), 0.0)
-            gxf[-1] = (0.0 - phi[-1]) / (0.5 * dx)
+            gxf[0] = np.where(W.is_dirichlet, (phi[0] - bw) / (0.5 * dx), 0.0)
+            gxf[-1] = np.where(E.is_dirichlet, (be - phi[-1]) / (0.5 * dx), 0.0)
             gyf = np.empty((self.nx, self.ny + 1))
             gyf[:, 1:-1] = (phi[:, 1:] - phi[:, :-1]) / dy
-            gyf[:, 0] = (phi[:, 0] - 0.0) / (0.5 * dy)
-            gyf[:, -1] = (0.0 - phi[:, -1]) / (0.5 * dy)
+            gyf[:, 0] = np.where(S.is_dirichlet, (phi[:, 0] - bs) / (0.5 * dy), 0.0)
+            gyf[:, -1] = np.where(N.is_dirichlet, (bn - phi[:, -1]) / (0.5 * dy), 0.0)
             return mu * div(dy * gxf, dx * gyf)  # 流入側が正
 
         r_u = (
             cs * div(st.fx * st.conv_ufx, st.fy * st.conv_ufy)
-            - diffusion(u, self.u_left)
+            - diffusion(u, self.u_w, self.u_e, self.u_s, self.u_n)
             + (st.pfx[1:] - st.pfx[:-1]) * dy
             + self.drag * vol * u
         )
         r_v = (
             cs * div(st.fx * st.conv_vfx, st.fy * st.conv_vfy)
-            - diffusion(v, self.v_left)
+            - diffusion(v, self.v_w, self.v_e, self.v_s, self.v_n)
             + (st.pfy[:, 1:] - st.pfy[:, :-1]) * dx
             + self.drag * vol * v
         )
@@ -437,15 +560,36 @@ class BrinkmanDiscretization:
             (np.ones(len(self.fx_int)), (self.fx_int, np.where(up_x, self.fx_cl, self.fx_cr))),
             shape=(nfx, n),
         )
-        out_faces = np.arange(self.ny)[self.outlet_mask]
-        Wx = Wx + sparse.csr_matrix(
-            (np.ones(len(out_faces)), (out_faces, out_faces)), shape=(nfx, n)
-        )  # outlet 面: φ_f = φ_P（セル id = j）
+        # outlet 面: φ_f = φ_P（ゼロ勾配）
+        W, E, S, N = self.sides["W"], self.sides["E"], self.sides["S"], self.sides["N"]
+        j_all, i_all = np.arange(self.ny), np.arange(self.nx)
+        for faces, cellids in (
+            (
+                j_all[W.is_outlet],
+                self._cell(np.zeros(int(W.is_outlet.sum()), dtype=int), j_all[W.is_outlet]),
+            ),
+            (
+                self.nx * self.ny + j_all[E.is_outlet],
+                self._cell(np.full(int(E.is_outlet.sum()), self.nx - 1), j_all[E.is_outlet]),
+            ),
+        ):
+            Wx = Wx + sparse.csr_matrix((np.ones(len(faces)), (faces, cellids)), shape=(nfx, n))
         up_y = fy[self.fy_int] >= 0.0
         Wy = sparse.csr_matrix(
             (np.ones(len(self.fy_int)), (self.fy_int, np.where(up_y, self.fy_cs, self.fy_cn))),
             shape=(nfy, n),
         )
+        for faces, cellids in (
+            (
+                i_all[S.is_outlet] * (self.ny + 1),
+                self._cell(i_all[S.is_outlet], np.zeros(int(S.is_outlet.sum()), dtype=int)),
+            ),
+            (
+                i_all[N.is_outlet] * (self.ny + 1) + self.ny,
+                self._cell(i_all[N.is_outlet], np.full(int(N.is_outlet.sum()), self.ny - 1)),
+            ),
+        ):
+            Wy = Wy + sparse.csr_matrix((np.ones(len(faces)), (faces, cellids)), shape=(nfy, n))
         conv = self.Dx @ sparse.diags(fx) @ Wx + self.Dy @ sparse.diags(fy) @ Wy
 
         # RC 質量流束の p 依存: ∂Fx/∂p = -ρ dy diag(dfx) (Fgx_int - Ax Gx)
@@ -481,7 +625,38 @@ class BrinkmanDiscretization:
         return J
 
     def mass_flow(self, st: StateArrays) -> tuple[float, float]:
-        """inlet / outlet 質量流量 [kg/s]（正 = 流入）."""
-        m_in = float(st.fx[0][self.inlet_mask].sum())
-        m_out = float(-st.fx[0][self.outlet_mask].sum())
+        """inlet / outlet 質量流量 [kg/s]（単位深さ、正 = inlet 流入 / outlet 流出）."""
+        # 各辺の内向き流束
+        inward = {
+            "W": st.fx[0],
+            "E": -st.fx[-1],
+            "S": st.fy[:, 0],
+            "N": -st.fy[:, -1],
+        }
+        m_in = sum(float(inward[k][sd.is_inlet].sum()) for k, sd in self.sides.items())
+        m_out = sum(float(-inward[k][sd.is_outlet].sum()) for k, sd in self.sides.items())
         return m_in, m_out
+
+    def boundary_report(self) -> list[dict[str, object]]:
+        """辺ごとの境界面種別と流入速度の要約（デバッグ用）."""
+        out = []
+        for key, sd in self.sides.items():
+            for kind in BoundaryKind:
+                m = np.array([k is kind for k in sd.kind])
+                if kind is BoundaryKind.WALL or not m.any():
+                    continue
+                out.append(
+                    {
+                        "side": key,
+                        "kind": kind.value,
+                        "n_faces": int(m.sum()),
+                        "u_n": float(np.abs(sd.un[m]).max()),
+                        "span": (
+                            float(sd.x[m].min()),
+                            float(sd.x[m].max()),
+                            float(sd.y[m].min()),
+                            float(sd.y[m].max()),
+                        ),
+                    }
+                )
+        return out

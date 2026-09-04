@@ -28,7 +28,20 @@ $$
 - 対流面値: `first_order_upwind` / `second_order_upwind`（勾配は Green–Gauss、Venkatakrishnan リミター）
 - 拡散: 中心差分
 - 連続式: 面質量流束に **Rhie–Chow 補間**（$d_f = V/a_P$、$a_P$ は運動量対角）を適用しチェッカーボードを抑制
-- 境界: 左壁上部に速度 inlet、左壁下部に圧力 outlet（p=0, 速度ゼロ勾配）、他は no-slip
+- 境界: `BoundaryPatch(kind, mask, ...)` の列で指定。領域 4 辺の境界面中心で座標マスク `mask(x, y) -> bool`
+  を評価し、True の面に種別を割り当てる（後のパッチ優先、未指定は no-slip 壁）。`boundaries=None` なら
+  `geometry` + `u_inlet` から従来の「左壁上部 速度 inlet / 左壁下部 圧力 outlet」を生成
+
+| 種別 | 速度 | 圧力 | 備考 |
+|---|---|---|---|
+| `WALL` | Dirichlet 0 | ゼロ勾配 | 既定 |
+| `VELOCITY_INLET` | 内向き法線方向に一様 `velocity` | ゼロ勾配 | |
+| `MASS_FLOW_INLET` | 一様 $u_n = \dot m / (\rho \sum_f h_f A_f)$ | ゼロ勾配 | `mass_flow` [kg/s] は厚さ $h$ 込みの 3 次元値。$h_f$ は隣接セルの厚さ |
+| `PRESSURE_OUTLET` | ゼロ勾配 | Dirichlet `pressure` | |
+
+  マスク補助: `west_span(y0, y1)`, `east_span(y0, y1, lx)`, `south_span(x0, x1)`, `north_span(x0, x1, ly)`。
+  質量流量を固定したまま inlet の位置・サイズ・壁を変える探索（冷却流路設計）に使う。
+  連続式は $\partial_i u_i = 0$（$h$ を含まない）なので、`mass_in/mass_out` は単位深さの値 [kg/s]（= $\dot m / h_\mathrm{in}$）で報告する
 
 ## 非線形反復（`solver.py`）
 
@@ -47,7 +60,7 @@ $$
 
 ## 入出力
 
-- `BrinkmanFlowInput`: 形状・格子・物性・厚さ場・BC・スキーム・ソルバー設定
+- `BrinkmanFlowInput`: 形状・格子・物性・厚さ場・境界パッチ（`boundaries`）・スキーム・ソルバー設定
 - `BrinkmanFlowResult`: u, v, p, 残差履歴, CFL 履歴, 収束フラグ, 失敗理由, 質量収支
 - `UTurnThicknessProcess`（PreProcess）: `"flat"` / `"uturn"` の厚さ場を生成
 

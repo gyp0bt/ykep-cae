@@ -57,13 +57,18 @@ $\tilde u^f_i$ は**対流面値**（§2.3、スキーム依存）、$u^f_j$（$
 
 ### 2.1 境界条件
 
-領域 $[0, L_x]\times[0, L_y]$、境界はすべて左壁（$x_1 = 0$）にある。
+領域 $[0, L_x]\times[0, L_y]$ の 4 辺の境界面に、座標マスク $m(x_1, x_2)$ で種別を割り当てる（既定の再現実験では左壁のみ）。
+内向き単位法線を $\nu^f_i = -n^f_i$ とすると
 
 | 境界 | 速度 | 圧力 |
 |---|---|---|
-| 速度 inlet（左壁 $y \in [0.25, 0.35]$） | $u^f_1 = U_\mathrm{in}$, $u^f_2 = 0$（Dirichlet） | $p^f = p_P$（ゼロ勾配） |
-| 圧力 outlet（左壁 $y \in [0.05, 0.15]$） | $u^f_i = u_{i,P}$（ゼロ勾配） | $p^f = 0$ |
+| 速度 inlet | $u^f_i = U\, \nu^f_i$（Dirichlet） | $p^f = p_P$（ゼロ勾配） |
+| 質量流入 inlet | $u^f_i = u_n \nu^f_i$, $u_n = \dot m / (\rho \sum_{f \in \text{patch}} h_f A_f)$ | $p^f = p_P$ |
+| 圧力 outlet | $u^f_i = u_{i,P}$（ゼロ勾配） | $p^f = p_\mathrm{out}$ |
 | 壁（その他） | $u^f_i = 0$（no-slip） | $p^f = p_P$ |
+
+質量流入は厚さ込みの 3 次元流量 $\dot m = \rho \sum_f u_n h_f A_f$ を面の $h_f A_f$ で按分した一様 $u_n$ にする。
+連続式が $\partial_i u_i = 0$（$h$ を含まない）なので、単位深さの流量 $\sum_f F_f = \dot m / h_\mathrm{in}$ が保存量である。
 
 ### 2.2 拡散項
 

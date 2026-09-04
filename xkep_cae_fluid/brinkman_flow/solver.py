@@ -93,7 +93,7 @@ class BrinkmanFlowFVMProcess(SolverProcess["BrinkmanFlowInput", "BrinkmanFlowRes
         p = np.zeros(shape) if inp.p0 is None else inp.p0.astype(np.float64)
         x = np.concatenate([u.ravel(), v.ravel(), p.ravel()])
 
-        u_floor = s.velocity_floor_ratio * abs(inp.u_inlet)
+        u_floor = s.velocity_floor_ratio * disc.u_scale
         h_min = min(disc.dx, disc.dy)
 
         def pseudo_diag(xx: np.ndarray, cfl_now: float) -> np.ndarray:

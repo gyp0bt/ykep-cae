@@ -51,18 +51,35 @@ def mass_balance(res: NSBResult) -> float:
     return res.mass_out / res.mass_in if res.mass_in != 0.0 else float("nan")
 
 
-def inlet_mean_pressure(inp: NSBInput, res: NSBResult) -> float:
-    """inlet に接するセルの平均圧力 [Pa]（outlet は p=0 なので圧力損失に相当）."""
-    from nsb.core import FaceType
+def inlet_cells(inp: NSBInput) -> np.ndarray:
+    """inlet 面に接するセルの bool マスク (nx, ny)."""
+    from xkep_cae_fluid.brinkman_flow.assembly import BrinkmanDiscretization
 
-    mask = np.array([f is FaceType.VELOCITY_INLET for f in inp.bc.west])
-    return float(res.p[0, mask].mean())
+    sides = BrinkmanDiscretization(inp.to_flow_input()).sides
+    m = np.zeros((inp.nx, inp.ny), dtype=bool)
+    m[0, :] |= sides["W"].is_inlet
+    m[-1, :] |= sides["E"].is_inlet
+    m[:, 0] |= sides["S"].is_inlet
+    m[:, -1] |= sides["N"].is_inlet
+    return m
+
+
+def inlet_mean_pressure(inp: NSBInput, res: NSBResult) -> float:
+    """inlet に接するセルの平均圧力 [Pa]（outlet が p=0 なら圧力損失に相当）."""
+    return float(res.p[inlet_cells(inp)].mean())
+
+
+def inlet_velocity(inp: NSBInput) -> float:
+    """inlet の最大流入速度 [m/s]（質量流入境界は換算後）."""
+    from xkep_cae_fluid.brinkman_flow.assembly import BrinkmanDiscretization
+
+    return BrinkmanDiscretization(inp.to_flow_input()).u_scale
 
 
 def hele_shaw_pressure_drop(inp: NSBInput, path_length: float) -> float:
     """Hele-Shaw 平行平板の理論圧損 Δp = 12 μ_b U L / h² [Pa]（h は流路部の最大厚さ）."""
     h = float(inp.h.max())
-    return 12.0 * inp.mu_b * inp.bc.u_inlet * path_length / h**2
+    return 12.0 * inp.mu_b * inlet_velocity(inp) * path_length / h**2
 
 
 def summary(inp: NSBInput, res: NSBResult) -> dict[str, float | bool | int | str]:

@@ -10,6 +10,8 @@ import numpy as np
 import pytest
 
 from xkep_cae_fluid.brinkman_flow import (
+    BoundaryKind,
+    BoundaryPatch,
     BrinkmanFlowFVMProcess,
     BrinkmanFlowInput,
     BrinkmanFlowResult,
@@ -23,6 +25,10 @@ from xkep_cae_fluid.brinkman_flow import (
     ThicknessResult,
     ThicknessSpec,
     UTurnThicknessProcess,
+    east_span,
+    north_span,
+    south_span,
+    west_span,
 )
 from xkep_cae_fluid.brinkman_flow.assembly import BrinkmanDiscretization
 from xkep_cae_fluid.core.testing import binds_to
@@ -213,3 +219,120 @@ class TestBrinkmanFlowPhysics:
         inlet = (yc > 0.25) & (yc < 0.35)
         p_in = res.p[0, inlet].mean()
         assert 0.5 * dp_est < p_in < 1.5 * dp_est
+
+
+# ---------------------------------------------------------------------------
+# 座標マスク境界 / 質量流入境界
+# ---------------------------------------------------------------------------
+
+
+def _flat_input(nx: int, ny: int, boundaries, **settings) -> BrinkmanFlowInput:
+    th = np.full((nx, ny), 1.0e-3)
+    return BrinkmanFlowInput(
+        nx=nx,
+        ny=ny,
+        thickness=th,
+        boundaries=boundaries,
+        settings=BrinkmanSolverSettings(**settings),
+    )
+
+
+class TestBoundaryPatchAPI:
+    """座標マスク境界の解決と質量流入境界の換算."""
+
+    def test_default_boundaries_match_geometry(self):
+        """boundaries=None は従来の左壁 inlet/outlet と同じ面配置になる."""
+        th = np.full((36, 24), 1.0e-3)
+        inp = BrinkmanFlowInput(nx=36, ny=24, thickness=th, u_inlet=0.3)
+        disc = BrinkmanDiscretization(inp)
+        yc = (np.arange(24) + 0.5) * inp.dy
+        W = disc.sides["W"]
+        assert np.array_equal(W.is_inlet, (yc > 0.25) & (yc < 0.35))
+        assert np.array_equal(W.is_outlet, (yc > 0.05) & (yc < 0.15))
+        assert W.un[W.is_inlet] == pytest.approx(0.3)
+        assert disc.u_scale == pytest.approx(0.3)
+        for k in ("E", "S", "N"):
+            assert not disc.sides[k].is_inlet.any() and not disc.sides[k].is_outlet.any()
+
+    def test_mass_flow_inlet_velocity(self):
+        """u_n = mass_flow / (ρ Σ h_f A_f)。inlet 3 面（Δy=0.4/24）なら Σ h A = 3·1e-3·Δy."""
+        nx, ny = 36, 24
+        th = np.full((nx, ny), 1.0e-3)
+        mdot = 0.02  # kg/s
+        bnd = (
+            BoundaryPatch(BoundaryKind.MASS_FLOW_INLET, north_span(0.5, 0.55, 0.4), mass_flow=mdot),
+            BoundaryPatch(BoundaryKind.PRESSURE_OUTLET, west_span(0.05, 0.15)),
+        )
+        inp = BrinkmanFlowInput(nx=nx, ny=ny, thickness=th, boundaries=bnd)
+        disc = BrinkmanDiscretization(inp)
+        N = disc.sides["N"]
+        n_faces = int(N.is_inlet.sum())
+        xc = (np.arange(nx) + 0.5) * inp.dx
+        assert n_faces == int(((xc > 0.5) & (xc < 0.55)).sum()) == 2
+        u_expected = mdot / (inp.rho * n_faces * 1.0e-3 * inp.dx)
+        assert N.un[N.is_inlet] == pytest.approx(u_expected)
+        assert disc.v_n[N.is_inlet] == pytest.approx(-u_expected)  # 上壁からの流入は -y 方向
+
+    def test_missing_inlet_raises(self):
+        bnd = (BoundaryPatch(BoundaryKind.PRESSURE_OUTLET, west_span(0.05, 0.15)),)
+        with pytest.raises(ValueError):
+            BrinkmanDiscretization(_flat_input(12, 8, bnd))
+
+    def test_jacobian_matches_fd_with_patches_on_all_walls(self):
+        """inlet が上壁と右壁、outlet が下壁と左壁の構成で J1 が FD ヤコビアンと一致する."""
+        nx, ny = 12, 8
+        th = np.full((nx, ny), 1.0e-5)
+        bnd = (
+            BoundaryPatch(BoundaryKind.VELOCITY_INLET, north_span(0.1, 0.3, 0.4), velocity=0.1),
+            BoundaryPatch(BoundaryKind.MASS_FLOW_INLET, east_span(0.2, 0.3, 0.7), mass_flow=1e-3),
+            BoundaryPatch(BoundaryKind.PRESSURE_OUTLET, south_span(0.4, 0.6), pressure=5.0),
+            BoundaryPatch(BoundaryKind.PRESSURE_OUTLET, west_span(0.05, 0.15)),
+        )
+        inp = BrinkmanFlowInput(nx=nx, ny=ny, thickness=th, boundaries=bnd)
+        disc = BrinkmanDiscretization(inp)
+        n = disc.n
+        rng = np.random.default_rng(2)
+        x = np.concatenate([rng.normal(0, 0.1, n), rng.normal(0, 0.1, n), rng.normal(0, 10.0, n)])
+        sch = ConvectionSchemeType.FIRST_ORDER_UPWIND
+        st = disc.compute_state(x, sch, 5.0)
+        J = disc.jacobian_first_order(st).toarray()
+        Jfd = np.zeros_like(J)
+        for k in range(3 * n):
+            e = np.zeros(3 * n)
+            hk = 1e-6 * max(1.0, abs(x[k]))
+            e[k] = hk
+            Jfd[:, k] = (disc.residual(x + e, sch, 5.0) - disc.residual(x - e, sch, 5.0)) / (2 * hk)
+        scale = np.abs(Jfd).max(axis=0) + 1e-12
+        assert np.all(np.abs(J - Jfd).max(axis=0) / scale < 1e-3)
+
+
+class TestBoundaryPatchPhysics:
+    """任意壁の inlet/outlet と質量流入境界での質量保存."""
+
+    def test_mass_flow_inlet_top_wall_outlet_right_wall(self):
+        mdot = 0.01  # kg/s（h=1e-3 なので単位深さ流量は 10 kg/s）
+        bnd = (
+            BoundaryPatch(BoundaryKind.MASS_FLOW_INLET, north_span(0.1, 0.2, 0.4), mass_flow=mdot),
+            BoundaryPatch(BoundaryKind.PRESSURE_OUTLET, east_span(0.1, 0.2, 0.7)),
+        )
+        inp = _flat_input(36, 24, bnd, newton_max_iter=60)
+        res = BrinkmanFlowFVMProcess().execute(inp)
+        assert res.converged, res.failure_reason
+        assert res.mass_in == pytest.approx(mdot / 1.0e-3, rel=1e-6)
+        assert res.mass_out == pytest.approx(res.mass_in, rel=1e-6)
+        # 流入は -y 方向、流出は +x 方向
+        assert res.v[:, -1][(np.arange(36) + 0.5) * inp.dx > 0.1].min() < 0.0
+        assert res.u[-1].max() > 0.0
+
+    def test_two_inlets_one_outlet(self):
+        """左壁 2 か所の質量流入（合計固定）を 1 つのマスクで指定しても流量が保存される."""
+        mask = lambda x, y: (x <= 1e-12) & (((y > 0.05) & (y < 0.1)) | ((y > 0.3) & (y < 0.35)))  # noqa: E731
+        bnd = (
+            BoundaryPatch(BoundaryKind.MASS_FLOW_INLET, mask, mass_flow=0.005),
+            BoundaryPatch(BoundaryKind.PRESSURE_OUTLET, east_span(0.15, 0.25, 0.7)),
+        )
+        inp = _flat_input(36, 24, bnd, newton_max_iter=60)
+        res = BrinkmanFlowFVMProcess().execute(inp)
+        assert res.converged, res.failure_reason
+        assert res.mass_in == pytest.approx(0.005 / 1.0e-3, rel=1e-6)
+        assert res.mass_out == pytest.approx(res.mass_in, rel=1e-6)

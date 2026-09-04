@@ -15,7 +15,7 @@ FDM（差分法）・FVM（有限体積法）による流体ソルバー基盤�
 
 ## 現在の状態
 
-**308 テスト** -- 2026-09-04 [2D Brinkman 補正 NS (FVM, Newton–Krylov)](docs/design/brinkman-flow-fvm.md) 新設 + U ターン/平板の収束破綻を再現し機構を切り分け（初回 Newton ステップの残差増幅が原因、擬似時間制御で回復。局所 Δτ は速度下限無し・高 CFL で破綻。手元構成ミラー [nsb/](nsb/README.md) で再現 / [status-28](docs/status/status-28.md)） | 契約違反 **0件**（13プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**316 テスト** -- 2026-09-04 Brinkman 流路の[座標マスク境界条件 + 質量流入境界](docs/design/brinkman-flow-fvm.md)（4 辺任意配置、流量固定で inlet 位置・サイズ探索、冷却流路設計の前段 / [status-29](docs/status/status-29.md)）。前: 収束破綻の再現と機構切り分け（[status-28](docs/status/status-28.md)、[nsb/](nsb/README.md)） | 契約違反 **0件**（13プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 ## パッケージ構成
 
@@ -45,9 +45,9 @@ xkep_cae_fluid/
 |   +-- assembly.py    # 疎行列アセンブリ（対流-拡散-ソース、Dirichlet/Neumann/Robin BC）
 |   +-- solver.py      # ScalarTransportProcess (陰的Euler + BiCGSTAB+ILU)
 +-- brinkman_flow/     # 2D Brinkman 補正 Navier-Stokes (FVM, Newton–Krylov) — 収束破綻の再現実験
-|   +-- data.py        # BrinkmanFlowInput / Result / SolverSettings / ThicknessSpec
+|   +-- data.py        # BrinkmanFlowInput / Result / SolverSettings / ThicknessSpec / BoundaryPatch（座標マスク・質量流入）
 |   +-- geometry.py    # UTurnThicknessProcess（flat / uturn 厚さ場）
-|   +-- assembly.py    # 同位置 FVM 残差（1次/2次風上+Venkatakrishnan）+ 1次風上ヤコビアン + Rhie-Chow
+|   +-- assembly.py    # 同位置 FVM 残差（1次/2次風上+Venkatakrishnan）+ 1次風上ヤコビアン + Rhie-Chow + 4 辺の座標マスク境界
 |   +-- solver.py      # BrinkmanFlowFVMProcess（Newton + GMRES/LU(J1) + 擬似時間 + 陰的緩和）
 +-- aquarium/          # 水槽設計 CAE ドメイン（Phase 6.2 / 6.3）
 |   +-- geometry.py    # AquariumGeometryProcess（90×30×45 cm + 底床/ガラス/水マスク + z-refinement）

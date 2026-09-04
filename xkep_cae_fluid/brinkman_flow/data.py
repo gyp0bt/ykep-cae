@@ -6,10 +6,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
 import numpy as np
+
+MaskFn = Callable[[np.ndarray, np.ndarray], np.ndarray]
+"""境界面中心座標 (x, y)（同形状の配列）を受け取り bool 配列を返す座標マスク関数."""
 
 
 class ConvectionSchemeType(Enum):
@@ -31,6 +35,67 @@ class PseudoTimeMode(Enum):
 
     LOCAL = "local"  # セルごとに Δτ = CFL·Δx / max(|u|+|v|, r·U_in)
     GLOBAL = "global"  # 全セル一律に Δτ = min_cells(局所 Δτ)
+
+
+class BoundaryKind(Enum):
+    """境界面の種別."""
+
+    WALL = "wall"  # no-slip
+    VELOCITY_INLET = "velocity_inlet"  # 法線方向に一様流入速度
+    MASS_FLOW_INLET = "mass_flow_inlet"  # 質量流量指定（厚さ込み、面の h と長さで一様速度に換算）
+    PRESSURE_OUTLET = "pressure_outlet"  # 圧力指定、速度ゼロ勾配
+
+
+@dataclass(frozen=True)
+class BoundaryPatch:
+    """座標マスクで指定する境界パッチ.
+
+    領域の 4 辺（x=0, x=lx, y=0, y=ly）上の境界面中心に mask(x, y) を評価し、True の面に
+    kind を割り当てる。複数パッチが重なった場合は後のものが優先。どのパッチにも属さない面は WALL。
+
+    Parameters
+    ----------
+    kind : BoundaryKind
+        境界種別
+    mask : MaskFn
+        (x, y) -> bool 配列。例: ``lambda x, y: (x < 1e-9) & (y > 0.25) & (y < 0.35)``
+    velocity : float
+        VELOCITY_INLET の流入速度 [m/s]（内向き法線方向、正で流入）
+    mass_flow : float
+        MASS_FLOW_INLET の質量流量 [kg/s]。深さ方向の厚さ h を含む 3 次元値で、
+        u_n = mass_flow / (ρ Σ_f h_f A_f) の一様流入速度に換算する
+    pressure : float
+        PRESSURE_OUTLET の圧力 [Pa]
+    name : str
+        識別用ラベル
+    """
+
+    kind: BoundaryKind
+    mask: MaskFn
+    velocity: float = 0.0
+    mass_flow: float = 0.0
+    pressure: float = 0.0
+    name: str = ""
+
+
+def west_span(y0: float, y1: float, lx: float = 0.0) -> MaskFn:
+    """左壁 x=0 の y∈(y0, y1) を選ぶマスク（lx は未使用、シグネチャ統一のため）."""
+    return lambda x, y: (x <= 1e-12) & (y > y0) & (y < y1)
+
+
+def east_span(y0: float, y1: float, lx: float) -> MaskFn:
+    """右壁 x=lx の y∈(y0, y1)."""
+    return lambda x, y: (np.abs(x - lx) <= 1e-12) & (y > y0) & (y < y1)
+
+
+def south_span(x0: float, x1: float) -> MaskFn:
+    """下壁 y=0 の x∈(x0, x1)."""
+    return lambda x, y: (y <= 1e-12) & (x > x0) & (x < x1)
+
+
+def north_span(x0: float, x1: float, ly: float) -> MaskFn:
+    """上壁 y=ly の x∈(x0, x1)."""
+    return lambda x, y: (np.abs(y - ly) <= 1e-12) & (x > x0) & (x < x1)
 
 
 class ThicknessModel(Enum):
@@ -116,7 +181,7 @@ class BrinkmanSolverSettings:
     line_search : bool
         Armijo 型の簡易ラインサーチ（既定 False: 再現実験のため）
     velocity_floor_ratio : float
-        擬似時間の速度スケール下限 = velocity_floor_ratio × |u_inlet|。
+        擬似時間の速度スケール下限 = velocity_floor_ratio × 最大流入速度。
         Δτ = CFL·Δx / max(|u|+|v|, 下限)。静止初期場では下限が Δτ を決める
     pseudo_time_mode : PseudoTimeMode
         LOCAL: セル局所 Δτ、GLOBAL: 局所 Δτ の全セル最小値を一律に使う
@@ -165,7 +230,10 @@ class BrinkmanFlowInput:
     brinkman_factor : float
         貫通係数 = brinkman_factor · mu_brinkman / h²（Hele-Shaw なら 12）
     u_inlet : float
-        inlet 流速 [m/s]（x 正方向）
+        inlet 流速 [m/s]（boundaries=None のとき geometry の inlet に使う）
+    boundaries : tuple[BoundaryPatch, ...] | None
+        座標マスクによる境界パッチ。None なら geometry + u_inlet から
+        「左壁 inlet（速度）/ 左壁 outlet（p=0）」を生成する（従来互換）
     settings : BrinkmanSolverSettings
         ソルバー設定
     u0, v0, p0 : np.ndarray | None
@@ -181,6 +249,7 @@ class BrinkmanFlowInput:
     mu_brinkman: float = 1.0e-3
     brinkman_factor: float = 12.0
     u_inlet: float = 0.1
+    boundaries: tuple[BoundaryPatch, ...] | None = None
     settings: BrinkmanSolverSettings = field(default_factory=BrinkmanSolverSettings)
     u0: np.ndarray | None = None
     v0: np.ndarray | None = None
@@ -193,6 +262,26 @@ class BrinkmanFlowInput:
             )
         if np.any(self.thickness <= 0.0):
             raise ValueError("thickness は正である必要があります")
+
+    def effective_boundaries(self) -> tuple[BoundaryPatch, ...]:
+        """boundaries が None なら geometry + u_inlet から従来の左壁 inlet/outlet を組む."""
+        if self.boundaries is not None:
+            return tuple(self.boundaries)
+        g = self.geometry
+        return (
+            BoundaryPatch(
+                BoundaryKind.VELOCITY_INLET,
+                west_span(g.inlet_y0, g.inlet_y1),
+                velocity=self.u_inlet,
+                name="inlet",
+            ),
+            BoundaryPatch(
+                BoundaryKind.PRESSURE_OUTLET,
+                west_span(g.outlet_y0, g.outlet_y1),
+                pressure=0.0,
+                name="outlet",
+            ),
+        )
 
     @property
     def dx(self) -> float:

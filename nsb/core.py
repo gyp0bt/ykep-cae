@@ -3,59 +3,57 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
 
 import numpy as np
 
 from xkep_cae_fluid.brinkman_flow.data import (
+    BoundaryKind,
+    BoundaryPatch,
     BrinkmanFlowInput,
     BrinkmanGeometry,
     ConvectionSchemeType,
+    MaskFn,
 )
 
-
-class FaceType(Enum):
-    """境界面の種別."""
-
-    WALL = "wall"  # no-slip
-    VELOCITY_INLET = "velocity_inlet"  # u = u_in（x 正方向）, v = 0
-    PRESSURE_OUTLET = "pressure_outlet"  # p = 0, 速度ゼロ勾配
+FaceType = (
+    BoundaryKind  # 互換エイリアス（WALL / VELOCITY_INLET / MASS_FLOW_INLET / PRESSURE_OUTLET）
+)
 
 
 @dataclass(frozen=True)
 class BC:
-    """境界条件.
+    """境界条件: 座標マスク関数で指定する境界パッチの列.
 
-    west に (ny,) の FaceType 配列を与える。north / south / east は WALL 固定
-    （共有している離散化が左壁 inlet/outlet のみ対応のため）。
-    inlet / outlet はそれぞれ連続した 1 区間である必要がある。
+    各パッチは mask(x, y) -> bool を領域 4 辺の境界面中心で評価して面を選ぶ。
+    どのパッチにも属さない面は WALL。後のパッチが優先。
 
     Parameters
     ----------
-    west : np.ndarray
-        左壁の各セル面の FaceType (ny,)
-    u_inlet : float
-        inlet 流速 [m/s]
+    patches : tuple[BoundaryPatch, ...]
+        境界パッチ
     """
 
-    west: np.ndarray
-    u_inlet: float
+    patches: tuple[BoundaryPatch, ...]
 
-    def _span(self, kind: FaceType, ly: float) -> tuple[float, float]:
-        idx = np.flatnonzero(np.array([f is kind for f in self.west]))
-        if idx.size == 0:
-            raise ValueError(f"west に {kind.value} がありません")
-        if np.any(np.diff(idx) != 1):
-            raise ValueError(f"{kind.value} は連続した 1 区間である必要があります")
-        dy = ly / self.west.size
-        return float(idx[0] * dy), float((idx[-1] + 1) * dy)
+    @staticmethod
+    def velocity_inlet(mask: MaskFn, u_in: float, name: str = "inlet") -> BoundaryPatch:
+        return BoundaryPatch(BoundaryKind.VELOCITY_INLET, mask, velocity=u_in, name=name)
 
-    def to_geometry(self, lx: float, ly: float) -> BrinkmanGeometry:
-        """FaceType 配列から共有離散化用の inlet/outlet 区間へ変換."""
-        in0, in1 = self._span(FaceType.VELOCITY_INLET, ly)
-        out0, out1 = self._span(FaceType.PRESSURE_OUTLET, ly)
-        return BrinkmanGeometry(
-            lx=lx, ly=ly, inlet_y0=in0, inlet_y1=in1, outlet_y0=out0, outlet_y1=out1
+    @staticmethod
+    def mass_flow_inlet(mask: MaskFn, mass_flow: float, name: str = "inlet") -> BoundaryPatch:
+        """質量流量 [kg/s]（厚さ込み 3 次元値）指定の inlet."""
+        return BoundaryPatch(BoundaryKind.MASS_FLOW_INLET, mask, mass_flow=mass_flow, name=name)
+
+    @staticmethod
+    def pressure_outlet(mask: MaskFn, p: float = 0.0, name: str = "outlet") -> BoundaryPatch:
+        return BoundaryPatch(BoundaryKind.PRESSURE_OUTLET, mask, pressure=p, name=name)
+
+    @property
+    def u_inlet(self) -> float:
+        """VELOCITY_INLET の最大流速（MASS_FLOW_INLET のみの場合は 0。速度スケールは離散化側で決まる）."""
+        return max(
+            (p.velocity for p in self.patches if p.kind is BoundaryKind.VELOCITY_INLET),
+            default=0.0,
         )
 
 
@@ -187,12 +185,13 @@ class NSBInput:
             nx=self.nx,
             ny=self.ny,
             thickness=self.h,
-            geometry=self.bc.to_geometry(self.lx, self.ly),
+            geometry=BrinkmanGeometry(lx=self.lx, ly=self.ly),
             rho=self.rho,
             mu=self.mu,
             mu_brinkman=self.mu_b,
             brinkman_factor=12.0,
             u_inlet=self.bc.u_inlet,
+            boundaries=self.bc.patches,
         )
 
 

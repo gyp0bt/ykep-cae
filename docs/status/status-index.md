@@ -32,3 +32,4 @@
 | 26 | 2026-04-23 | 286 | `examples/aquarium_filter_circulation.py`（Phase 6.3b、Geometry+Heater+Filter+NC 4 段連携デモ） |
 | 27 | 2026-09-02 | 286 | 単軸押出解析 設計策定（展開チャネル 2.5D、RTD 目的、実装未着手） |
 | 28 | 2026-09-04 | 308 | 2D Brinkman 補正 NS (FVM, Newton–Krylov) 新設 + U ターン/平板 収束破綻の再現実験と機構切り分け（局所/大域 Δτ 比較、手元構成ミラー `nsb/` を含む） |
+| 29 | 2026-09-04 | 316 | Brinkman 流路の座標マスク境界条件 + 質量流入境界（4 辺任意配置、流量固定で inlet 位置・サイズ探索） |

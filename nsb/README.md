@@ -9,10 +9,10 @@ Newton + 擬似時間の制御則だけを `solver.solve_steady` に関数とし
 
 | ファイル | 役割 |
 |---|---|
-| `core.py` | 型宣言: `FaceType`, `BC`, `NSBSettings`, `NSBInput`, `NSBResult` |
+| `core.py` | 型宣言: `BC`（座標マスクの境界パッチ列。`BC.velocity_inlet / mass_flow_inlet / pressure_outlet`）, `NSBSettings`, `NSBInput`, `NSBResult` |
 | `solver.py` | メイン: `solve_steady`, `compute_dtau`, `solve_linear` |
 | `utils.py` | ポスト処理、面値⇄セル値変換、要約、npz 保存 |
-| `geo.py` | uturn / flat の厚さ場、左壁 inlet/outlet の BC プリセット、`run_uturn`, `run_flat`, `make_case` |
+| `geo.py` | uturn / flat の厚さ場（inlet/outlet 位置に追従）、BC プリセット（速度 or 質量流量）、`run_uturn`, `run_flat`, `make_case` |
 | `../main.py` | パラメータスタディ（構成 × モデル × 細分化 × 流速） |
 | `theory.md` | 数理ノート: 支配方程式〜離散化〜Newton/擬似時間〜発散機構を総和規約で記述 |
 
@@ -29,6 +29,27 @@ Newton + 擬似時間の制御則だけを `solver.solve_steady` に関数とし
 | `alpha_u` | 0.7 | 1.0 | 速度下限ありなら緩和なしが最速（uturn 36 反復 vs 102）。下限なしでは効きがモデルごとに逆転 |
 | `init_field` | "zero" | "stokes" | Stokes–Brinkman 初期場で反復 25〜35% 減。対流項込み残差で作ると max\|u\| が U_in の 14 倍になるので注意 |
 | `reject_growth` / `cfl_min` | 0（無効） | 0 | CFL backtracking は効かず。Δτ→0 で圧力が発散するので cfl_min が要る |
+
+## 境界条件（座標マスク + 質量流入）
+
+```python
+from nsb import BC, NSBSettings, make_case, solve_steady
+from xkep_cae_fluid.brinkman_flow import north_span, west_span
+
+# 流量 0.1 kg/s を固定し、inlet を上壁 x∈(0.3, 0.4) に置く（outlet は左壁下部）
+bc = BC(patches=(
+    BC.mass_flow_inlet(north_span(0.3, 0.4, 0.4), 0.1),
+    BC.pressure_outlet(west_span(0.05, 0.15)),
+))
+inp = make_case("flat", 1, bc=bc, settings=NSBSettings(velocity_floor=0.1, init_field="stokes"))
+res = solve_steady(inp)
+
+# 左壁 inlet の位置・幅だけ変える場合（uturn では厚さ場も追従）
+inp = make_case("uturn", 1, mass_flow=0.1, inlet_y=(0.20, 0.35))
+```
+
+任意の `mask(x, y) -> bool`（4 辺の境界面中心で評価）を渡せる。飛び飛びの複数 inlet も 1 マスクで指定でき、
+その場合は合計流量を面の $h_f A_f$ で按分した一様速度になる。探索デモ: `experiments/nsb/inlet_sweep.py`。
 
 ## 使い方
 
