@@ -16,10 +16,9 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from nsb import BC, NSBSettings, make_case, solve_steady
+from nsb import BC, NSBSettings, disk_mask, make_case, solve_steady, west_span
+from nsb.assembly import BrinkmanDiscretization
 from nsb.utils import save_fields, summary
-from xkep_cae_fluid.brinkman_flow import disk_mask, west_span
-from xkep_cae_fluid.brinkman_flow.assembly import BrinkmanDiscretization
 
 HERE = Path(__file__).resolve().parent
 MDOT = 0.1  # kg/s

@@ -6,15 +6,17 @@ import numpy as np
 
 from nsb import (
     BC,
+    ConvectionSchemeType,
     ImplicitSolve,
     NSBInput,
     NSBSettings,
     colored_fd_jacobian,
+    disk_mask,
+    smooth_disk,
     source_mean_pressure_objective,
 )
+from nsb.assembly import BrinkmanDiscretization
 from nsb.geo import LX, LY
-from xkep_cae_fluid.brinkman_flow import ConvectionSchemeType, disk_mask, smooth_disk
-from xkep_cae_fluid.brinkman_flow.assembly import BrinkmanDiscretization
 
 MDOT, COND = 0.02, 1e-5
 

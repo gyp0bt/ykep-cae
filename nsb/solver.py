@@ -20,8 +20,8 @@ import numpy as np
 from scipy import sparse
 from scipy.sparse import linalg as spla
 
+from nsb.assembly import BrinkmanDiscretization, StateArrays
 from nsb.core import NSBInput, NSBResult, NSBSettings
-from xkep_cae_fluid.brinkman_flow.assembly import BrinkmanDiscretization, StateArrays
 
 LogFn = Callable[[str], None]
 

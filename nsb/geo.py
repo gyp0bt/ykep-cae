@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 
 from nsb.core import BC, NSBInput, NSBResult, NSBSettings
+from nsb.data import MaskFn, west_span
 from nsb.solver import LogFn, solve_steady
-from xkep_cae_fluid.brinkman_flow.data import MaskFn, west_span
 
 LX, LY = 0.7, 0.4
 INLET_Y = (0.25, 0.35)  # 左壁、上から 0.05 空けて高さ 0.1

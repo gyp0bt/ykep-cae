@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from xkep_cae_fluid.brinkman_flow.data import (
+from nsb.data import (
     BoundaryKind,
     BoundaryPatch,
     BrinkmanFlowInput,

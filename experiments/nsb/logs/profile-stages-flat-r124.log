@@ -1,0 +1,32 @@
+
+== flat refine=1 (72x48, n3=10368) U=1.0 cfg=fixed: converged=True it=13 total=3.72s
+  splu                      2.61s   70.1%  calls=  14  per=186.3ms
+  gmres(total)              0.81s   21.8%  calls=  13  per=62.5ms
+  compute_state             0.20s    5.3%  calls= 187  per=1.0ms
+  jacobian                  0.16s    4.2%  calls=  14  per=11.3ms
+  residual_from_state       0.05s    1.4%  calls= 173  per=0.3ms
+  disc_init                 0.01s    0.2%  calls=   1  per=6.4ms
+
+== flat refine=2 (144x96, n3=41472) U=1.0 cfg=fixed: converged=True it=18 total=40.29s
+  splu                     30.63s   76.0%  calls=  19  per=1612.2ms
+  gmres(total)              8.56s   21.2%  calls=  18  per=475.3ms
+  compute_state             1.06s    2.6%  calls= 329  per=3.2ms
+  jacobian                  0.46s    1.1%  calls=  19  per=24.2ms
+  residual_from_state       0.26s    0.6%  calls= 310  per=0.8ms
+  disc_init                 0.01s    0.0%  calls=   1  per=12.4ms
+
+== flat refine=4 (288x192, n3=165888) U=1.0 cfg=fixed: converged=True it=31 total=756.95s
+  splu                    613.42s   81.0%  calls=  32  per=19169.5ms
+  gmres(total)            134.06s   17.7%  calls=  31  per=4324.5ms
+  compute_state            11.89s    1.6%  calls= 842  per=14.1ms
+  jacobian                  3.53s    0.5%  calls=  32  per=110.2ms
+  residual_from_state       2.80s    0.4%  calls= 810  per=3.5ms
+  disc_init                 0.04s    0.0%  calls=   1  per=42.4ms
+
+== flat refine=1 (72x48, n3=10368) U=1.0 cfg=mine: converged=False it=80 total=19.58s
+  splu                     13.91s   71.0%  calls=  80  per=173.8ms
+  gmres(total)              4.13s   21.1%  calls=  80  per=51.6ms
+  compute_state             0.96s    4.9%  calls= 903  per=1.1ms
+  jacobian                  0.79s    4.0%  calls=  80  per=9.9ms
+  residual_from_state       0.25s    1.3%  calls= 822  per=0.3ms
+  disc_init                 0.01s    0.0%  calls=   1  per=5.9ms

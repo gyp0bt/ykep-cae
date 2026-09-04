@@ -21,9 +21,9 @@ import numpy as np
 from scipy import sparse
 from scipy.sparse import linalg as spla
 
+from nsb.assembly import BrinkmanDiscretization
 from nsb.core import NSBInput, NSBResult
 from nsb.solver import solve_steady
-from xkep_cae_fluid.brinkman_flow.assembly import BrinkmanDiscretization
 
 BuildFn = Callable[[np.ndarray], NSBInput]
 

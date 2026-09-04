@@ -17,10 +17,17 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from nsb import BC, ImplicitSolve, NSBInput, NSBSettings, source_mean_pressure_objective
+from nsb import (
+    BC,
+    ImplicitSolve,
+    NSBInput,
+    NSBSettings,
+    disk_mask,
+    smooth_disk,
+    source_mean_pressure_objective,
+)
 from nsb.geo import LX, LY
 from nsb.utils import save_fields
-from xkep_cae_fluid.brinkman_flow import disk_mask, smooth_disk
 
 HERE = Path(__file__).resolve().parent
 NX, NY = 72, 48
