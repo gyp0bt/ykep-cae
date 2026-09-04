@@ -39,7 +39,17 @@ $$
 | `MASS_FLOW_INLET` | 一様 $u_n = \dot m / (\rho \sum_f h_f A_f)$ | ゼロ勾配 | `mass_flow` [kg/s] は厚さ $h$ 込みの 3 次元値。$h_f$ は隣接セルの厚さ |
 | `PRESSURE_OUTLET` | ゼロ勾配 | Dirichlet `pressure` | |
 
-  マスク補助: `west_span(y0, y1)`, `east_span(y0, y1, lx)`, `south_span(x0, x1)`, `north_span(x0, x1, ly)`。
+- 領域内マニホールド（紙面垂直方向のヘッダ）: `INTERIOR_*` 種別はマスクを**セル中心**で評価し、
+  該当セルに単位深さのソースを置く（3 次元値 X を $X\,V_c / \sum_c h_c V_c$ で按分）
+
+| 種別 | 連続式 | 運動量 | 備考 |
+|---|---|---|---|
+| `INTERIOR_MASS_SOURCE` | $-q_c$（注入） | なし（面内運動量ゼロで注入。保存形の対流項が $q_c u_i$ の希釈を自動で表す） | `mass_flow` [kg/s] |
+| `INTERIOR_MASS_SINK` | $+q_c$（吸出） | $+q_c u_{i,c}$（局所運動量を持ち出す） | `mass_flow` [kg/s]。圧力基準が別に必要 |
+| `INTERIOR_PRESSURE_SINK` | $+C_c (p_c - p_\mathrm{m})$ | $+\max(C_c(p_c - p_\mathrm{m}), 0)\, u_{i,c}$ | `conductance` [kg/(s·Pa)], `pressure`。$p_c < p_\mathrm{m}$ なら逆流注入。圧力基準になる |
+
+  圧力基準（`PRESSURE_OUTLET` か `INTERIOR_PRESSURE_SINK`）が 1 つも無い構成は ValueError。
+  マスク補助: `west_span(y0, y1)`, `east_span(y0, y1, lx)`, `south_span(x0, x1)`, `north_span(x0, x1, ly)`, `rect_mask`, `disk_mask`。
   質量流量を固定したまま inlet の位置・サイズ・壁を変える探索（冷却流路設計）に使う。
   連続式は $\partial_i u_i = 0$（$h$ を含まない）なので、`mass_in/mass_out` は単位深さの値 [kg/s]（= $\dot m / h_\mathrm{in}$）で報告する
 

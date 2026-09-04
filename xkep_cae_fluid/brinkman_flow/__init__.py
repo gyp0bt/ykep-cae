@@ -12,8 +12,10 @@ from xkep_cae_fluid.brinkman_flow.data import (
     PseudoTimeMode,
     ThicknessModel,
     ThicknessSpec,
+    disk_mask,
     east_span,
     north_span,
+    rect_mask,
     south_span,
     west_span,
 )
@@ -40,8 +42,10 @@ __all__ = [
     "ThicknessResult",
     "ThicknessSpec",
     "UTurnThicknessProcess",
+    "disk_mask",
     "east_span",
     "north_span",
+    "rect_mask",
     "south_span",
     "west_span",
 ]

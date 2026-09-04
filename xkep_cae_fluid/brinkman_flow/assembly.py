@@ -81,16 +81,30 @@ class BrinkmanDiscretization:
         self.rho, self.mu = inp.rho, inp.mu
         self.drag = inp.brinkman_factor * inp.mu_brinkman / inp.thickness**2  # (nx, ny) [kg/(m³s)]
 
-        self.sides = self._resolve_boundaries(inp.effective_boundaries())
+        patches = inp.effective_boundaries()
+        self.sides = self._resolve_boundaries(tuple(b for b in patches if not b.is_interior))
+        self._resolve_interior(tuple(b for b in patches if b.is_interior))
         W, E, S, N = self.sides["W"], self.sides["E"], self.sides["S"], self.sides["N"]
-        n_in = sum(int(sd.is_inlet.sum()) for sd in self.sides.values())
-        n_out = sum(int(sd.is_outlet.sum()) for sd in self.sides.values())
+        n_in = sum(int(sd.is_inlet.sum()) for sd in self.sides.values()) + int(
+            (self.q_src > 0.0).sum()
+        )
+        n_out = sum(int(sd.is_outlet.sum()) for sd in self.sides.values()) + int(
+            ((self.q_sink > 0.0) | (self.c_sink > 0.0)).sum()
+        )
         if n_in == 0 or n_out == 0:
             raise ValueError(
-                "inlet / outlet に対応する境界面が存在しません（マスクか分割数を確認）"
+                "inlet / outlet に対応する境界面・セルが存在しません（マスクか分割数を確認）"
             )
-        # 擬似時間の速度スケール（最大流入速度）
-        self.u_scale = max(float(np.abs(sd.un).max()) for sd in self.sides.values())
+        if (
+            not any(sd.is_outlet.any() for sd in self.sides.values())
+            and not (self.c_sink > 0).any()
+        ):
+            raise ValueError(
+                "圧力の基準がありません: PRESSURE_OUTLET か INTERIOR_PRESSURE_SINK が必要です"
+            )
+        # 擬似時間の速度スケール（最大流入速度。領域内ソースは周長 4√A から見積もる）
+        u_b = max(float(np.abs(sd.un).max()) for sd in self.sides.values())
+        self.u_scale = max(u_b, self._interior_velocity_scale())
 
         # 境界面の速度成分（W: u=+un, E: u=-un, S: v=+un, N: v=-un）
         self.u_w, self.v_w = W.un, np.zeros(self.ny)
@@ -165,6 +179,61 @@ class BrinkmanDiscretization:
                 sd.un[hit] = un
                 sd.p[hit] = patch.pressure if patch.kind is BoundaryKind.PRESSURE_OUTLET else 0.0
         return sides
+
+    def _resolve_interior(self, patches: tuple[BoundaryPatch, ...]) -> None:
+        """領域内マニホールド（セル中心でマスク評価）を単位深さのセルソースに展開する.
+
+        q_src  : 注入 [kg/s]（面内運動量ゼロ）
+        q_sink : 質量流量指定の吸出 [kg/s]（局所運動量を持ち出す）
+        c_sink : 圧力指定マニホールドの単位深さコンダクタンス [kg/(s·Pa)]、p_sink: その基準圧力
+        いずれも 3 次元値 X を X · V_c / Σ_c h_c V_c で按分（Σ は同一パッチ内）。
+        """
+        nx, ny = self.nx, self.ny
+        xc = (np.arange(nx) + 0.5) * self.dx
+        yc = (np.arange(ny) + 0.5) * self.dy
+        X, Y = np.meshgrid(xc, yc, indexing="ij")
+        h = self.inp.thickness
+        self.q_src = np.zeros((nx, ny))
+        self.q_sink = np.zeros((nx, ny))
+        self.c_sink = np.zeros((nx, ny))
+        self.p_sink = np.zeros((nx, ny))
+        self.interior_mask = np.zeros((nx, ny), dtype=bool)
+        for patch in patches:
+            hit = np.asarray(patch.mask(X, Y), dtype=bool)
+            hv = float((h[hit] * self.vol).sum())
+            if hv <= 0.0:
+                raise ValueError(f"領域内パッチ '{patch.name}' のマスクに一致するセルがありません")
+            share = np.where(hit, self.vol / hv, 0.0)
+            # 後のパッチ優先: 重なったセルの既存値を消す
+            self.q_src[hit] = 0.0
+            self.q_sink[hit] = 0.0
+            self.c_sink[hit] = 0.0
+            self.p_sink[hit] = 0.0
+            if patch.kind is BoundaryKind.INTERIOR_MASS_SOURCE:
+                self.q_src += patch.mass_flow * share
+            elif patch.kind is BoundaryKind.INTERIOR_MASS_SINK:
+                self.q_sink += patch.mass_flow * share
+            else:
+                self.c_sink += patch.conductance * share
+                self.p_sink[hit] = patch.pressure
+            self.interior_mask |= hit
+
+    def _interior_velocity_scale(self) -> float:
+        """領域内ソースの速度スケール: 総流量 / (ρ · 周長 4√A)。ソースが無ければ 0."""
+        if not (self.q_src > 0.0).any():
+            return 0.0
+        area = float((self.q_src > 0.0).sum()) * self.vol
+        return float(self.q_src.sum()) / (self.rho * 4.0 * np.sqrt(area))
+
+    def interior_fluxes(self, p: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """(注入 q_in ≥ 0, 吸出 q_out ≥ 0) [kg/s]（単位深さ、セルごと）.
+
+        圧力指定マニホールドは q = c (p - p_sink) で、正なら吸出、負なら注入（運動量ゼロ）。
+        """
+        q_c = self.c_sink * (p - self.p_sink)
+        q_in = self.q_src + np.maximum(-q_c, 0.0)
+        q_out = self.q_sink + np.maximum(q_c, 0.0)
+        return q_in, q_out
 
     # ------------------------------------------------------------------
     # 定数オペレータ
@@ -523,26 +592,34 @@ class BrinkmanDiscretization:
             gyf[:, -1] = np.where(N.is_dirichlet, (bn - phi[:, -1]) / (0.5 * dy), 0.0)
             return mu * div(dy * gxf, dx * gyf)  # 流入側が正
 
+        # 領域内マニホールド: 連続式に -q_in + q_out、吸出は局所運動量 q_out u_i を持ち出す
+        q_in, q_out = self.interior_fluxes(p)
         r_u = (
             cs * div(st.fx * st.conv_ufx, st.fy * st.conv_ufy)
             - diffusion(u, self.u_w, self.u_e, self.u_s, self.u_n)
             + (st.pfx[1:] - st.pfx[:-1]) * dy
             + self.drag * vol * u
+            + q_out * u
         )
         r_v = (
             cs * div(st.fx * st.conv_vfx, st.fy * st.conv_vfy)
             - diffusion(v, self.v_w, self.v_e, self.v_s, self.v_n)
             + (st.pfy[:, 1:] - st.pfy[:, :-1]) * dx
             + self.drag * vol * v
+            + q_out * v
         )
-        r_p = div(st.fx, st.fy)
+        r_p = div(st.fx, st.fy) - q_in + q_out
         return np.concatenate([r_u.ravel(), r_v.ravel(), r_p.ravel()])
 
     # ------------------------------------------------------------------
     # 1 次風上ヤコビアン
     # ------------------------------------------------------------------
     def jacobian_first_order(
-        self, st: StateArrays, newton_convection: bool = True, convection: bool = True
+        self,
+        st: StateArrays,
+        newton_convection: bool = True,
+        convection: bool = True,
+        x: np.ndarray | None = None,
     ) -> sparse.csr_matrix:
         """1 次風上・RC 係数凍結のヤコビアン（3N×3N、ブロック順 [u, v, p]）.
 
@@ -621,11 +698,31 @@ class BrinkmanDiscretization:
         J_pv = self.Dy @ dFy_dv
         J_pp = self.Dx @ Mx_p + self.Dy @ My_p
 
+        # 領域内マニホールド（x が無ければ p=0 として評価）
+        if self.interior_mask.any():
+            if x is None:
+                u_, v_, p_ = np.zeros((3, n))
+            else:
+                u_, v_, p_ = (a.ravel() for a in self.split(x))
+            q_in, q_out = self.interior_fluxes(p_.reshape(self.nx, self.ny))
+            q_out = q_out.ravel()
+            c = self.c_sink.ravel()
+            q_c = c * (p_ - self.p_sink.ravel())
+            out_active = (q_c > 0.0).astype(float)  # 吸出側のみ運動量項
+            J_uu = J_uu + sparse.diags(q_out)
+            J_vv = J_vv + sparse.diags(q_out)
+            J_up = J_up + sparse.diags(c * out_active * u_)
+            J_vp = J_vp + sparse.diags(c * out_active * v_)
+            J_pp = J_pp + sparse.diags(c)
+
         J = sparse.bmat([[J_uu, J_uv, J_up], [J_vu, J_vv, J_vp], [J_pu, J_pv, J_pp]], format="csr")
         return J
 
-    def mass_flow(self, st: StateArrays) -> tuple[float, float]:
-        """inlet / outlet 質量流量 [kg/s]（単位深さ、正 = inlet 流入 / outlet 流出）."""
+    def mass_flow(self, st: StateArrays, x: np.ndarray | None = None) -> tuple[float, float]:
+        """inlet / outlet 質量流量 [kg/s]（単位深さ、正 = 流入 / 流出）。領域内マニホールド分を含む.
+
+        圧力指定マニホールドの流量には p が要るので x を渡す（無ければ p=0 で評価）。
+        """
         # 各辺の内向き流束
         inward = {
             "W": st.fx[0],
@@ -635,6 +732,11 @@ class BrinkmanDiscretization:
         }
         m_in = sum(float(inward[k][sd.is_inlet].sum()) for k, sd in self.sides.items())
         m_out = sum(float(-inward[k][sd.is_outlet].sum()) for k, sd in self.sides.items())
+        if self.interior_mask.any():
+            p = np.zeros((self.nx, self.ny)) if x is None else self.split(x)[2]
+            q_in, q_out = self.interior_fluxes(p)
+            m_in += float(q_in.sum())
+            m_out += float(q_out.sum())
         return m_in, m_out
 
     def boundary_report(self) -> list[dict[str, object]]:

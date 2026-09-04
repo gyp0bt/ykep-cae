@@ -125,6 +125,25 @@ $\langle (\partial_j p) n^f_j \rangle_f$ はセル中心圧力勾配（線形面
 **$a_P$ には緩和も擬似時間項も含めない**（§6, §7 で含めた場合を扱う）。
 これにより残差 $R(x)$ は $\Delta\tau$ にも $\alpha_u$ にも依存せず、収束解は反復パラメータと独立になる。
 
+### 2.5 領域内マニホールド（紙面垂直方向の注入・吸出）
+
+冷却プレートのヘッダのように、流体が面外（$x_3$ 方向）から領域内のセルに出入りする場合は、
+深さ平均の連続式にソース $s$ [1/s] を置く: $\partial_i u_i = s$。セル $c$ の単位深さ質量ソースを $q_c = \rho\, s_c V_c$ とし、
+3 次元流量 $\dot m = \rho \sum_c s_c h_c V_c$ をパッチ内で一様 $s$ に按分すると $q_c = \dot m\, V_c / \sum_c h_c V_c$。
+
+$$
+R^p_c = \sum_f F_f - q^{\mathrm{in}}_c + q^{\mathrm{out}}_c,
+\qquad
+R^{u_i}_c \mathrel{+}= q^{\mathrm{out}}_c\, u_{i,c} .
+$$
+
+- 注入（$q^{\mathrm{in}}$）は面内運動量ゼロで入る。保存形の対流項 $\sum_f F_f \tilde u^f_i$ は非保存形 $\rho u_j \partial_j u_i$ に
+  $u_i \sum_f F_f = u_i q^{\mathrm{in}}$ を加えたものなので、注入による運動量の希釈は運動量式に何も足さなくても表現される。
+- 吸出（$q^{\mathrm{out}}$）は局所速度 $u_{i,c}$ の運動量を持ち出すので $q^{\mathrm{out}}_c u_{i,c}$ を足す（正の対角、安定化に働く）。
+- 圧力指定マニホールド: $q_c = C_c (p_c - p_\mathrm{m})$、$C_c = C\, V_c/\sum_c h_c V_c$。$q_c > 0$ なら吸出、$< 0$ なら注入。
+  ヤコビアンに $\partial R^p_c/\partial p_c = C_c$（Robin 型）が入るので圧力の基準を与える。流量指定だけの構成は圧力が不定で、
+  `PRESSURE_OUTLET` か圧力指定マニホールドが 1 つ要る。
+
 ## 3. 非線形反復（Newton–Krylov）
 
 $R(x) = 0$ を Newton 法で解く。$k$ 反復目の更新 $\delta^{(k)}$ は

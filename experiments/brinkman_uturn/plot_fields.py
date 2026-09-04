@@ -32,10 +32,11 @@ def plot(npz_path: Path, out_dir: Path) -> Path:
     speed = np.hypot(u, v)
     blocked = h < 1e-4
     tag = npz_path.stem.replace("_fields", "")
-    u_in = float(tag.split("_U")[1].split("_")[0])
+    # タグに U を含まない（マニホールド等）場合は場の最大速度をスケールにする
+    u_in = float(tag.split("_U")[1].split("_")[0]) if "_U" in tag else float(speed.max())
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 7.5), constrained_layout=True)
-    fig.suptitle(f"{tag}  (nx={nx}, ny={ny}, U_in={u_in:g} m/s)", fontsize=12)
+    fig.suptitle(f"{tag}  (nx={nx}, ny={ny}, U_scale={u_in:g} m/s)", fontsize=12)
 
     ax = axes[0, 0]
     im = ax.pcolormesh(X, Y, speed, cmap="viridis", shading="auto")

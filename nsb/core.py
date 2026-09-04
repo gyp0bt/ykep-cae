@@ -48,6 +48,32 @@ class BC:
     def pressure_outlet(mask: MaskFn, p: float = 0.0, name: str = "outlet") -> BoundaryPatch:
         return BoundaryPatch(BoundaryKind.PRESSURE_OUTLET, mask, pressure=p, name=name)
 
+    # --- 領域内マニホールド（紙面垂直方向）: マスクはセル中心で評価 ---
+    @staticmethod
+    def interior_source(mask: MaskFn, mass_flow: float, name: str = "manifold_in") -> BoundaryPatch:
+        """流量指定の注入マニホールド [kg/s]（面内運動量ゼロで注入）."""
+        return BoundaryPatch(
+            BoundaryKind.INTERIOR_MASS_SOURCE, mask, mass_flow=mass_flow, name=name
+        )
+
+    @staticmethod
+    def interior_sink(mask: MaskFn, mass_flow: float, name: str = "manifold_out") -> BoundaryPatch:
+        """流量指定の吸出マニホールド [kg/s]（局所運動量を持ち出す）。圧力基準が別に必要."""
+        return BoundaryPatch(BoundaryKind.INTERIOR_MASS_SINK, mask, mass_flow=mass_flow, name=name)
+
+    @staticmethod
+    def interior_pressure_sink(
+        mask: MaskFn, conductance: float, p: float = 0.0, name: str = "manifold_p"
+    ) -> BoundaryPatch:
+        """圧力指定マニホールド: q = conductance (p - p_manifold) [kg/s]。圧力基準を与える."""
+        return BoundaryPatch(
+            BoundaryKind.INTERIOR_PRESSURE_SINK,
+            mask,
+            conductance=conductance,
+            pressure=p,
+            name=name,
+        )
+
     @property
     def u_inlet(self) -> float:
         """VELOCITY_INLET の最大流速（MASS_FLOW_INLET のみの場合は 0。速度スケールは離散化側で決まる）."""

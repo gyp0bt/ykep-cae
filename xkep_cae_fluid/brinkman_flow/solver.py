@@ -163,7 +163,7 @@ class BrinkmanFlowFVMProcess(SolverProcess["BrinkmanFlowInput", "BrinkmanFlowRes
             aug = tau_diag + (1.0 - s.alpha_u) / s.alpha_u * st.a_p
             aug_vec = np.concatenate([aug.ravel(), aug.ravel(), np.zeros(n)])
 
-            J1 = disc.jacobian_first_order(st) + sparse.diags(aug_vec)
+            J1 = disc.jacobian_first_order(st, x=x) + sparse.diags(aug_vec)
             try:
                 lu = spla.splu(J1.tocsc())
             except RuntimeError as exc:
@@ -237,7 +237,7 @@ class BrinkmanFlowFVMProcess(SolverProcess["BrinkmanFlowInput", "BrinkmanFlowRes
                 failure = "max_iter"
 
         u, v, p = disc.split(x)
-        m_in, m_out = disc.mass_flow(st)
+        m_in, m_out = disc.mass_flow(st, x)
         # Δτ に依存しない定常残差（RC 変種では最終残差と一致しない）
         r_steady = float(np.linalg.norm(disc.residual(x, s.convection_scheme, s.venkat_k)))
         elapsed = time.perf_counter() - t0

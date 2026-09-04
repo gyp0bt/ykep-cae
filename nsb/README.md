@@ -48,8 +48,17 @@ res = solve_steady(inp)
 inp = make_case("uturn", 1, mass_flow=0.1, inlet_y=(0.20, 0.35))
 ```
 
-任意の `mask(x, y) -> bool`（4 辺の境界面中心で評価）を渡せる。飛び飛びの複数 inlet も 1 マスクで指定でき、
-その場合は合計流量を面の $h_f A_f$ で按分した一様速度になる。探索デモ: `experiments/nsb/inlet_sweep.py`。
+```python
+# 領域内マニホールド（紙面垂直方向のヘッダ）: マスクはセル中心で評価
+from xkep_cae_fluid.brinkman_flow import disk_mask
+bc = BC(patches=(
+    BC.interior_source(disk_mask(0.15, 0.2, 0.05), 0.1),                 # 注入 0.1 kg/s
+    BC.interior_pressure_sink(disk_mask(0.55, 0.2, 0.05), 1e-4, p=0.0),  # 吸出 q = C (p - 0)
+))
+```
+
+任意の `mask(x, y) -> bool`（境界種別は 4 辺の境界面中心、領域内種別はセル中心で評価）を渡せる。飛び飛びの複数 inlet も 1 マスクで指定でき、
+その場合は合計流量を面の $h_f A_f$ で按分した一様速度になる。探索デモ: `experiments/nsb/inlet_sweep.py`、マニホールドデモ: `experiments/nsb/manifold_demo.py`。
 
 ## 使い方
 

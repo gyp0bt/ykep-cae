@@ -56,7 +56,7 @@ def solve_linear(
 ) -> tuple[np.ndarray, int, bool]:
     """[線形] (J + diag_aug) δ = -R を解く。戻り値 (δ, GMRES 反復数, 収束フラグ)."""
     n3 = x.size
-    J1 = disc.jacobian_first_order(st) + sparse.diags(diag_aug)
+    J1 = disc.jacobian_first_order(st, x=x) + sparse.diags(diag_aug)
     lu = spla.splu(J1.tocsc())
     if s.linear_solver == "lu":
         return lu.solve(-rhs_resid), 0, True
@@ -112,7 +112,7 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
     if s.init_field == "stokes":
         st0 = disc.compute_state(x, s.scheme, s.venkat_k)
         r_init = disc.residual_from_state(x, st0, convection=False)
-        J0 = disc.jacobian_first_order(st0, convection=False).tocsc()
+        J0 = disc.jacobian_first_order(st0, convection=False, x=x).tocsc()
         x = x + spla.splu(J0).solve(-r_init)
         u0_, v0_, _ = disc.split(x)
         emit(
@@ -248,7 +248,7 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
 
     u, v, p = disc.split(x)
     rc_diag = None
-    m_in, m_out = disc.mass_flow(state(x))
+    m_in, m_out = disc.mass_flow(state(x), x)
     elapsed = time.perf_counter() - t0
     emit(
         f"[nsb] done converged={converged} reason='{failure}' it={n_iter} "

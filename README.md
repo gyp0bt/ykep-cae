@@ -15,7 +15,7 @@ FDM（差分法）・FVM（有限体積法）による流体ソルバー基盤�
 
 ## 現在の状態
 
-**316 テスト** -- 2026-09-04 Brinkman 流路の[座標マスク境界条件 + 質量流入境界](docs/design/brinkman-flow-fvm.md)（4 辺任意配置、流量固定で inlet 位置・サイズ探索、冷却流路設計の前段 / [status-29](docs/status/status-29.md)）。前: 収束破綻の再現と機構切り分け（[status-28](docs/status/status-28.md)、[nsb/](nsb/README.md)） | 契約違反 **0件**（13プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**320 テスト** -- 2026-09-04 Brinkman 流路の[座標マスク境界条件 + 質量流入境界 + 領域内マニホールド](docs/design/brinkman-flow-fvm.md)（4 辺任意配置、流量固定で inlet 探索、紙面垂直方向の注入/吸出ヘッダ、冷却流路設計の前段 / [status-29](docs/status/status-29.md)）。前: 収束破綻の再現と機構切り分け（[status-28](docs/status/status-28.md)、[nsb/](nsb/README.md)） | 契約違反 **0件**（13プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 ## パッケージ構成
 

@@ -44,14 +44,30 @@ class BoundaryKind(Enum):
     VELOCITY_INLET = "velocity_inlet"  # 法線方向に一様流入速度
     MASS_FLOW_INLET = "mass_flow_inlet"  # 質量流量指定（厚さ込み、面の h と長さで一様速度に換算）
     PRESSURE_OUTLET = "pressure_outlet"  # 圧力指定、速度ゼロ勾配
+    # --- 領域内（紙面垂直方向のマニホールド）: マスクはセル中心で評価 ---
+    INTERIOR_MASS_SOURCE = "interior_mass_source"  # 質量流量指定の流入（面内運動量ゼロで注入）
+    INTERIOR_MASS_SINK = "interior_mass_sink"  # 質量流量指定の流出（局所運動量を持ち出す）
+    INTERIOR_PRESSURE_SINK = "interior_pressure_sink"  # 圧力指定マニホールド: q = C (p - p_out)
+
+
+INTERIOR_KINDS = frozenset(
+    {
+        BoundaryKind.INTERIOR_MASS_SOURCE,
+        BoundaryKind.INTERIOR_MASS_SINK,
+        BoundaryKind.INTERIOR_PRESSURE_SINK,
+    }
+)
 
 
 @dataclass(frozen=True)
 class BoundaryPatch:
     """座標マスクで指定する境界パッチ.
 
-    領域の 4 辺（x=0, x=lx, y=0, y=ly）上の境界面中心に mask(x, y) を評価し、True の面に
-    kind を割り当てる。複数パッチが重なった場合は後のものが優先。どのパッチにも属さない面は WALL。
+    境界種別（WALL / *_INLET / PRESSURE_OUTLET）は領域の 4 辺（x=0, x=lx, y=0, y=ly）上の
+    境界面中心に mask(x, y) を評価し、True の面に kind を割り当てる。
+    領域内種別（INTERIOR_*）は**セル中心**に mask を評価し、True のセルに紙面垂直方向の
+    マニホールド（面内速度ゼロで注入 / 局所速度で吸出）を割り当てる。
+    複数パッチが重なった場合は後のものが優先。どのパッチにも属さない面は WALL。
 
     Parameters
     ----------
@@ -63,9 +79,15 @@ class BoundaryPatch:
         VELOCITY_INLET の流入速度 [m/s]（内向き法線方向、正で流入）
     mass_flow : float
         MASS_FLOW_INLET の質量流量 [kg/s]。深さ方向の厚さ h を含む 3 次元値で、
-        u_n = mass_flow / (ρ Σ_f h_f A_f) の一様流入速度に換算する
+        u_n = mass_flow / (ρ Σ_f h_f A_f) の一様流入速度に換算する。
+        INTERIOR_MASS_SOURCE / SINK では、セルの h_c V_c で按分した単位深さソース
+        q_c = mass_flow · V_c / Σ_c h_c V_c [kg/s] になる（正で注入 / 吸出）
     pressure : float
-        PRESSURE_OUTLET の圧力 [Pa]
+        PRESSURE_OUTLET / INTERIOR_PRESSURE_SINK の圧力 [Pa]
+    conductance : float
+        INTERIOR_PRESSURE_SINK のマニホールドコンダクタンス [kg/(s·Pa)]（3 次元値）。
+        単位深さでは q_c = conductance · V_c / Σ_c h_c V_c · (p_c - pressure)。
+        p_c < pressure なら逆流（面内運動量ゼロで注入）
     name : str
         識別用ラベル
     """
@@ -75,7 +97,22 @@ class BoundaryPatch:
     velocity: float = 0.0
     mass_flow: float = 0.0
     pressure: float = 0.0
+    conductance: float = 0.0
     name: str = ""
+
+    @property
+    def is_interior(self) -> bool:
+        return self.kind in INTERIOR_KINDS
+
+
+def rect_mask(x0: float, x1: float, y0: float, y1: float) -> MaskFn:
+    """矩形 (x0, x1)×(y0, y1) を選ぶマスク（領域内パッチ用）."""
+    return lambda x, y: (x > x0) & (x < x1) & (y > y0) & (y < y1)
+
+
+def disk_mask(cx: float, cy: float, r: float) -> MaskFn:
+    """中心 (cx, cy)、半径 r の円板を選ぶマスク（領域内パッチ用）."""
+    return lambda x, y: (x - cx) ** 2 + (y - cy) ** 2 < r**2
 
 
 def west_span(y0: float, y1: float, lx: float = 0.0) -> MaskFn:

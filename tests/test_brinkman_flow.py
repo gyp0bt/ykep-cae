@@ -25,8 +25,10 @@ from xkep_cae_fluid.brinkman_flow import (
     ThicknessResult,
     ThicknessSpec,
     UTurnThicknessProcess,
+    disk_mask,
     east_span,
     north_span,
+    rect_mask,
     south_span,
     west_span,
 )
@@ -336,3 +338,133 @@ class TestBoundaryPatchPhysics:
         assert res.converged, res.failure_reason
         assert res.mass_in == pytest.approx(0.005 / 1.0e-3, rel=1e-6)
         assert res.mass_out == pytest.approx(res.mass_in, rel=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# 領域内マニホールド（紙面垂直方向の注入 / 吸出）
+# ---------------------------------------------------------------------------
+
+
+class TestInteriorManifoldAPI:
+    def test_source_distribution_and_pressure_reference_required(self):
+        nx, ny = 36, 24
+        th = np.full((nx, ny), 1.0e-3)
+        src = BoundaryPatch(
+            BoundaryKind.INTERIOR_MASS_SOURCE, disk_mask(0.2, 0.2, 0.04), mass_flow=0.01
+        )
+        # 圧力基準なし（流量指定の吸出だけ）は ValueError
+        with pytest.raises(ValueError):
+            BrinkmanDiscretization(
+                BrinkmanFlowInput(
+                    nx=nx,
+                    ny=ny,
+                    thickness=th,
+                    boundaries=(
+                        src,
+                        BoundaryPatch(
+                            BoundaryKind.INTERIOR_MASS_SINK,
+                            disk_mask(0.5, 0.2, 0.04),
+                            mass_flow=0.01,
+                        ),
+                    ),
+                )
+            )
+        disc = BrinkmanDiscretization(
+            BrinkmanFlowInput(
+                nx=nx,
+                ny=ny,
+                thickness=th,
+                boundaries=(
+                    src,
+                    BoundaryPatch(BoundaryKind.PRESSURE_OUTLET, west_span(0.05, 0.15)),
+                ),
+            )
+        )
+        # 単位深さ総ソース = ṁ / h（h 一様）
+        assert disc.q_src.sum() == pytest.approx(0.01 / 1.0e-3)
+        assert disc.interior_mask.sum() == (disc.q_src > 0).sum() > 0
+        assert disc.u_scale > 0.0
+
+    def test_jacobian_matches_fd_with_interior_patches(self):
+        """注入 + 流量指定吸出 + 圧力指定マニホールドの全種で J1 が FD と一致する（吸出の運動量項・圧力結合含む）."""
+        nx, ny = 12, 8
+        th = np.full((nx, ny), 1.0e-5)
+        bnd = (
+            BoundaryPatch(
+                BoundaryKind.INTERIOR_MASS_SOURCE, rect_mask(0.05, 0.2, 0.1, 0.3), mass_flow=1e-3
+            ),
+            BoundaryPatch(
+                BoundaryKind.INTERIOR_MASS_SINK, rect_mask(0.3, 0.4, 0.05, 0.15), mass_flow=5e-4
+            ),
+            BoundaryPatch(
+                BoundaryKind.INTERIOR_PRESSURE_SINK,
+                rect_mask(0.5, 0.65, 0.2, 0.35),
+                conductance=1e-6,
+                pressure=2.0,
+            ),
+        )
+        inp = BrinkmanFlowInput(nx=nx, ny=ny, thickness=th, boundaries=bnd)
+        disc = BrinkmanDiscretization(inp)
+        n = disc.n
+        rng = np.random.default_rng(3)
+        # 圧力は p_sink=2 をまたぐ値にして吸出/逆流の両側を含める
+        x = np.concatenate([rng.normal(0, 0.1, n), rng.normal(0, 0.1, n), rng.normal(2.0, 10.0, n)])
+        sch = ConvectionSchemeType.FIRST_ORDER_UPWIND
+        st = disc.compute_state(x, sch, 5.0)
+        J = disc.jacobian_first_order(st, x=x).toarray()
+        Jfd = np.zeros_like(J)
+        for k in range(3 * n):
+            e = np.zeros(3 * n)
+            hk = 1e-6 * max(1.0, abs(x[k]))
+            e[k] = hk
+            Jfd[:, k] = (disc.residual(x + e, sch, 5.0) - disc.residual(x - e, sch, 5.0)) / (2 * hk)
+        scale = np.abs(Jfd).max(axis=0) + 1e-12
+        assert np.all(np.abs(J - Jfd).max(axis=0) / scale < 1e-3)
+
+
+class TestInteriorManifoldPhysics:
+    def test_source_disk_to_boundary_outlet(self):
+        """中央の注入マニホールド → 左壁 outlet。質量保存と、マニホールドから放射状に出る流れ."""
+        mdot = 0.01
+        bnd = (
+            BoundaryPatch(
+                BoundaryKind.INTERIOR_MASS_SOURCE, disk_mask(0.35, 0.2, 0.05), mass_flow=mdot
+            ),
+            BoundaryPatch(BoundaryKind.PRESSURE_OUTLET, west_span(0.05, 0.15)),
+        )
+        inp = _flat_input(36, 24, bnd, newton_max_iter=80)
+        res = BrinkmanFlowFVMProcess().execute(inp)
+        assert res.converged, res.failure_reason
+        assert res.mass_in == pytest.approx(mdot / 1.0e-3, rel=1e-6)
+        assert res.mass_out == pytest.approx(res.mass_in, rel=1e-6)
+        # マニホールドの右側では +x、左側では -x に流れる
+        i_c, j_c = int(0.35 / inp.dx), int(0.2 / inp.dy)
+        assert res.u[i_c + 4, j_c] > 0.0 and res.u[i_c - 4, j_c] < 0.0
+
+    def test_source_to_pressure_manifold_only(self):
+        """境界 outlet なし: 注入マニホールド → 圧力指定マニホールド。圧力基準は p_manifold + q/C."""
+        mdot = 0.01
+        p_man = 100.0
+        cond = 1e-6  # kg/(s·Pa)
+        bnd = (
+            BoundaryPatch(
+                BoundaryKind.INTERIOR_MASS_SOURCE, disk_mask(0.15, 0.2, 0.05), mass_flow=mdot
+            ),
+            BoundaryPatch(
+                BoundaryKind.INTERIOR_PRESSURE_SINK,
+                disk_mask(0.55, 0.2, 0.05),
+                conductance=cond,
+                pressure=p_man,
+            ),
+        )
+        inp = _flat_input(36, 24, bnd, newton_max_iter=80)
+        res = BrinkmanFlowFVMProcess().execute(inp)
+        assert res.converged, res.failure_reason
+        assert res.mass_in == pytest.approx(mdot / 1.0e-3, rel=1e-6)
+        assert res.mass_out == pytest.approx(res.mass_in, rel=1e-6)
+        # 吸出セルの圧力は p_man より高く、3 次元流量 ṁ = C (p̄ - p_man) を満たす
+        disc = BrinkmanDiscretization(inp)
+        sink = disc.c_sink > 0
+        p_bar = float((res.p[sink] * disc.c_sink[sink]).sum() / disc.c_sink[sink].sum())
+        assert p_bar > p_man
+        assert cond * (p_bar - p_man) == pytest.approx(mdot, rel=1e-6)
