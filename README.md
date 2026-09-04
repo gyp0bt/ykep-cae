@@ -15,7 +15,9 @@ FDM（差分法）・FVM（有限体積法）による流体ソルバー基盤�
 
 ## 現在の状態
 
-**460 テスト** -- 2026-09-04 [単軸押出解析 Phase 1/1.5 + G5 文献照合](docs/design/single-screw-extruder.md)（展開チャネル 2.5D、ゲート G1〜G5 全通過、OpenFOAM 検算・Pinto–Tadmor RTD 照合済み / [status-29](docs/status/status-29.md) / [図解レポート](docs/reports/extruder/README.md)） | 契約違反 **0件**（17プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**516 テスト** -- 2026-09-04 Brinkman 流路の[座標マスク境界条件 + 質量流入 + 領域内マニホールド + 随伴設計感度](docs/design/brinkman-flow-fvm.md)（4 辺任意配置、流量固定で inlet 探索、紙面垂直方向のヘッダ、位置・径の勾配を陰関数定理で、冷却流路設計の前段 / [status-31](docs/status/status-31.md)）。前: 収束破綻の再現と機構切り分け（[status-30](docs/status/status-30.md)、[nsb/](nsb/README.md)） | 契約違反 **0件**（19プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+
+前: [単軸押出解析 Phase 1/1.5 + G5 文献照合](docs/design/single-screw-extruder.md)（展開チャネル 2.5D、ゲート G1〜G5 全通過、OpenFOAM 検算・Pinto–Tadmor RTD 照合済み / [status-29](docs/status/status-29.md) / [図解レポート](docs/reports/extruder/README.md)）
 
 ## パッケージ構成
 
@@ -44,6 +46,11 @@ xkep_cae_fluid/
 |   +-- data.py        # ScalarFieldSpec / ScalarBoundarySpec / Input / Result
 |   +-- assembly.py    # 疎行列アセンブリ（対流-拡散-ソース、Dirichlet/Neumann/Robin BC）
 |   +-- solver.py      # ScalarTransportProcess (陰的Euler + BiCGSTAB+ILU)
++-- brinkman_flow/     # 2D Brinkman 補正 Navier-Stokes (FVM, Newton–Krylov) — 収束破綻の再現実験
+|   +-- data.py        # BrinkmanFlowInput / Result / SolverSettings / ThicknessSpec / BoundaryPatch（座標マスク・質量流入）
+|   +-- geometry.py    # UTurnThicknessProcess（flat / uturn 厚さ場）
+|   +-- assembly.py    # 同位置 FVM 残差（1次/2次風上+Venkatakrishnan）+ 1次風上ヤコビアン + Rhie-Chow + 4 辺の座標マスク境界
+|   +-- solver.py      # BrinkmanFlowFVMProcess（Newton + GMRES/LU(J1) + 擬似時間 + 陰的緩和）
 +-- aquarium/          # 水槽設計 CAE ドメイン（Phase 6.2 / 6.3）
 |   +-- geometry.py    # AquariumGeometryProcess（90×30×45 cm + 底床/ガラス/水マスク + z-refinement）
 |   +-- heater.py      # HeaterProcess（定熱流束 + 定温ヒステリシス）
@@ -71,6 +78,9 @@ xkep_cae_fluid/
 |   +-- benchmark_solver_methods.py      # ソルバー手法別ベンチマーク
 |   +-- aquarium_heater_natural_convection.py  # Geometry+Heater+NC 3 段（Phase 6.2b）
 |   +-- aquarium_filter_circulation.py         # Geometry+Heater+Filter+NC 4 段（Phase 6.3b）
++-- experiments/brinkman_uturn/  # Brinkman U ターン収束性スイープ（sweep.py / diagnose_u2.py / diagnose_local_dtau.py / results / logs）
++-- nsb/               # 手元構成ミラー（core / solver / utils / geo / adjoint、離散化は brinkman_flow を共有）+ theory.md（数理ノート）+ ルート main.py
++-- experiments/nsb/   # nsb パラメータスタディの results / logs
 +-- tests/             # テスト
 ```
 

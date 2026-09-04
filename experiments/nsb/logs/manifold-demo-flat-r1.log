@@ -1,0 +1,51 @@
+===== A_src_to_west_outlet =====
+[nsb] stokes init: |R_stokes(0)|=1.0206e+01 speed_max=2.03 m/s
+[nsb] it=0 |R|=2.8947e+01 cfl=0.5
+[nsb] it=1 |R_tau|=1.8538e+01 rel=6.404e-01 |R_steady|/|R0|=6.404e-01 cfl=0.5 dtau=[1.52e-03,1.47e-01] gmres=3
+[nsb] it=2 |R_tau|=1.2420e+01 rel=4.291e-01 |R_steady|/|R0|=4.291e-01 cfl=0.781 dtau=[2.63e-03,2.30e-01] gmres=3
+[nsb] it=3 |R_tau|=7.6446e+00 rel=2.641e-01 |R_steady|/|R0|=2.641e-01 cfl=1.17 dtau=[4.45e-03,3.43e-01] gmres=5
+[nsb] it=4 |R_tau|=3.9944e+00 rel=1.380e-01 |R_steady|/|R0|=1.380e-01 cfl=1.89 dtau=[7.97e-03,5.57e-01] gmres=5
+[nsb] it=5 |R_tau|=1.5852e+00 rel=5.476e-02 |R_steady|/|R0|=5.476e-02 cfl=3.62 dtau=[1.55e-02,1.07e+00] gmres=7
+[nsb] it=6 |R_tau|=4.3079e-01 rel=1.488e-02 |R_steady|/|R0|=1.488e-02 cfl=7.25 dtau=[3.30e-02,2.13e+00] gmres=7
+[nsb] it=7 |R_tau|=6.0036e-02 rel=2.074e-03 |R_steady|/|R0|=2.074e-03 cfl=14.5 dtau=[6.68e-02,4.26e+00] gmres=7
+[nsb] it=8 |R_tau|=4.2998e-03 rel=1.485e-04 |R_steady|/|R0|=1.485e-04 cfl=29 dtau=[1.35e-01,8.52e+00] gmres=6
+[nsb] it=9 |R_tau|=1.5492e-04 rel=5.352e-06 |R_steady|/|R0|=5.352e-06 cfl=58 dtau=[2.70e-01,1.70e+01] gmres=7
+[nsb] it=10 |R_tau|=2.6495e-06 rel=9.153e-08 |R_steady|/|R0|=9.153e-08 cfl=116 dtau=[5.39e-01,3.41e+01] gmres=7
+[nsb] done converged=True reason='' it=10 m_in=1.0000e+02 m_out=1.0000e+02 rejected=0 elapsed=2.7s
+/home/user/ykep-cae/nsb/utils.py:69: RuntimeWarning: Mean of empty slice
+  return float(res.p[inlet_cells(inp)].mean())
+/usr/local/lib/python3.11/dist-packages/numpy/_core/_methods.py:142: RuntimeWarning: invalid value encountered in scalar divide
+  ret = ret.dtype.type(ret / rcount)
+--> A_src_to_west_outlet: {'converged': True, 'reason': '', 'n_iter': 10, 'n_rejected': 0, 'rel_final': 9.152630258259541e-08, 'rel_steady_final': 9.152630258259541e-08, 'rel_min': 9.152630258259541e-08, 'first_step_ratio': 0.6404117048186829, 'mass_ratio': 0.9999999999999355, 'p_inlet_mean': nan, 'speed_max': 1.2804360464401094, 'elapsed': 2.663655075000861, 'p_source_mean': 2823.364659380348, 'u_scale': 0.2834733547569204}
+===== B_src_to_pressure_manifold =====
+[nsb] stokes init: |R_stokes(0)|=1.0000e+01 speed_max=0.433 m/s
+[nsb] it=0 |R|=4.4859e+00 cfl=0.5
+[nsb] it=1 |R_tau|=1.2680e+00 rel=2.827e-01 |R_steady|/|R0|=2.827e-01 cfl=0.5 dtau=[7.59e-03,1.50e-01] gmres=4
+[nsb] it=2 |R_tau|=5.4701e-01 rel=1.219e-01 |R_steady|/|R0|=1.219e-01 cfl=1 dtau=[1.50e-02,3.00e-01] gmres=4
+[nsb] it=3 |R_tau|=2.5414e-01 rel=5.665e-02 |R_steady|/|R0|=5.665e-02 cfl=2 dtau=[2.99e-02,6.00e-01] gmres=5
+[nsb] it=4 |R_tau|=9.3314e-02 rel=2.080e-02 |R_steady|/|R0|=2.080e-02 cfl=4 dtau=[5.96e-02,1.20e+00] gmres=5
+[nsb] it=5 |R_tau|=2.2534e-02 rel=5.023e-03 |R_steady|/|R0|=5.023e-03 cfl=8 dtau=[1.19e-01,2.40e+00] gmres=5
+[nsb] it=6 |R_tau|=3.1877e-03 rel=7.106e-04 |R_steady|/|R0|=7.106e-04 cfl=16 dtau=[2.38e-01,4.80e+00] gmres=5
+[nsb] it=7 |R_tau|=2.4467e-04 rel=5.454e-05 |R_steady|/|R0|=5.454e-05 cfl=32 dtau=[4.77e-01,9.60e+00] gmres=8
+[nsb] it=8 |R_tau|=9.7428e-06 rel=2.172e-06 |R_steady|/|R0|=2.172e-06 cfl=64 dtau=[9.54e-01,1.92e+01] gmres=5
+[nsb] it=9 |R_tau|=1.9629e-07 rel=4.376e-08 |R_steady|/|R0|=4.376e-08 cfl=128 dtau=[1.91e+00,3.84e+01] gmres=5
+[nsb] done converged=True reason='' it=9 m_in=1.0000e+02 m_out=1.0000e+02 rejected=0 elapsed=2.5s
+--> B_src_to_pressure_manifold: {'converged': True, 'reason': '', 'n_iter': 9, 'n_rejected': 0, 'rel_final': 4.375771391475739e-08, 'rel_steady_final': 4.375771391475739e-08, 'rel_min': 4.375771391475739e-08, 'first_step_ratio': 0.28267125075577876, 'mass_ratio': 0.9999999999999766, 'p_inlet_mean': nan, 'speed_max': 0.43451790720423106, 'elapsed': 2.547427630997845, 'p_source_mean': 2464.632599379503, 'u_scale': 0.2777460299317654}
+===== C_two_src_one_manifold =====
+[nsb] stokes init: |R_stokes(0)|=8.9803e+00 speed_max=0.432 m/s
+[nsb] it=0 |R|=3.5502e+00 cfl=0.5
+[nsb] it=1 |R_tau|=9.9103e-01 rel=2.791e-01 |R_steady|/|R0|=2.791e-01 cfl=0.5 dtau=[7.59e-03,1.67e-01] gmres=3
+[nsb] it=2 |R_tau|=3.8428e-01 rel=1.082e-01 |R_steady|/|R0|=1.082e-01 cfl=1 dtau=[1.50e-02,3.34e-01] gmres=4
+[nsb] it=3 |R_tau|=1.6153e-01 rel=4.550e-02 |R_steady|/|R0|=4.550e-02 cfl=2 dtau=[2.99e-02,6.68e-01] gmres=5
+[nsb] it=4 |R_tau|=5.2735e-02 rel=1.485e-02 |R_steady|/|R0|=1.485e-02 cfl=4 dtau=[5.97e-02,1.34e+00] gmres=6
+[nsb] it=5 |R_tau|=1.1153e-02 rel=3.142e-03 |R_steady|/|R0|=3.142e-03 cfl=8 dtau=[1.19e-01,2.67e+00] gmres=5
+[nsb] it=6 |R_tau|=1.3754e-03 rel=3.874e-04 |R_steady|/|R0|=3.874e-04 cfl=16 dtau=[2.39e-01,5.35e+00] gmres=6
+[nsb] it=7 |R_tau|=9.2757e-05 rel=2.613e-05 |R_steady|/|R0|=2.613e-05 cfl=32 dtau=[4.77e-01,1.07e+01] gmres=6
+[nsb] it=8 |R_tau|=3.3052e-06 rel=9.310e-07 |R_steady|/|R0|=9.310e-07 cfl=64 dtau=[9.54e-01,2.14e+01] gmres=6
+[nsb] done converged=True reason='' it=8 m_in=1.0000e+02 m_out=1.0000e+02 rejected=0 elapsed=2.3s
+--> C_two_src_one_manifold: {'converged': True, 'reason': '', 'n_iter': 8, 'n_rejected': 0, 'rel_final': 9.310084192856087e-07, 'rel_steady_final': 9.310084192856087e-07, 'rel_min': 9.310084192856087e-07, 'first_step_ratio': 0.27914921106556845, 'mass_ratio': 1.0000000000000135, 'p_inlet_mean': nan, 'speed_max': 0.43376070642185194, 'elapsed': 2.344773067998176, 'p_source_mean': 2354.0130843633087, 'u_scale': 0.2494232979631619}
+
+==== summary ====
+A_src_to_west_outlet         conv=True  it= 10 p_src=   2823.4 Pa speed_max=1.280 m_out/m_in=1.0000
+B_src_to_pressure_manifold   conv=True  it=  9 p_src=   2464.6 Pa speed_max=0.435 m_out/m_in=1.0000
+C_two_src_one_manifold       conv=True  it=  8 p_src=   2354.0 Pa speed_max=0.434 m_out/m_in=1.0000

@@ -1,0 +1,45 @@
+A_src_to_west_outlet:
+  converged: true
+  reason: ''
+  n_iter: 10
+  n_rejected: 0
+  rel_final: 9.152630258259541e-08
+  rel_steady_final: 9.152630258259541e-08
+  rel_min: 9.152630258259541e-08
+  first_step_ratio: 0.6404117048186829
+  mass_ratio: 0.9999999999999355
+  p_inlet_mean: .nan
+  speed_max: 1.2804360464401094
+  elapsed: 2.663655075000861
+  p_source_mean: 2823.364659380348
+  u_scale: 0.2834733547569204
+B_src_to_pressure_manifold:
+  converged: true
+  reason: ''
+  n_iter: 9
+  n_rejected: 0
+  rel_final: 4.375771391475739e-08
+  rel_steady_final: 4.375771391475739e-08
+  rel_min: 4.375771391475739e-08
+  first_step_ratio: 0.28267125075577876
+  mass_ratio: 0.9999999999999766
+  p_inlet_mean: .nan
+  speed_max: 0.43451790720423106
+  elapsed: 2.547427630997845
+  p_source_mean: 2464.632599379503
+  u_scale: 0.2777460299317654
+C_two_src_one_manifold:
+  converged: true
+  reason: ''
+  n_iter: 8
+  n_rejected: 0
+  rel_final: 9.310084192856087e-07
+  rel_steady_final: 9.310084192856087e-07
+  rel_min: 9.310084192856087e-07
+  first_step_ratio: 0.27914921106556845
+  mass_ratio: 1.0000000000000135
+  p_inlet_mean: .nan
+  speed_max: 0.43376070642185194
+  elapsed: 2.344773067998176
+  p_source_mean: 2354.0130843633087
+  u_scale: 0.2494232979631619

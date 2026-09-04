@@ -1,0 +1,100 @@
+branch: claude/2dfvm-brinkman-convergence-tn39cz
+commit: a97744e
+argv:
+- experiments/brinkman_uturn/sweep.py
+- --models
+- uturn
+- flat
+- --refine
+- '1'
+- --velocities
+- '0.1'
+- '1'
+- '2'
+- --cfl-init
+- '0.5'
+- --max-iter
+- '150'
+- --save-fields
+- --out
+- experiments/brinkman_uturn/results_cfl0.5
+total_seconds: 67.27084635699975
+cases:
+- tag: uturn_r1_U0.1_second_order_upwind_jfnk
+  model: uturn
+  refine: 1
+  u_inlet: 0.1
+  re_inlet: 9999.999999999998
+  converged: true
+  failure_reason: ''
+  n_newton: 20
+  final_relative_residual: 8.183532505452746e-07
+  min_relative_residual: 8.183532505452746e-07
+  elapsed_seconds: 5.600477547000082
+  mass_in: 10.000000000000004
+  mass_out: 9.999999999999888
+- tag: uturn_r1_U1_second_order_upwind_jfnk
+  model: uturn
+  refine: 1
+  u_inlet: 1.0
+  re_inlet: 99999.99999999997
+  converged: true
+  failure_reason: ''
+  n_newton: 77
+  final_relative_residual: 9.706673230575254e-07
+  min_relative_residual: 9.706673230575254e-07
+  elapsed_seconds: 15.133372411999972
+  mass_in: 99.99999999999999
+  mass_out: 100.00000000000004
+- tag: uturn_r1_U2_second_order_upwind_jfnk
+  model: uturn
+  refine: 1
+  u_inlet: 2.0
+  re_inlet: 199999.99999999994
+  converged: true
+  failure_reason: ''
+  n_newton: 102
+  final_relative_residual: 9.047495600332566e-07
+  min_relative_residual: 9.047495600332566e-07
+  elapsed_seconds: 19.925060879000284
+  mass_in: 199.99999999999997
+  mass_out: 200.00000000000801
+- tag: flat_r1_U0.1_second_order_upwind_jfnk
+  model: flat
+  refine: 1
+  u_inlet: 0.1
+  re_inlet: 9999.999999999998
+  converged: true
+  failure_reason: ''
+  n_newton: 15
+  final_relative_residual: 6.830490023687365e-07
+  min_relative_residual: 6.830490023687365e-07
+  elapsed_seconds: 3.3825231110004097
+  mass_in: 10.000000000000004
+  mass_out: 10.000000000000064
+- tag: flat_r1_U1_second_order_upwind_jfnk
+  model: flat
+  refine: 1
+  u_inlet: 1.0
+  re_inlet: 99999.99999999997
+  converged: true
+  failure_reason: ''
+  n_newton: 43
+  final_relative_residual: 9.172342914881981e-07
+  min_relative_residual: 9.172342914881981e-07
+  elapsed_seconds: 9.723472227000002
+  mass_in: 99.99999999999999
+  mass_out: 99.9999999999841
+- tag: flat_r1_U2_second_order_upwind_jfnk
+  model: flat
+  refine: 1
+  u_inlet: 2.0
+  re_inlet: 199999.99999999994
+  converged: true
+  failure_reason: ''
+  n_newton: 64
+  final_relative_residual: 9.75047154254025e-07
+  min_relative_residual: 9.75047154254025e-07
+  elapsed_seconds: 13.354316309999831
+  mass_in: 199.99999999999997
+  mass_out: 199.99999999999008

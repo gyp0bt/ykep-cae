@@ -1,0 +1,11 @@
+converged: false
+reason: max_iter
+n_iter: 120
+rel_final: 0.0025532758392928343
+rel_steady_final: 0.0025532758392928343
+rel_min: 0.0025532758392928343
+first_step_ratio: 40.70782513892346
+mass_ratio: 1.0000000000697324
+p_inlet_mean: 17554.39973692109
+speed_max: 2.065036153650911
+elapsed: 1589.7887177079992

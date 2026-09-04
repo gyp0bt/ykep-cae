@@ -1,0 +1,247 @@
+===== flat_r1_U2_fixed =====
+[nsb] it=0 |R|=1.2911e+02 cfl=0.5
+[nsb] it=1 |R_tau|=8.0517e+02 rel=6.236e+00 |R_steady|/|R0|=6.236e+00 cfl=0.5 dtau=[2.08e-02,2.08e-02] gmres=11 (gmres not converged)
+[nsb] it=2 |R_tau|=5.1406e+02 rel=3.982e+00 |R_steady|/|R0|=3.982e+00 cfl=0.0802 dtau=[8.61e-05,3.34e-03] gmres=3
+[nsb] it=3 |R_tau|=4.5273e+02 rel=3.507e+00 |R_steady|/|R0|=3.507e+00 cfl=0.126 dtau=[1.37e-04,5.23e-03] gmres=3
+[nsb] it=4 |R_tau|=4.3450e+02 rel=3.365e+00 |R_steady|/|R0|=3.365e+00 cfl=0.143 dtau=[1.62e-04,5.94e-03] gmres=4
+[nsb] it=5 |R_tau|=4.5230e+02 rel=3.503e+00 |R_steady|/|R0|=3.503e+00 cfl=0.149 dtau=[1.76e-04,6.19e-03] gmres=4
+[nsb] it=6 |R_tau|=4.0300e+02 rel=3.121e+00 |R_steady|/|R0|=3.121e+00 cfl=0.143 dtau=[1.77e-04,5.95e-03] gmres=4
+[nsb] it=7 |R_tau|=3.6895e+02 rel=2.858e+00 |R_steady|/|R0|=2.858e+00 cfl=0.16 dtau=[2.07e-04,6.67e-03] gmres=4
+[nsb] it=8 |R_tau|=3.3586e+02 rel=2.601e+00 |R_steady|/|R0|=2.601e+00 cfl=0.175 dtau=[2.39e-04,7.29e-03] gmres=4
+[nsb] it=9 |R_tau|=3.0171e+02 rel=2.337e+00 |R_steady|/|R0|=2.337e+00 cfl=0.192 dtau=[2.77e-04,8.01e-03] gmres=3
+[nsb] it=10 |R_tau|=2.6641e+02 rel=2.063e+00 |R_steady|/|R0|=2.063e+00 cfl=0.214 dtau=[3.27e-04,8.92e-03] gmres=4
+[nsb] it=11 |R_tau|=2.2953e+02 rel=1.778e+00 |R_steady|/|R0|=1.778e+00 cfl=0.242 dtau=[3.95e-04,1.01e-02] gmres=3
+[nsb] it=12 |R_tau|=1.9231e+02 rel=1.490e+00 |R_steady|/|R0|=1.490e+00 cfl=0.281 dtau=[4.95e-04,1.17e-02] gmres=3
+[nsb] it=13 |R_tau|=1.5530e+02 rel=1.203e+00 |R_steady|/|R0|=1.203e+00 cfl=0.336 dtau=[6.16e-04,1.40e-02] gmres=4
+[nsb] it=14 |R_tau|=1.1944e+02 rel=9.251e-01 |R_steady|/|R0|=9.251e-01 cfl=0.416 dtau=[7.66e-04,1.73e-02] gmres=4
+[nsb] it=15 |R_tau|=8.6929e+01 rel=6.733e-01 |R_steady|/|R0|=6.733e-01 cfl=0.54 dtau=[1.01e-03,2.25e-02] gmres=4
+[nsb] it=16 |R_tau|=6.0733e+01 rel=4.704e-01 |R_steady|/|R0|=4.704e-01 cfl=0.743 dtau=[1.41e-03,3.09e-02] gmres=5
+[nsb] it=17 |R_tau|=4.2180e+01 rel=3.267e-01 |R_steady|/|R0|=3.267e-01 cfl=1.06 dtau=[2.10e-03,4.43e-02] gmres=6
+[nsb] it=18 |R_tau|=3.0101e+01 rel=2.331e-01 |R_steady|/|R0|=2.331e-01 cfl=1.53 dtau=[3.18e-03,6.38e-02] gmres=5
+[nsb] it=19 |R_tau|=2.2120e+01 rel=1.713e-01 |R_steady|/|R0|=1.713e-01 cfl=2.14 dtau=[4.50e-03,8.94e-02] gmres=7
+[nsb] it=20 |R_tau|=1.9015e+01 rel=1.473e-01 |R_steady|/|R0|=1.473e-01 cfl=2.92 dtau=[6.25e-03,1.22e-01] gmres=6
+[nsb] it=21 |R_tau|=1.8735e+01 rel=1.451e-01 |R_steady|/|R0|=1.451e-01 cfl=3.39 dtau=[7.46e-03,1.41e-01] gmres=7
+[nsb] it=22 |R_tau|=1.1255e+01 rel=8.717e-02 |R_steady|/|R0|=8.717e-02 cfl=3.45 dtau=[7.76e-03,1.44e-01] gmres=5
+[nsb] it=23 |R_tau|=8.2211e+00 rel=6.368e-02 |R_steady|/|R0|=6.368e-02 cfl=5.74 dtau=[1.31e-02,2.39e-01] gmres=7
+[nsb] it=24 |R_tau|=6.5788e+00 rel=5.096e-02 |R_steady|/|R0|=5.096e-02 cfl=7.85 dtau=[1.82e-02,3.27e-01] gmres=6
+[nsb] it=25 |R_tau|=5.4105e+00 rel=4.191e-02 |R_steady|/|R0|=4.191e-02 cfl=9.81 dtau=[2.30e-02,4.09e-01] gmres=7
+[nsb] it=26 |R_tau|=4.5004e+00 rel=3.486e-02 |R_steady|/|R0|=3.486e-02 cfl=11.9 dtau=[2.82e-02,4.97e-01] gmres=6
+[nsb] it=27 |R_tau|=3.7286e+00 rel=2.888e-02 |R_steady|/|R0|=2.888e-02 cfl=14.3 dtau=[3.42e-02,5.98e-01] gmres=8
+[nsb] it=28 |R_tau|=3.0894e+00 rel=2.393e-02 |R_steady|/|R0|=2.393e-02 cfl=17.3 dtau=[4.15e-02,7.21e-01] gmres=5
+[nsb] it=29 |R_tau|=2.5290e+00 rel=1.959e-02 |R_steady|/|R0|=1.959e-02 cfl=20.9 dtau=[5.03e-02,8.71e-01] gmres=6
+[nsb] it=30 |R_tau|=2.0485e+00 rel=1.587e-02 |R_steady|/|R0|=1.587e-02 cfl=25.5 dtau=[6.18e-02,1.06e+00] gmres=6
+[nsb] it=31 |R_tau|=1.6329e+00 rel=1.265e-02 |R_steady|/|R0|=1.265e-02 cfl=31.5 dtau=[7.67e-02,1.31e+00] gmres=6
+[nsb] it=32 |R_tau|=1.2791e+00 rel=9.907e-03 |R_steady|/|R0|=9.907e-03 cfl=39.5 dtau=[9.67e-02,1.65e+00] gmres=5
+[nsb] it=33 |R_tau|=9.8525e-01 rel=7.631e-03 |R_steady|/|R0|=7.631e-03 cfl=50.5 dtau=[1.24e-01,2.10e+00] gmres=5
+[nsb] it=34 |R_tau|=7.4403e-01 rel=5.763e-03 |R_steady|/|R0|=5.763e-03 cfl=65.5 dtau=[1.61e-01,2.73e+00] gmres=6
+[nsb] it=35 |R_tau|=5.5232e-01 rel=4.278e-03 |R_steady|/|R0|=4.278e-03 cfl=86.8 dtau=[2.14e-01,3.62e+00] gmres=6
+[nsb] it=36 |R_tau|=4.0413e-01 rel=3.130e-03 |R_steady|/|R0|=3.130e-03 cfl=117 dtau=[2.90e-01,4.87e+00] gmres=7
+[nsb] it=37 |R_tau|=2.9243e-01 rel=2.265e-03 |R_steady|/|R0|=2.265e-03 cfl=160 dtau=[3.97e-01,6.66e+00] gmres=7
+[nsb] it=38 |R_tau|=2.0988e-01 rel=1.626e-03 |R_steady|/|R0|=1.626e-03 cfl=221 dtau=[5.49e-01,9.20e+00] gmres=7
+[nsb] it=39 |R_tau|=1.4997e-01 rel=1.162e-03 |R_steady|/|R0|=1.162e-03 cfl=308 dtau=[7.66e-01,1.28e+01] gmres=8
+[nsb] it=40 |R_tau|=1.0697e-01 rel=8.285e-04 |R_steady|/|R0|=8.285e-04 cfl=430 dtau=[1.07e+00,1.79e+01] gmres=8
+[nsb] it=41 |R_tau|=7.6431e-02 rel=5.920e-04 |R_steady|/|R0|=5.920e-04 cfl=603 dtau=[1.51e+00,2.51e+01] gmres=8
+[nsb] it=42 |R_tau|=5.4954e-02 rel=4.256e-04 |R_steady|/|R0|=4.256e-04 cfl=845 dtau=[2.11e+00,3.52e+01] gmres=7
+[nsb] it=43 |R_tau|=3.9859e-02 rel=3.087e-04 |R_steady|/|R0|=3.087e-04 cfl=1.17e+03 dtau=[2.93e+00,4.89e+01] gmres=7
+[nsb] it=44 |R_tau|=2.9304e-02 rel=2.270e-04 |R_steady|/|R0|=2.270e-04 cfl=1.62e+03 dtau=[4.05e+00,6.75e+01] gmres=7
+[nsb] it=45 |R_tau|=2.1890e-02 rel=1.695e-04 |R_steady|/|R0|=1.695e-04 cfl=2.2e+03 dtau=[5.51e+00,9.18e+01] gmres=7
+[nsb] it=46 |R_tau|=1.6622e-02 rel=1.287e-04 |R_steady|/|R0|=1.287e-04 cfl=2.95e+03 dtau=[7.37e+00,1.23e+02] gmres=5
+[nsb] it=47 |R_tau|=1.2813e-02 rel=9.924e-05 |R_steady|/|R0|=9.924e-05 cfl=3.88e+03 dtau=[9.71e+00,1.62e+02] gmres=7
+[nsb] it=48 |R_tau|=9.9947e-03 rel=7.741e-05 |R_steady|/|R0|=7.741e-05 cfl=5.04e+03 dtau=[1.26e+01,2.10e+02] gmres=7
+[nsb] it=49 |R_tau|=7.8578e-03 rel=6.086e-05 |R_steady|/|R0|=6.086e-05 cfl=6.46e+03 dtau=[1.61e+01,2.69e+02] gmres=7
+[nsb] it=50 |R_tau|=6.2019e-03 rel=4.804e-05 |R_steady|/|R0|=4.804e-05 cfl=8.22e+03 dtau=[2.05e+01,3.42e+02] gmres=7
+[nsb] it=51 |R_tau|=4.8970e-03 rel=3.793e-05 |R_steady|/|R0|=3.793e-05 cfl=1.04e+04 dtau=[2.60e+01,4.34e+02] gmres=7
+[nsb] it=52 |R_tau|=3.8576e-03 rel=2.988e-05 |R_steady|/|R0|=2.988e-05 cfl=1.32e+04 dtau=[3.30e+01,5.49e+02] gmres=7
+[nsb] it=53 |R_tau|=3.0255e-03 rel=2.343e-05 |R_steady|/|R0|=2.343e-05 cfl=1.67e+04 dtau=[4.18e+01,6.97e+02] gmres=7
+[nsb] it=54 |R_tau|=2.3591e-03 rel=1.827e-05 |R_steady|/|R0|=1.827e-05 cfl=2.13e+04 dtau=[5.34e+01,8.89e+02] gmres=8
+[nsb] it=55 |R_tau|=1.8271e-03 rel=1.415e-05 |R_steady|/|R0|=1.415e-05 cfl=2.74e+04 dtau=[6.84e+01,1.14e+03] gmres=8
+[nsb] it=56 |R_tau|=1.4046e-03 rel=1.088e-05 |R_steady|/|R0|=1.088e-05 cfl=3.53e+04 dtau=[8.83e+01,1.47e+03] gmres=8
+[nsb] it=57 |R_tau|=1.0714e-03 rel=8.298e-06 |R_steady|/|R0|=8.298e-06 cfl=4.6e+04 dtau=[1.15e+02,1.91e+03] gmres=8
+[nsb] it=58 |R_tau|=8.1051e-04 rel=6.278e-06 |R_steady|/|R0|=6.278e-06 cfl=6.03e+04 dtau=[1.51e+02,2.51e+03] gmres=8
+[nsb] it=59 |R_tau|=6.0798e-04 rel=4.709e-06 |R_steady|/|R0|=4.709e-06 cfl=7.96e+04 dtau=[1.99e+02,3.32e+03] gmres=8
+[nsb] it=60 |R_tau|=4.5206e-04 rel=3.501e-06 |R_steady|/|R0|=3.501e-06 cfl=1.06e+05 dtau=[2.65e+02,4.42e+03] gmres=8
+[nsb] it=61 |R_tau|=3.3309e-04 rel=2.580e-06 |R_steady|/|R0|=2.580e-06 cfl=1.43e+05 dtau=[3.57e+02,5.95e+03] gmres=7
+[nsb] it=62 |R_tau|=2.4314e-04 rel=1.883e-06 |R_steady|/|R0|=1.883e-06 cfl=1.94e+05 dtau=[4.85e+02,8.08e+03] gmres=7
+[nsb] it=63 |R_tau|=1.7577e-04 rel=1.361e-06 |R_steady|/|R0|=1.361e-06 cfl=2.66e+05 dtau=[6.64e+02,1.11e+04] gmres=7
+[nsb] it=64 |R_tau|=1.2582e-04 rel=9.745e-07 |R_steady|/|R0|=9.745e-07 cfl=3.67e+05 dtau=[9.18e+02,1.53e+04] gmres=7
+[nsb] done converged=True reason='' it=64 m_in=2.0000e+02 m_out=2.0000e+02 rejected=0 elapsed=62.5s
+--> flat_r1_U2_fixed: {'converged': True, 'reason': '', 'n_iter': 64, 'n_rejected': 0, 'rel_final': 9.745421172789628e-07, 'rel_steady_final': 9.745421172789628e-07, 'rel_min': 9.745421172789628e-07, 'first_step_ratio': 6.236302201589482, 'mass_ratio': 1.0000000000002456, 'p_inlet_mean': 5655.12422025083, 'speed_max': 2.456937067288049, 'elapsed': 62.54188233700006}
+===== flat_r1_U2_fixed_bt =====
+[nsb] it=0 |R|=1.2911e+02 cfl=0.5
+[nsb] it=1 |R_tau|=8.0517e+02 rel=6.236e+00 |R_steady|/|R0|=6.236e+00 cfl=0.5 dtau=[2.08e-02,2.08e-02] gmres=11 (gmres not converged)
+[nsb] it=2 |R_tau|=5.1406e+02 rel=3.982e+00 |R_steady|/|R0|=3.982e+00 cfl=0.0802 dtau=[8.61e-05,3.34e-03] gmres=3
+[nsb] it=3 |R_tau|=4.5273e+02 rel=3.507e+00 |R_steady|/|R0|=3.507e+00 cfl=0.126 dtau=[1.37e-04,5.23e-03] gmres=3
+[nsb] it=4 |R_tau|=4.3450e+02 rel=3.365e+00 |R_steady|/|R0|=3.365e+00 cfl=0.143 dtau=[1.62e-04,5.94e-03] gmres=4
+[nsb] it=5 |R_tau|=4.5230e+02 rel=3.503e+00 |R_steady|/|R0|=3.503e+00 cfl=0.149 dtau=[1.76e-04,6.19e-03] gmres=4
+[nsb] it=6 |R_tau|=4.0300e+02 rel=3.121e+00 |R_steady|/|R0|=3.121e+00 cfl=0.143 dtau=[1.77e-04,5.95e-03] gmres=4
+[nsb] it=7 |R_tau|=3.6895e+02 rel=2.858e+00 |R_steady|/|R0|=2.858e+00 cfl=0.16 dtau=[2.07e-04,6.67e-03] gmres=4
+[nsb] it=8 |R_tau|=3.3586e+02 rel=2.601e+00 |R_steady|/|R0|=2.601e+00 cfl=0.175 dtau=[2.39e-04,7.29e-03] gmres=4
+[nsb] it=9 |R_tau|=3.0171e+02 rel=2.337e+00 |R_steady|/|R0|=2.337e+00 cfl=0.192 dtau=[2.77e-04,8.01e-03] gmres=3
+[nsb] it=10 |R_tau|=2.6641e+02 rel=2.063e+00 |R_steady|/|R0|=2.063e+00 cfl=0.214 dtau=[3.27e-04,8.92e-03] gmres=4
+[nsb] it=11 |R_tau|=2.2953e+02 rel=1.778e+00 |R_steady|/|R0|=1.778e+00 cfl=0.242 dtau=[3.95e-04,1.01e-02] gmres=3
+[nsb] it=12 |R_tau|=1.9231e+02 rel=1.490e+00 |R_steady|/|R0|=1.490e+00 cfl=0.281 dtau=[4.95e-04,1.17e-02] gmres=3
+[nsb] it=13 |R_tau|=1.5530e+02 rel=1.203e+00 |R_steady|/|R0|=1.203e+00 cfl=0.336 dtau=[6.16e-04,1.40e-02] gmres=4
+[nsb] it=14 |R_tau|=1.1944e+02 rel=9.251e-01 |R_steady|/|R0|=9.251e-01 cfl=0.416 dtau=[7.66e-04,1.73e-02] gmres=4
+[nsb] it=15 |R_tau|=8.6929e+01 rel=6.733e-01 |R_steady|/|R0|=6.733e-01 cfl=0.54 dtau=[1.01e-03,2.25e-02] gmres=4
+[nsb] it=16 |R_tau|=6.0733e+01 rel=4.704e-01 |R_steady|/|R0|=4.704e-01 cfl=0.743 dtau=[1.41e-03,3.09e-02] gmres=5
+[nsb] it=17 |R_tau|=4.2180e+01 rel=3.267e-01 |R_steady|/|R0|=3.267e-01 cfl=1.06 dtau=[2.10e-03,4.43e-02] gmres=6
+[nsb] it=18 |R_tau|=3.0101e+01 rel=2.331e-01 |R_steady|/|R0|=2.331e-01 cfl=1.53 dtau=[3.18e-03,6.38e-02] gmres=5
+[nsb] it=19 |R_tau|=2.2120e+01 rel=1.713e-01 |R_steady|/|R0|=1.713e-01 cfl=2.14 dtau=[4.50e-03,8.94e-02] gmres=7
+[nsb] it=20 |R_tau|=1.9015e+01 rel=1.473e-01 |R_steady|/|R0|=1.473e-01 cfl=2.92 dtau=[6.25e-03,1.22e-01] gmres=6
+[nsb] it=21 |R_tau|=1.8735e+01 rel=1.451e-01 |R_steady|/|R0|=1.451e-01 cfl=3.39 dtau=[7.46e-03,1.41e-01] gmres=7
+[nsb] it=22 |R_tau|=1.1255e+01 rel=8.717e-02 |R_steady|/|R0|=8.717e-02 cfl=3.45 dtau=[7.76e-03,1.44e-01] gmres=5
+[nsb] it=23 |R_tau|=8.2211e+00 rel=6.368e-02 |R_steady|/|R0|=6.368e-02 cfl=5.74 dtau=[1.31e-02,2.39e-01] gmres=7
+[nsb] it=24 |R_tau|=6.5788e+00 rel=5.096e-02 |R_steady|/|R0|=5.096e-02 cfl=7.85 dtau=[1.82e-02,3.27e-01] gmres=6
+[nsb] it=25 |R_tau|=5.4105e+00 rel=4.191e-02 |R_steady|/|R0|=4.191e-02 cfl=9.81 dtau=[2.30e-02,4.09e-01] gmres=7
+[nsb] it=26 |R_tau|=4.5004e+00 rel=3.486e-02 |R_steady|/|R0|=3.486e-02 cfl=11.9 dtau=[2.82e-02,4.97e-01] gmres=6
+[nsb] it=27 |R_tau|=3.7286e+00 rel=2.888e-02 |R_steady|/|R0|=2.888e-02 cfl=14.3 dtau=[3.42e-02,5.98e-01] gmres=8
+[nsb] it=28 |R_tau|=3.0894e+00 rel=2.393e-02 |R_steady|/|R0|=2.393e-02 cfl=17.3 dtau=[4.15e-02,7.21e-01] gmres=5
+[nsb] it=29 |R_tau|=2.5290e+00 rel=1.959e-02 |R_steady|/|R0|=1.959e-02 cfl=20.9 dtau=[5.03e-02,8.71e-01] gmres=6
+[nsb] it=30 |R_tau|=2.0485e+00 rel=1.587e-02 |R_steady|/|R0|=1.587e-02 cfl=25.5 dtau=[6.18e-02,1.06e+00] gmres=6
+[nsb] it=31 |R_tau|=1.6329e+00 rel=1.265e-02 |R_steady|/|R0|=1.265e-02 cfl=31.5 dtau=[7.67e-02,1.31e+00] gmres=6
+[nsb] it=32 |R_tau|=1.2791e+00 rel=9.907e-03 |R_steady|/|R0|=9.907e-03 cfl=39.5 dtau=[9.67e-02,1.65e+00] gmres=5
+[nsb] it=33 |R_tau|=9.8525e-01 rel=7.631e-03 |R_steady|/|R0|=7.631e-03 cfl=50.5 dtau=[1.24e-01,2.10e+00] gmres=5
+[nsb] it=34 |R_tau|=7.4403e-01 rel=5.763e-03 |R_steady|/|R0|=5.763e-03 cfl=65.5 dtau=[1.61e-01,2.73e+00] gmres=6
+[nsb] it=35 |R_tau|=5.5232e-01 rel=4.278e-03 |R_steady|/|R0|=4.278e-03 cfl=86.8 dtau=[2.14e-01,3.62e+00] gmres=6
+[nsb] it=36 |R_tau|=4.0413e-01 rel=3.130e-03 |R_steady|/|R0|=3.130e-03 cfl=117 dtau=[2.90e-01,4.87e+00] gmres=7
+[nsb] it=37 |R_tau|=2.9243e-01 rel=2.265e-03 |R_steady|/|R0|=2.265e-03 cfl=160 dtau=[3.97e-01,6.66e+00] gmres=7
+[nsb] it=38 |R_tau|=2.0988e-01 rel=1.626e-03 |R_steady|/|R0|=1.626e-03 cfl=221 dtau=[5.49e-01,9.20e+00] gmres=7
+[nsb] it=39 |R_tau|=1.4997e-01 rel=1.162e-03 |R_steady|/|R0|=1.162e-03 cfl=308 dtau=[7.66e-01,1.28e+01] gmres=8
+[nsb] it=40 |R_tau|=1.0697e-01 rel=8.285e-04 |R_steady|/|R0|=8.285e-04 cfl=430 dtau=[1.07e+00,1.79e+01] gmres=8
+[nsb] it=41 |R_tau|=7.6431e-02 rel=5.920e-04 |R_steady|/|R0|=5.920e-04 cfl=603 dtau=[1.51e+00,2.51e+01] gmres=8
+[nsb] it=42 |R_tau|=5.4954e-02 rel=4.256e-04 |R_steady|/|R0|=4.256e-04 cfl=845 dtau=[2.11e+00,3.52e+01] gmres=7
+[nsb] it=43 |R_tau|=3.9859e-02 rel=3.087e-04 |R_steady|/|R0|=3.087e-04 cfl=1.17e+03 dtau=[2.93e+00,4.89e+01] gmres=7
+[nsb] it=44 |R_tau|=2.9304e-02 rel=2.270e-04 |R_steady|/|R0|=2.270e-04 cfl=1.62e+03 dtau=[4.05e+00,6.75e+01] gmres=7
+[nsb] it=45 |R_tau|=2.1890e-02 rel=1.695e-04 |R_steady|/|R0|=1.695e-04 cfl=2.2e+03 dtau=[5.51e+00,9.18e+01] gmres=7
+[nsb] it=46 |R_tau|=1.6622e-02 rel=1.287e-04 |R_steady|/|R0|=1.287e-04 cfl=2.95e+03 dtau=[7.37e+00,1.23e+02] gmres=5
+[nsb] it=47 |R_tau|=1.2813e-02 rel=9.924e-05 |R_steady|/|R0|=9.924e-05 cfl=3.88e+03 dtau=[9.71e+00,1.62e+02] gmres=7
+[nsb] it=48 |R_tau|=9.9947e-03 rel=7.741e-05 |R_steady|/|R0|=7.741e-05 cfl=5.04e+03 dtau=[1.26e+01,2.10e+02] gmres=7
+[nsb] it=49 |R_tau|=7.8578e-03 rel=6.086e-05 |R_steady|/|R0|=6.086e-05 cfl=6.46e+03 dtau=[1.61e+01,2.69e+02] gmres=7
+[nsb] it=50 |R_tau|=6.2019e-03 rel=4.804e-05 |R_steady|/|R0|=4.804e-05 cfl=8.22e+03 dtau=[2.05e+01,3.42e+02] gmres=7
+[nsb] it=51 |R_tau|=4.8970e-03 rel=3.793e-05 |R_steady|/|R0|=3.793e-05 cfl=1.04e+04 dtau=[2.60e+01,4.34e+02] gmres=7
+[nsb] it=52 |R_tau|=3.8576e-03 rel=2.988e-05 |R_steady|/|R0|=2.988e-05 cfl=1.32e+04 dtau=[3.30e+01,5.49e+02] gmres=7
+[nsb] it=53 |R_tau|=3.0255e-03 rel=2.343e-05 |R_steady|/|R0|=2.343e-05 cfl=1.67e+04 dtau=[4.18e+01,6.97e+02] gmres=7
+[nsb] it=54 |R_tau|=2.3591e-03 rel=1.827e-05 |R_steady|/|R0|=1.827e-05 cfl=2.13e+04 dtau=[5.34e+01,8.89e+02] gmres=8
+[nsb] it=55 |R_tau|=1.8271e-03 rel=1.415e-05 |R_steady|/|R0|=1.415e-05 cfl=2.74e+04 dtau=[6.84e+01,1.14e+03] gmres=8
+[nsb] it=56 |R_tau|=1.4046e-03 rel=1.088e-05 |R_steady|/|R0|=1.088e-05 cfl=3.53e+04 dtau=[8.83e+01,1.47e+03] gmres=8
+[nsb] it=57 |R_tau|=1.0714e-03 rel=8.298e-06 |R_steady|/|R0|=8.298e-06 cfl=4.6e+04 dtau=[1.15e+02,1.91e+03] gmres=8
+[nsb] it=58 |R_tau|=8.1051e-04 rel=6.278e-06 |R_steady|/|R0|=6.278e-06 cfl=6.03e+04 dtau=[1.51e+02,2.51e+03] gmres=8
+[nsb] it=59 |R_tau|=6.0798e-04 rel=4.709e-06 |R_steady|/|R0|=4.709e-06 cfl=7.96e+04 dtau=[1.99e+02,3.32e+03] gmres=8
+[nsb] it=60 |R_tau|=4.5206e-04 rel=3.501e-06 |R_steady|/|R0|=3.501e-06 cfl=1.06e+05 dtau=[2.65e+02,4.42e+03] gmres=8
+[nsb] it=61 |R_tau|=3.3309e-04 rel=2.580e-06 |R_steady|/|R0|=2.580e-06 cfl=1.43e+05 dtau=[3.57e+02,5.95e+03] gmres=7
+[nsb] it=62 |R_tau|=2.4314e-04 rel=1.883e-06 |R_steady|/|R0|=1.883e-06 cfl=1.94e+05 dtau=[4.85e+02,8.08e+03] gmres=7
+[nsb] it=63 |R_tau|=1.7577e-04 rel=1.361e-06 |R_steady|/|R0|=1.361e-06 cfl=2.66e+05 dtau=[6.64e+02,1.11e+04] gmres=7
+[nsb] it=64 |R_tau|=1.2582e-04 rel=9.745e-07 |R_steady|/|R0|=9.745e-07 cfl=3.67e+05 dtau=[9.18e+02,1.53e+04] gmres=7
+[nsb] done converged=True reason='' it=64 m_in=2.0000e+02 m_out=2.0000e+02 rejected=0 elapsed=65.0s
+--> flat_r1_U2_fixed_bt: {'converged': True, 'reason': '', 'n_iter': 64, 'n_rejected': 0, 'rel_final': 9.745421172789628e-07, 'rel_steady_final': 9.745421172789628e-07, 'rel_min': 9.745421172789628e-07, 'first_step_ratio': 6.236302201589482, 'mass_ratio': 1.0000000000002456, 'p_inlet_mean': 5655.12422025083, 'speed_max': 2.456937067288049, 'elapsed': 65.03538429499895}
+===== flat_r1_U2_fixed_stokes =====
+[nsb] stokes init: |R_stokes(0)|=5.7735e+01 speed_max=4.88 m/s
+[nsb] it=0 |R|=2.0014e+02 cfl=0.5
+[nsb] it=1 |R_tau|=1.4361e+02 rel=7.175e-01 |R_steady|/|R0|=7.175e-01 cfl=0.5 dtau=[6.27e-04,2.08e-02] gmres=4
+[nsb] it=2 |R_tau|=9.9167e+01 rel=4.955e-01 |R_steady|/|R0|=4.955e-01 cfl=0.697 dtau=[9.63e-04,2.90e-02] gmres=5
+[nsb] it=3 |R_tau|=7.1498e+01 rel=3.572e-01 |R_steady|/|R0|=3.572e-01 cfl=1.01 dtau=[1.57e-03,4.20e-02] gmres=5
+[nsb] it=4 |R_tau|=5.0064e+01 rel=2.501e-01 |R_steady|/|R0|=2.501e-01 cfl=1.4 dtau=[2.52e-03,5.83e-02] gmres=5
+[nsb] it=5 |R_tau|=3.7104e+01 rel=1.854e-01 |R_steady|/|R0|=1.854e-01 cfl=2 dtau=[3.70e-03,8.33e-02] gmres=5
+[nsb] it=6 |R_tau|=2.7031e+01 rel=1.351e-01 |R_steady|/|R0|=1.351e-01 cfl=2.7 dtau=[5.22e-03,1.12e-01] gmres=7
+[nsb] it=7 |R_tau|=2.0965e+01 rel=1.048e-01 |R_steady|/|R0|=1.048e-01 cfl=3.7 dtau=[7.78e-03,1.54e-01] gmres=6
+[nsb] it=8 |R_tau|=1.5564e+01 rel=7.776e-02 |R_steady|/|R0|=7.776e-02 cfl=4.77 dtau=[1.01e-02,1.99e-01] gmres=8
+[nsb] it=9 |R_tau|=1.1528e+01 rel=5.760e-02 |R_steady|/|R0|=5.760e-02 cfl=6.43 dtau=[1.41e-02,2.68e-01] gmres=6
+[nsb] it=10 |R_tau|=8.7943e+00 rel=4.394e-02 |R_steady|/|R0|=4.394e-02 cfl=8.68 dtau=[1.95e-02,3.62e-01] gmres=8
+[nsb] it=11 |R_tau|=7.1136e+00 rel=3.554e-02 |R_steady|/|R0|=3.554e-02 cfl=11.4 dtau=[2.61e-02,4.74e-01] gmres=6
+[nsb] it=12 |R_tau|=5.8839e+00 rel=2.940e-02 |R_steady|/|R0|=2.940e-02 cfl=14.1 dtau=[3.27e-02,5.86e-01] gmres=6
+[nsb] it=13 |R_tau|=4.8705e+00 rel=2.434e-02 |R_steady|/|R0|=2.434e-02 cfl=17 dtau=[4.00e-02,7.09e-01] gmres=6
+[nsb] it=14 |R_tau|=4.0189e+00 rel=2.008e-02 |R_steady|/|R0|=2.008e-02 cfl=20.5 dtau=[4.87e-02,8.56e-01] gmres=6
+[nsb] it=15 |R_tau|=3.2874e+00 rel=1.643e-02 |R_steady|/|R0|=1.643e-02 cfl=24.9 dtau=[5.95e-02,1.04e+00] gmres=6
+[nsb] it=16 |R_tau|=2.6710e+00 rel=1.335e-02 |R_steady|/|R0|=1.335e-02 cfl=30.4 dtau=[7.33e-02,1.27e+00] gmres=6
+[nsb] it=17 |R_tau|=2.1315e+00 rel=1.065e-02 |R_steady|/|R0|=1.065e-02 cfl=37.5 dtau=[9.07e-02,1.56e+00] gmres=6
+[nsb] it=18 |R_tau|=1.6791e+00 rel=8.389e-03 |R_steady|/|R0|=8.389e-03 cfl=46.9 dtau=[1.14e-01,1.96e+00] gmres=6
+[nsb] it=19 |R_tau|=1.2990e+00 rel=6.490e-03 |R_steady|/|R0|=6.490e-03 cfl=59.6 dtau=[1.46e-01,2.48e+00] gmres=6
+[nsb] it=20 |R_tau|=9.8474e-01 rel=4.920e-03 |R_steady|/|R0|=4.920e-03 cfl=77 dtau=[1.89e-01,3.21e+00] gmres=6
+[nsb] it=21 |R_tau|=7.3084e-01 rel=3.652e-03 |R_steady|/|R0|=3.652e-03 cfl=102 dtau=[2.51e-01,4.23e+00] gmres=10
+[nsb] it=22 |R_tau|=5.2931e-01 rel=2.645e-03 |R_steady|/|R0|=2.645e-03 cfl=137 dtau=[3.39e-01,5.71e+00] gmres=7
+[nsb] it=23 |R_tau|=3.7619e-01 rel=1.880e-03 |R_steady|/|R0|=1.880e-03 cfl=189 dtau=[4.69e-01,7.88e+00] gmres=9
+[nsb] it=24 |R_tau|=2.6249e-01 rel=1.312e-03 |R_steady|/|R0|=1.312e-03 cfl=266 dtau=[6.61e-01,1.11e+01] gmres=9
+[nsb] it=25 |R_tau|=1.8086e-01 rel=9.036e-04 |R_steady|/|R0|=9.036e-04 cfl=381 dtau=[9.49e-01,1.59e+01] gmres=7
+[nsb] it=26 |R_tau|=1.2371e-01 rel=6.181e-04 |R_steady|/|R0|=6.181e-04 cfl=553 dtau=[1.38e+00,2.31e+01] gmres=8
+[nsb] it=27 |R_tau|=8.4487e-02 rel=4.221e-04 |R_steady|/|R0|=4.221e-04 cfl=809 dtau=[2.02e+00,3.37e+01] gmres=8
+[nsb] it=28 |R_tau|=5.7985e-02 rel=2.897e-04 |R_steady|/|R0|=2.897e-04 cfl=1.18e+03 dtau=[2.96e+00,4.94e+01] gmres=8
+[nsb] it=29 |R_tau|=4.0222e-02 rel=2.010e-04 |R_steady|/|R0|=2.010e-04 cfl=1.73e+03 dtau=[4.31e+00,7.19e+01] gmres=8
+[nsb] it=30 |R_tau|=2.8321e-02 rel=1.415e-04 |R_steady|/|R0|=1.415e-04 cfl=2.49e+03 dtau=[6.22e+00,1.04e+02] gmres=7
+[nsb] it=31 |R_tau|=2.0269e-02 rel=1.013e-04 |R_steady|/|R0|=1.013e-04 cfl=3.53e+03 dtau=[8.83e+00,1.47e+02] gmres=7
+[nsb] it=32 |R_tau|=1.4721e-02 rel=7.355e-05 |R_steady|/|R0|=7.355e-05 cfl=4.94e+03 dtau=[1.23e+01,2.06e+02] gmres=6
+[nsb] it=33 |R_tau|=1.0811e-02 rel=5.402e-05 |R_steady|/|R0|=5.402e-05 cfl=6.8e+03 dtau=[1.70e+01,2.83e+02] gmres=5
+[nsb] it=34 |R_tau|=7.9980e-03 rel=3.996e-05 |R_steady|/|R0|=3.996e-05 cfl=9.26e+03 dtau=[2.31e+01,3.86e+02] gmres=10
+[nsb] it=35 |R_tau|=5.9383e-03 rel=2.967e-05 |R_steady|/|R0|=2.967e-05 cfl=1.25e+04 dtau=[3.13e+01,5.21e+02] gmres=10
+[nsb] it=36 |R_tau|=4.4125e-03 rel=2.205e-05 |R_steady|/|R0|=2.205e-05 cfl=1.69e+04 dtau=[4.21e+01,7.02e+02] gmres=7
+[nsb] it=37 |R_tau|=3.2746e-03 rel=1.636e-05 |R_steady|/|R0|=1.636e-05 cfl=2.27e+04 dtau=[5.67e+01,9.45e+02] gmres=7
+[nsb] it=38 |R_tau|=2.4243e-03 rel=1.211e-05 |R_steady|/|R0|=1.211e-05 cfl=3.06e+04 dtau=[7.64e+01,1.27e+03] gmres=7
+[nsb] it=39 |R_tau|=1.7896e-03 rel=8.942e-06 |R_steady|/|R0|=8.942e-06 cfl=4.13e+04 dtau=[1.03e+02,1.72e+03] gmres=7
+[nsb] it=40 |R_tau|=1.3175e-03 rel=6.583e-06 |R_steady|/|R0|=6.583e-06 cfl=5.59e+04 dtau=[1.40e+02,2.33e+03] gmres=7
+[nsb] it=41 |R_tau|=9.6775e-04 rel=4.835e-06 |R_steady|/|R0|=4.835e-06 cfl=7.6e+04 dtau=[1.90e+02,3.16e+03] gmres=7
+[nsb] it=42 |R_tau|=7.1001e-04 rel=3.548e-06 |R_steady|/|R0|=3.548e-06 cfl=1.03e+05 dtau=[2.59e+02,4.31e+03] gmres=7
+[nsb] it=43 |R_tau|=5.2090e-04 rel=2.603e-06 |R_steady|/|R0|=2.603e-06 cfl=1.41e+05 dtau=[3.52e+02,5.87e+03] gmres=7
+[nsb] it=44 |R_tau|=3.8264e-04 rel=1.912e-06 |R_steady|/|R0|=1.912e-06 cfl=1.92e+05 dtau=[4.80e+02,8.00e+03] gmres=7
+[nsb] it=45 |R_tau|=2.8175e-04 rel=1.408e-06 |R_steady|/|R0|=1.408e-06 cfl=2.62e+05 dtau=[6.54e+02,1.09e+04] gmres=7
+[nsb] it=46 |R_tau|=2.0817e-04 rel=1.040e-06 |R_steady|/|R0|=1.040e-06 cfl=3.55e+05 dtau=[8.88e+02,1.48e+04] gmres=7
+[nsb] it=47 |R_tau|=1.5442e-04 rel=7.715e-07 |R_steady|/|R0|=7.715e-07 cfl=4.81e+05 dtau=[1.20e+03,2.00e+04] gmres=7
+[nsb] done converged=True reason='' it=47 m_in=2.0000e+02 m_out=2.0000e+02 rejected=0 elapsed=44.8s
+--> flat_r1_U2_fixed_stokes: {'converged': True, 'reason': '', 'n_iter': 47, 'n_rejected': 0, 'rel_final': 7.715330981271017e-07, 'rel_steady_final': 7.715330981271017e-07, 'rel_min': 7.715330981271017e-07, 'first_step_ratio': 0.7175432376936594, 'mass_ratio': 0.999999999999002, 'p_inlet_mean': 5655.128877660932, 'speed_max': 2.4569372239537963, 'elapsed': 44.79547413899854}
+===== flat_r1_U2_fixed_stokes_bt =====
+[nsb] stokes init: |R_stokes(0)|=5.7735e+01 speed_max=4.88 m/s
+[nsb] it=0 |R|=2.0014e+02 cfl=0.5
+[nsb] it=1 |R_tau|=1.4361e+02 rel=7.175e-01 |R_steady|/|R0|=7.175e-01 cfl=0.5 dtau=[6.27e-04,2.08e-02] gmres=4
+[nsb] it=2 |R_tau|=9.9167e+01 rel=4.955e-01 |R_steady|/|R0|=4.955e-01 cfl=0.697 dtau=[9.63e-04,2.90e-02] gmres=5
+[nsb] it=3 |R_tau|=7.1498e+01 rel=3.572e-01 |R_steady|/|R0|=3.572e-01 cfl=1.01 dtau=[1.57e-03,4.20e-02] gmres=5
+[nsb] it=4 |R_tau|=5.0064e+01 rel=2.501e-01 |R_steady|/|R0|=2.501e-01 cfl=1.4 dtau=[2.52e-03,5.83e-02] gmres=5
+[nsb] it=5 |R_tau|=3.7104e+01 rel=1.854e-01 |R_steady|/|R0|=1.854e-01 cfl=2 dtau=[3.70e-03,8.33e-02] gmres=5
+[nsb] it=6 |R_tau|=2.7031e+01 rel=1.351e-01 |R_steady|/|R0|=1.351e-01 cfl=2.7 dtau=[5.22e-03,1.12e-01] gmres=7
+[nsb] it=7 |R_tau|=2.0965e+01 rel=1.048e-01 |R_steady|/|R0|=1.048e-01 cfl=3.7 dtau=[7.78e-03,1.54e-01] gmres=6
+[nsb] it=8 |R_tau|=1.5564e+01 rel=7.776e-02 |R_steady|/|R0|=7.776e-02 cfl=4.77 dtau=[1.01e-02,1.99e-01] gmres=8
+[nsb] it=9 |R_tau|=1.1528e+01 rel=5.760e-02 |R_steady|/|R0|=5.760e-02 cfl=6.43 dtau=[1.41e-02,2.68e-01] gmres=6
+[nsb] it=10 |R_tau|=8.7943e+00 rel=4.394e-02 |R_steady|/|R0|=4.394e-02 cfl=8.68 dtau=[1.95e-02,3.62e-01] gmres=8
+[nsb] it=11 |R_tau|=7.1136e+00 rel=3.554e-02 |R_steady|/|R0|=3.554e-02 cfl=11.4 dtau=[2.61e-02,4.74e-01] gmres=6
+[nsb] it=12 |R_tau|=5.8839e+00 rel=2.940e-02 |R_steady|/|R0|=2.940e-02 cfl=14.1 dtau=[3.27e-02,5.86e-01] gmres=6
+[nsb] it=13 |R_tau|=4.8705e+00 rel=2.434e-02 |R_steady|/|R0|=2.434e-02 cfl=17 dtau=[4.00e-02,7.09e-01] gmres=6
+[nsb] it=14 |R_tau|=4.0189e+00 rel=2.008e-02 |R_steady|/|R0|=2.008e-02 cfl=20.5 dtau=[4.87e-02,8.56e-01] gmres=6
+[nsb] it=15 |R_tau|=3.2874e+00 rel=1.643e-02 |R_steady|/|R0|=1.643e-02 cfl=24.9 dtau=[5.95e-02,1.04e+00] gmres=6
+[nsb] it=16 |R_tau|=2.6710e+00 rel=1.335e-02 |R_steady|/|R0|=1.335e-02 cfl=30.4 dtau=[7.33e-02,1.27e+00] gmres=6
+[nsb] it=17 |R_tau|=2.1315e+00 rel=1.065e-02 |R_steady|/|R0|=1.065e-02 cfl=37.5 dtau=[9.07e-02,1.56e+00] gmres=6
+[nsb] it=18 |R_tau|=1.6791e+00 rel=8.389e-03 |R_steady|/|R0|=8.389e-03 cfl=46.9 dtau=[1.14e-01,1.96e+00] gmres=6
+[nsb] it=19 |R_tau|=1.2990e+00 rel=6.490e-03 |R_steady|/|R0|=6.490e-03 cfl=59.6 dtau=[1.46e-01,2.48e+00] gmres=6
+[nsb] it=20 |R_tau|=9.8474e-01 rel=4.920e-03 |R_steady|/|R0|=4.920e-03 cfl=77 dtau=[1.89e-01,3.21e+00] gmres=6
+[nsb] it=21 |R_tau|=7.3084e-01 rel=3.652e-03 |R_steady|/|R0|=3.652e-03 cfl=102 dtau=[2.51e-01,4.23e+00] gmres=10
+[nsb] it=22 |R_tau|=5.2931e-01 rel=2.645e-03 |R_steady|/|R0|=2.645e-03 cfl=137 dtau=[3.39e-01,5.71e+00] gmres=7
+[nsb] it=23 |R_tau|=3.7619e-01 rel=1.880e-03 |R_steady|/|R0|=1.880e-03 cfl=189 dtau=[4.69e-01,7.88e+00] gmres=9
+[nsb] it=24 |R_tau|=2.6249e-01 rel=1.312e-03 |R_steady|/|R0|=1.312e-03 cfl=266 dtau=[6.61e-01,1.11e+01] gmres=9
+[nsb] it=25 |R_tau|=1.8086e-01 rel=9.036e-04 |R_steady|/|R0|=9.036e-04 cfl=381 dtau=[9.49e-01,1.59e+01] gmres=7
+[nsb] it=26 |R_tau|=1.2371e-01 rel=6.181e-04 |R_steady|/|R0|=6.181e-04 cfl=553 dtau=[1.38e+00,2.31e+01] gmres=8
+[nsb] it=27 |R_tau|=8.4487e-02 rel=4.221e-04 |R_steady|/|R0|=4.221e-04 cfl=809 dtau=[2.02e+00,3.37e+01] gmres=8
+[nsb] it=28 |R_tau|=5.7985e-02 rel=2.897e-04 |R_steady|/|R0|=2.897e-04 cfl=1.18e+03 dtau=[2.96e+00,4.94e+01] gmres=8
+[nsb] it=29 |R_tau|=4.0222e-02 rel=2.010e-04 |R_steady|/|R0|=2.010e-04 cfl=1.73e+03 dtau=[4.31e+00,7.19e+01] gmres=8
+[nsb] it=30 |R_tau|=2.8321e-02 rel=1.415e-04 |R_steady|/|R0|=1.415e-04 cfl=2.49e+03 dtau=[6.22e+00,1.04e+02] gmres=7
+[nsb] it=31 |R_tau|=2.0269e-02 rel=1.013e-04 |R_steady|/|R0|=1.013e-04 cfl=3.53e+03 dtau=[8.83e+00,1.47e+02] gmres=7
+[nsb] it=32 |R_tau|=1.4721e-02 rel=7.355e-05 |R_steady|/|R0|=7.355e-05 cfl=4.94e+03 dtau=[1.23e+01,2.06e+02] gmres=6
+[nsb] it=33 |R_tau|=1.0811e-02 rel=5.402e-05 |R_steady|/|R0|=5.402e-05 cfl=6.8e+03 dtau=[1.70e+01,2.83e+02] gmres=5
+[nsb] it=34 |R_tau|=7.9980e-03 rel=3.996e-05 |R_steady|/|R0|=3.996e-05 cfl=9.26e+03 dtau=[2.31e+01,3.86e+02] gmres=10
+[nsb] it=35 |R_tau|=5.9383e-03 rel=2.967e-05 |R_steady|/|R0|=2.967e-05 cfl=1.25e+04 dtau=[3.13e+01,5.21e+02] gmres=10
+[nsb] it=36 |R_tau|=4.4125e-03 rel=2.205e-05 |R_steady|/|R0|=2.205e-05 cfl=1.69e+04 dtau=[4.21e+01,7.02e+02] gmres=7
+[nsb] it=37 |R_tau|=3.2746e-03 rel=1.636e-05 |R_steady|/|R0|=1.636e-05 cfl=2.27e+04 dtau=[5.67e+01,9.45e+02] gmres=7
+[nsb] it=38 |R_tau|=2.4243e-03 rel=1.211e-05 |R_steady|/|R0|=1.211e-05 cfl=3.06e+04 dtau=[7.64e+01,1.27e+03] gmres=7
+[nsb] it=39 |R_tau|=1.7896e-03 rel=8.942e-06 |R_steady|/|R0|=8.942e-06 cfl=4.13e+04 dtau=[1.03e+02,1.72e+03] gmres=7
+[nsb] it=40 |R_tau|=1.3175e-03 rel=6.583e-06 |R_steady|/|R0|=6.583e-06 cfl=5.59e+04 dtau=[1.40e+02,2.33e+03] gmres=7
+[nsb] it=41 |R_tau|=9.6775e-04 rel=4.835e-06 |R_steady|/|R0|=4.835e-06 cfl=7.6e+04 dtau=[1.90e+02,3.16e+03] gmres=7
+[nsb] it=42 |R_tau|=7.1001e-04 rel=3.548e-06 |R_steady|/|R0|=3.548e-06 cfl=1.03e+05 dtau=[2.59e+02,4.31e+03] gmres=7
+[nsb] it=43 |R_tau|=5.2090e-04 rel=2.603e-06 |R_steady|/|R0|=2.603e-06 cfl=1.41e+05 dtau=[3.52e+02,5.87e+03] gmres=7
+[nsb] it=44 |R_tau|=3.8264e-04 rel=1.912e-06 |R_steady|/|R0|=1.912e-06 cfl=1.92e+05 dtau=[4.80e+02,8.00e+03] gmres=7
+[nsb] it=45 |R_tau|=2.8175e-04 rel=1.408e-06 |R_steady|/|R0|=1.408e-06 cfl=2.62e+05 dtau=[6.54e+02,1.09e+04] gmres=7
+[nsb] it=46 |R_tau|=2.0817e-04 rel=1.040e-06 |R_steady|/|R0|=1.040e-06 cfl=3.55e+05 dtau=[8.88e+02,1.48e+04] gmres=7
+[nsb] it=47 |R_tau|=1.5442e-04 rel=7.715e-07 |R_steady|/|R0|=7.715e-07 cfl=4.81e+05 dtau=[1.20e+03,2.00e+04] gmres=7
+[nsb] done converged=True reason='' it=47 m_in=2.0000e+02 m_out=2.0000e+02 rejected=0 elapsed=44.8s
+--> flat_r1_U2_fixed_stokes_bt: {'converged': True, 'reason': '', 'n_iter': 47, 'n_rejected': 0, 'rel_final': 7.715330981271017e-07, 'rel_steady_final': 7.715330981271017e-07, 'rel_min': 7.715330981271017e-07, 'first_step_ratio': 0.7175432376936594, 'mass_ratio': 0.999999999999002, 'p_inlet_mean': 5655.128877660932, 'speed_max': 2.4569372239537963, 'elapsed': 44.83565268500024}
+
+==== summary ====
+flat_r1_U2_fixed             conv=True  reason=           it= 64 rej= 0 step1=6.24e+00 rel=9.75e-07 steady=9.75e-07 m_out/m_in=1.0000
+flat_r1_U2_fixed_bt          conv=True  reason=           it= 64 rej= 0 step1=6.24e+00 rel=9.75e-07 steady=9.75e-07 m_out/m_in=1.0000
+flat_r1_U2_fixed_stokes      conv=True  reason=           it= 47 rej= 0 step1=7.18e-01 rel=7.72e-07 steady=7.72e-07 m_out/m_in=1.0000
+flat_r1_U2_fixed_stokes_bt   conv=True  reason=           it= 47 rej= 0 step1=7.18e-01 rel=7.72e-07 steady=7.72e-07 m_out/m_in=1.0000
+saved: experiments/nsb/results/main-robust-flat-r1.yaml

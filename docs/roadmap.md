@@ -152,6 +152,27 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [ ] Phase 2: 粘性発熱 `Φ = μγ̇²` + 温度依存粘度
 - [ ] Phase 3: 混練エレメント（3D、messi + OpenFOAM）
 
+## Phase 8: 2D Brinkman 補正 NS (FVM, Newton–Krylov) 収束性研究 → 冷却流路設計（進行中）
+
+薄流路の深さ平均 2D 流れ（Brinkman 貫通項）を同位置 FVM + Newton–Krylov で定常解析し、
+メッシュ細分化・流速増加で収束が破綻する現象を再現・分析する（学習目的の実験）。
+詳細は [設計文書](design/brinkman-flow-fvm.md) と [status-30](status/status-30.md)。
+
+- [x] `BrinkmanFlowFVMProcess`（Newton + GMRES/LU(J1)、JFNK / defect correction、擬似時間 SER、陰的緩和）
+- [x] `UTurnThicknessProcess`（flat / uturn 厚さ場）
+- [x] 1 次風上ヤコビアンの FD 検証テスト、質量保存・Hele-Shaw 圧損の物理テスト
+- [x] 再現スイープ（72×48 の 1×/2×/4× × U=0.1/1/2 × flat/uturn）— status-30
+- [x] U=2 失敗機構切り分け（CFL 初期値 / ラインサーチ / 1 次風上 / defect correction / 継続法）
+- [x] 局所 Δτ vs 大域 Δτ、速度下限の有無、RC 係数への擬似時間項混入の切り分け（`pseudo_time_mode`, `rhie_chow_pseudo_time`）— status-30
+- [x] 手元構成ミラー `nsb/`（core/solver/utils/geo + main.py）で「速度下限なし・擬似時間項を残差に含む」構成の停滞を再現 — status-30
+- [x] 発散対策の本質的検討（速度下限 / Stokes 初期場 / α_u=1、backtracking は効かず）— status-30
+- [x] 座標マスク境界条件 + 質量流入境界（4 辺任意配置、流量固定で inlet 探索）— status-31
+- [x] 領域内マニホールド（注入 / 流量指定吸出 / 圧力指定ヘッダ、連続式ソース）— status-31
+- [x] 領域内マニホールドの位置・径を連続設計変数に（滑らかな窓 + 随伴 VJP `nsb/adjoint.py`）— status-31
+- [ ] 境界 inlet の位置・幅の連続化、冷却設計向け目的関数 — status-31 TODO
+- [ ] 熱ソルバー連携（流量場 → 熱伝達コンダクタンス → 上下プレート温度）
+- [ ] 非定常（時間精度）モードで定常解の存在を確認
+
 ## 将来構想
 
 - LES / DES

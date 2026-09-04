@@ -1,0 +1,356 @@
+branch=claude/2dfvm-brinkman-convergence-tn39cz commit=a97744e argv=experiments/brinkman_uturn/sweep.py --models uturn flat --refine 1 --velocities 0.1 1 2 --cfl-init 0.5 --max-iter 150 --save-fields --out experiments/brinkman_uturn/results_cfl0.5
+===== case uturn_r1_U0.1_second_order_upwind_jfnk  (nx=72, ny=48, N=10368 unknowns) =====
+[newton] it=0 |R|=2.9012e+00 (u=2.89e-01 v=0.00e+00 p=2.89e+00) cfl=0.5
+[newton] it=1 |R|=1.3796e+01 rel=4.755e+00 (u=2.90e+00 v=1.14e+01 p=7.17e+00) cfl=0.105 gmres=1
+[newton] it=2 |R|=8.9213e+00 rel=3.075e+00 (u=1.22e+00 v=8.81e+00 p=6.63e-01) cfl=0.163 gmres=3
+[newton] it=3 |R|=3.6186e+00 rel=1.247e+00 (u=3.50e-01 v=3.60e+00 p=1.23e-01) cfl=0.325 gmres=3
+[newton] it=4 |R|=1.7173e+00 rel=5.919e-01 (u=1.75e-01 v=1.71e+00 p=6.95e-02) cfl=0.65 gmres=3
+[newton] it=5 |R|=7.4601e-01 rel=2.571e-01 (u=9.32e-02 v=7.39e-01 p=4.61e-02) cfl=1.3 gmres=3
+[newton] it=6 |R|=3.0450e-01 rel=1.050e-01 (u=5.06e-02 v=3.00e-01 p=1.03e-02) cfl=2.6 gmres=3
+[newton] it=7 |R|=1.1892e-01 rel=4.099e-02 (u=2.62e-02 v=1.16e-01 p=2.93e-03) cfl=5.2 gmres=3
+[newton] it=8 |R|=4.5712e-02 rel=1.576e-02 (u=1.34e-02 v=4.37e-02 p=5.59e-04) cfl=10.4 gmres=4
+[newton] it=9 |R|=1.7710e-02 rel=6.104e-03 (u=6.60e-03 v=1.64e-02 p=9.62e-05) cfl=20.8 gmres=6
+[newton] it=10 |R|=7.0540e-03 rel=2.431e-03 (u=3.19e-03 v=6.29e-03 p=1.45e-05) cfl=41.6 gmres=6
+[newton] it=11 |R|=2.9131e-03 rel=1.004e-03 (u=1.52e-03 v=2.49e-03 p=1.49e-05) cfl=83.3 gmres=6
+[newton] it=12 |R|=1.2448e-03 rel=4.291e-04 (u=7.16e-04 v=1.02e-03 p=5.25e-07) cfl=167 gmres=6
+[newton] it=13 |R|=5.4651e-04 rel=1.884e-04 (u=3.34e-04 v=4.32e-04 p=1.04e-07) cfl=333 gmres=6
+[newton] it=14 |R|=2.4465e-04 rel=8.433e-05 (u=1.55e-04 v=1.89e-04 p=2.43e-08) cfl=666 gmres=6
+[newton] it=15 |R|=1.1099e-04 rel=3.826e-05 (u=7.16e-05 v=8.48e-05 p=7.30e-09) cfl=1.33e+03 gmres=6
+[newton] it=16 |R|=5.0825e-05 rel=1.752e-05 (u=3.29e-05 v=3.87e-05 p=7.62e-09) cfl=2.66e+03 gmres=5
+[newton] it=17 |R|=2.3441e-05 rel=8.080e-06 (u=1.51e-05 v=1.79e-05 p=3.19e-09) cfl=5.33e+03 gmres=5
+[newton] it=18 |R|=1.0874e-05 rel=3.748e-06 (u=6.88e-06 v=8.42e-06 p=1.40e-09) cfl=1.07e+04 gmres=5
+[newton] it=19 |R|=5.0700e-06 rel=1.748e-06 (u=3.13e-06 v=3.99e-06 p=2.40e-10) cfl=2.13e+04 gmres=6
+[newton] it=20 |R|=2.3742e-06 rel=8.184e-07 (u=1.43e-06 v=1.90e-06 p=8.65e-11) cfl=4.26e+04 gmres=6
+[newton] done converged=True reason='' it=20 m_in=1.0000e+01 m_out=1.0000e+01 elapsed=5.6s
+--> uturn_r1_U0.1_second_order_upwind_jfnk: converged=True reason='' it=20 rel_final=8.18e-07 rel_min=8.18e-07 t=6s
+===== case uturn_r1_U1_second_order_upwind_jfnk  (nx=72, ny=48, N=10368 unknowns) =====
+[newton] it=0 |R|=4.0829e+01 (u=2.89e+01 v=0.00e+00 p=2.89e+01) cfl=0.5
+[newton] it=1 |R|=6.2428e+02 rel=1.529e+01 (u=2.59e+02 v=5.44e+02 p=1.66e+02) cfl=0.05 gmres=4
+[newton] it=2 |R|=3.4718e+03 rel=8.503e+01 (u=7.19e+02 v=3.40e+03 p=7.63e+01) cfl=0.00899 gmres=15 (gmres not converged)
+[newton] it=3 |R|=2.0574e+03 rel=5.039e+01 (u=3.36e+02 v=2.03e+03 p=1.19e+01) cfl=0.0152 gmres=3
+[newton] it=4 |R|=1.7041e+03 rel=4.174e+01 (u=2.24e+02 v=1.69e+03 p=1.63e+00) cfl=0.0183 gmres=3
+[newton] it=5 |R|=1.4298e+03 rel=3.502e+01 (u=1.84e+02 v=1.42e+03 p=4.69e-01) cfl=0.0218 gmres=3
+[newton] it=6 |R|=1.2201e+03 rel=2.988e+01 (u=1.60e+02 v=1.21e+03 p=3.62e-01) cfl=0.0256 gmres=3
+[newton] it=7 |R|=1.0528e+03 rel=2.578e+01 (u=1.42e+02 v=1.04e+03 p=3.21e-01) cfl=0.0296 gmres=3
+[newton] it=8 |R|=9.1427e+02 rel=2.239e+01 (u=1.28e+02 v=9.05e+02 p=4.52e-01) cfl=0.0341 gmres=3
+[newton] it=9 |R|=7.9544e+02 rel=1.948e+01 (u=1.15e+02 v=7.87e+02 p=3.05e-01) cfl=0.0392 gmres=3
+[newton] it=10 |R|=6.9143e+02 rel=1.693e+01 (u=1.05e+02 v=6.83e+02 p=3.62e-01) cfl=0.0451 gmres=3
+[newton] it=11 |R|=5.9870e+02 rel=1.466e+01 (u=9.61e+01 v=5.91e+02 p=2.93e-01) cfl=0.0521 gmres=3
+[newton] it=12 |R|=5.1522e+02 rel=1.262e+01 (u=8.85e+01 v=5.08e+02 p=3.16e-01) cfl=0.0606 gmres=3
+[newton] it=13 |R|=4.4024e+02 rel=1.078e+01 (u=8.21e+01 v=4.33e+02 p=4.88e-01) cfl=0.0709 gmres=3
+[newton] it=14 |R|=3.7296e+02 rel=9.135e+00 (u=7.60e+01 v=3.65e+02 p=5.53e-01) cfl=0.0837 gmres=3
+[newton] it=15 |R|=3.1277e+02 rel=7.661e+00 (u=7.05e+01 v=3.05e+02 p=3.34e-01) cfl=0.0998 gmres=3
+[newton] it=16 |R|=2.5919e+02 rel=6.348e+00 (u=6.51e+01 v=2.51e+02 p=3.61e-01) cfl=0.12 gmres=3
+[newton] it=17 |R|=2.1210e+02 rel=5.195e+00 (u=5.96e+01 v=2.04e+02 p=4.45e-01) cfl=0.147 gmres=3
+[newton] it=18 |R|=1.7121e+02 rel=4.193e+00 (u=5.38e+01 v=1.63e+02 p=9.87e-01) cfl=0.182 gmres=3
+[newton] it=19 |R|=1.3664e+02 rel=3.347e+00 (u=4.75e+01 v=1.28e+02 p=7.13e-01) cfl=0.228 gmres=3
+[newton] it=20 |R|=1.0754e+02 rel=2.634e+00 (u=4.07e+01 v=9.95e+01 p=4.52e-01) cfl=0.29 gmres=3
+[newton] it=21 |R|=8.2793e+01 rel=2.028e+00 (u=3.35e+01 v=7.57e+01 p=5.37e-01) cfl=0.377 gmres=3
+[newton] it=22 |R|=6.2320e+01 rel=1.526e+00 (u=2.60e+01 v=5.66e+01 p=3.03e-01) cfl=0.501 gmres=4
+[newton] it=23 |R|=4.5847e+01 rel=1.123e+00 (u=1.89e+01 v=4.18e+01 p=4.16e-01) cfl=0.681 gmres=4
+[newton] it=24 |R|=3.3069e+01 rel=8.099e-01 (u=1.29e+01 v=3.04e+01 p=3.78e-01) cfl=0.944 gmres=4
+[newton] it=25 |R|=2.3165e+01 rel=5.674e-01 (u=8.76e+00 v=2.14e+01 p=2.05e-01) cfl=1.35 gmres=4
+[newton] it=26 |R|=1.6027e+01 rel=3.925e-01 (u=6.29e+00 v=1.47e+01 p=1.91e-01) cfl=1.95 gmres=5
+[newton] it=27 |R|=1.1148e+01 rel=2.731e-01 (u=4.89e+00 v=1.00e+01 p=1.74e-01) cfl=2.8 gmres=6
+[newton] it=28 |R|=7.9173e+00 rel=1.939e-01 (u=3.85e+00 v=6.92e+00 p=2.15e-01) cfl=3.94 gmres=7
+[newton] it=29 |R|=5.7194e+00 rel=1.401e-01 (u=3.05e+00 v=4.83e+00 p=1.19e-01) cfl=5.46 gmres=7
+[newton] it=30 |R|=4.2215e+00 rel=1.034e-01 (u=2.40e+00 v=3.44e+00 p=4.79e-01) cfl=7.39 gmres=6
+[newton] it=31 |R|=3.1568e+00 rel=7.732e-02 (u=1.92e+00 v=2.51e+00 p=5.84e-02) cfl=9.89 gmres=7
+[newton] it=32 |R|=2.3892e+00 rel=5.852e-02 (u=1.48e+00 v=1.87e+00 p=5.27e-02) cfl=13.1 gmres=7
+[newton] it=33 |R|=1.8212e+00 rel=4.460e-02 (u=1.14e+00 v=1.42e+00 p=8.08e-02) cfl=17.1 gmres=7
+[newton] it=34 |R|=1.3904e+00 rel=3.405e-02 (u=8.89e-01 v=1.07e+00 p=1.57e-02) cfl=22.5 gmres=7
+[newton] it=35 |R|=1.0620e+00 rel=2.601e-02 (u=6.91e-01 v=8.06e-01 p=3.51e-02) cfl=29.4 gmres=6
+[newton] it=36 |R|=8.1121e-01 rel=1.987e-02 (u=5.41e-01 v=6.05e-01 p=4.45e-03) cfl=38.5 gmres=6
+[newton] it=37 |R|=6.1781e-01 rel=1.513e-02 (u=4.25e-01 v=4.48e-01 p=3.04e-03) cfl=50.5 gmres=6
+[newton] it=38 |R|=4.7091e-01 rel=1.153e-02 (u=3.37e-01 v=3.29e-01 p=1.46e-03) cfl=66.3 gmres=7
+[newton] it=39 |R|=3.6071e-01 rel=8.835e-03 (u=2.69e-01 v=2.39e-01 p=2.86e-02) cfl=86.5 gmres=7
+[newton] it=40 |R|=2.7493e-01 rel=6.734e-03 (u=2.15e-01 v=1.72e-01 p=1.05e-03) cfl=114 gmres=7
+[newton] it=41 |R|=2.1135e-01 rel=5.176e-03 (u=1.73e-01 v=1.21e-01 p=3.04e-04) cfl=148 gmres=7
+[newton] it=42 |R|=1.6404e-01 rel=4.018e-03 (u=1.40e-01 v=8.54e-02 p=1.72e-04) cfl=190 gmres=7
+[newton] it=43 |R|=1.2875e-01 rel=3.153e-03 (u=1.14e-01 v=6.02e-02 p=8.15e-05) cfl=242 gmres=8
+[newton] it=44 |R|=1.0214e-01 rel=2.502e-03 (u=9.28e-02 v=4.27e-02 p=4.15e-05) cfl=306 gmres=8
+[newton] it=45 |R|=8.0241e-02 rel=1.965e-03 (u=7.42e-02 v=3.04e-02 p=2.11e-05) cfl=389 gmres=9
+[newton] it=46 |R|=6.3544e-02 rel=1.556e-03 (u=5.96e-02 v=2.20e-02 p=1.27e-05) cfl=491 gmres=6
+[newton] it=47 |R|=5.0526e-02 rel=1.237e-03 (u=4.78e-02 v=1.62e-02 p=7.15e-06) cfl=618 gmres=6
+[newton] it=48 |R|=4.0292e-02 rel=9.868e-04 (u=3.84e-02 v=1.22e-02 p=4.47e-06) cfl=775 gmres=6
+[newton] it=49 |R|=3.2193e-02 rel=7.885e-04 (u=3.09e-02 v=9.18e-03 p=3.10e-06) cfl=970 gmres=6
+[newton] it=50 |R|=2.5749e-02 rel=6.306e-04 (u=2.48e-02 v=6.97e-03 p=1.60e-06) cfl=1.21e+03 gmres=7
+[newton] it=51 |R|=2.0600e-02 rel=5.046e-04 (u=1.99e-02 v=5.30e-03 p=7.64e-06) cfl=1.52e+03 gmres=7
+[newton] it=52 |R|=1.6482e-02 rel=4.037e-04 (u=1.60e-02 v=4.04e-03 p=7.28e-07) cfl=1.89e+03 gmres=7
+[newton] it=53 |R|=1.3183e-02 rel=3.229e-04 (u=1.28e-02 v=3.08e-03 p=6.67e-07) cfl=2.37e+03 gmres=7
+[newton] it=54 |R|=1.0541e-02 rel=2.582e-04 (u=1.03e-02 v=2.35e-03 p=4.11e-07) cfl=2.96e+03 gmres=7
+[newton] it=55 |R|=8.4259e-03 rel=2.064e-04 (u=8.23e-03 v=1.80e-03 p=1.34e-06) cfl=3.7e+03 gmres=5
+[newton] it=56 |R|=6.7319e-03 rel=1.649e-04 (u=6.59e-03 v=1.38e-03 p=1.01e-06) cfl=4.64e+03 gmres=5
+[newton] it=57 |R|=5.3757e-03 rel=1.317e-04 (u=5.27e-03 v=1.06e-03 p=7.53e-07) cfl=5.81e+03 gmres=5
+[newton] it=58 |R|=4.2897e-03 rel=1.051e-04 (u=4.21e-03 v=8.16e-04 p=5.26e-07) cfl=7.28e+03 gmres=5
+[newton] it=59 |R|=3.4200e-03 rel=8.376e-05 (u=3.36e-03 v=6.26e-04 p=3.41e-07) cfl=9.13e+03 gmres=5
+[newton] it=60 |R|=2.7233e-03 rel=6.670e-05 (u=2.68e-03 v=4.79e-04 p=2.08e-07) cfl=1.15e+04 gmres=5
+[newton] it=61 |R|=2.1651e-03 rel=5.303e-05 (u=2.13e-03 v=3.64e-04 p=1.25e-07) cfl=1.44e+04 gmres=5
+[newton] it=62 |R|=1.7182e-03 rel=4.208e-05 (u=1.70e-03 v=2.76e-04 p=8.09e-08) cfl=1.82e+04 gmres=5
+[newton] it=63 |R|=1.3606e-03 rel=3.332e-05 (u=1.34e-03 v=2.08e-04 p=9.40e-08) cfl=2.29e+04 gmres=6
+[newton] it=64 |R|=1.0748e-03 rel=2.632e-05 (u=1.06e-03 v=1.57e-04 p=7.01e-08) cfl=2.9e+04 gmres=6
+[newton] it=65 |R|=8.4672e-04 rel=2.074e-05 (u=8.38e-04 v=1.19e-04 p=8.13e-08) cfl=3.69e+04 gmres=4
+[newton] it=66 |R|=6.6522e-04 rel=1.629e-05 (u=6.59e-04 v=9.12e-05 p=5.58e-08) cfl=4.69e+04 gmres=4
+[newton] it=67 |R|=5.2117e-04 rel=1.276e-05 (u=5.16e-04 v=7.06e-05 p=3.87e-08) cfl=5.99e+04 gmres=4
+[newton] it=68 |R|=4.0717e-04 rel=9.973e-06 (u=4.03e-04 v=5.54e-05 p=2.82e-08) cfl=7.67e+04 gmres=4
+[newton] it=69 |R|=3.1725e-04 rel=7.770e-06 (u=3.14e-04 v=4.39e-05 p=2.18e-08) cfl=9.84e+04 gmres=4
+[newton] it=70 |R|=2.4655e-04 rel=6.039e-06 (u=2.44e-04 v=3.51e-05 p=1.76e-08) cfl=1.27e+05 gmres=4
+[newton] it=71 |R|=1.9113e-04 rel=4.681e-06 (u=1.89e-04 v=2.82e-05 p=1.44e-08) cfl=1.63e+05 gmres=4
+[newton] it=72 |R|=1.4783e-04 rel=3.621e-06 (u=1.46e-04 v=2.26e-05 p=1.20e-08) cfl=2.11e+05 gmres=4
+[newton] it=73 |R|=1.1408e-04 rel=2.794e-06 (u=1.13e-04 v=1.81e-05 p=6.12e-10) cfl=2.74e+05 gmres=7
+[newton] it=74 |R|=8.7854e-05 rel=2.152e-06 (u=8.67e-05 v=1.45e-05 p=2.81e-09) cfl=3.55e+05 gmres=5
+[newton] it=75 |R|=6.7519e-05 rel=1.654e-06 (u=6.65e-05 v=1.15e-05 p=4.02e-09) cfl=4.62e+05 gmres=5
+[newton] it=76 |R|=5.1782e-05 rel=1.268e-06 (u=5.10e-05 v=9.19e-06 p=1.13e-09) cfl=6.03e+05 gmres=7
+[newton] it=77 |R|=3.9631e-05 rel=9.707e-07 (u=3.90e-05 v=7.29e-06 p=1.36e-09) cfl=7.88e+05 gmres=6
+[newton] done converged=True reason='' it=77 m_in=1.0000e+02 m_out=1.0000e+02 elapsed=15.1s
+--> uturn_r1_U1_second_order_upwind_jfnk: converged=True reason='' it=77 rel_final=9.71e-07 rel_min=9.71e-07 t=15s
+===== case uturn_r1_U2_second_order_upwind_jfnk  (nx=72, ny=48, N=10368 unknowns) =====
+[newton] it=0 |R|=1.2911e+02 (u=1.15e+02 v=0.00e+00 p=5.77e+01) cfl=0.5
+[newton] it=1 |R|=3.4367e+03 rel=2.662e+01 (u=1.42e+03 v=3.10e+03 p=4.10e+02) cfl=0.05 gmres=11 (gmres not converged)
+[newton] it=2 |R|=2.2153e+04 rel=1.716e+02 (u=5.00e+03 v=2.16e+04 p=7.66e+02) cfl=0.00776 gmres=15 (gmres not converged)
+[newton] it=3 |R|=1.2681e+04 rel=9.822e+01 (u=2.73e+03 v=1.24e+04 p=5.65e+01) cfl=0.0136 gmres=3
+[newton] it=4 |R|=1.0284e+04 rel=7.965e+01 (u=1.64e+03 v=1.02e+04 p=2.63e+01) cfl=0.0167 gmres=4
+[newton] it=5 |R|=8.6321e+03 rel=6.686e+01 (u=1.19e+03 v=8.55e+03 p=4.37e+00) cfl=0.0199 gmres=3
+[newton] it=6 |R|=7.1964e+03 rel=5.574e+01 (u=1.01e+03 v=7.13e+03 p=1.93e+00) cfl=0.0239 gmres=3
+[newton] it=7 |R|=6.0377e+03 rel=4.676e+01 (u=8.91e+02 v=5.97e+03 p=1.50e+00) cfl=0.0285 gmres=3
+[newton] it=8 |R|=5.1421e+03 rel=3.983e+01 (u=8.00e+02 v=5.08e+03 p=1.73e+00) cfl=0.0334 gmres=3
+[newton] it=9 |R|=4.4219e+03 rel=3.425e+01 (u=7.21e+02 v=4.36e+03 p=1.22e+00) cfl=0.0389 gmres=3
+[newton] it=10 |R|=3.8173e+03 rel=2.957e+01 (u=6.52e+02 v=3.76e+03 p=1.09e+00) cfl=0.045 gmres=3
+[newton] it=11 |R|=3.2946e+03 rel=2.552e+01 (u=5.91e+02 v=3.24e+03 p=1.19e+00) cfl=0.0522 gmres=3
+[newton] it=12 |R|=2.8340e+03 rel=2.195e+01 (u=5.40e+02 v=2.78e+03 p=1.30e+00) cfl=0.0606 gmres=3
+[newton] it=13 |R|=2.4221e+03 rel=1.876e+01 (u=4.94e+02 v=2.37e+03 p=9.59e-01) cfl=0.0709 gmres=3
+[newton] it=14 |R|=2.0544e+03 rel=1.591e+01 (u=4.55e+02 v=2.00e+03 p=1.19e+00) cfl=0.0836 gmres=3
+[newton] it=15 |R|=1.7259e+03 rel=1.337e+01 (u=4.21e+02 v=1.67e+03 p=1.64e+00) cfl=0.0996 gmres=3
+[newton] it=16 |R|=1.4340e+03 rel=1.111e+01 (u=3.89e+02 v=1.38e+03 p=1.00e+00) cfl=0.12 gmres=3
+[newton] it=17 |R|=1.1765e+03 rel=9.112e+00 (u=3.59e+02 v=1.12e+03 p=1.16e+00) cfl=0.146 gmres=3
+[newton] it=18 |R|=9.5443e+02 rel=7.392e+00 (u=3.29e+02 v=8.96e+02 p=2.38e+00) cfl=0.18 gmres=3
+[newton] it=19 |R|=7.6629e+02 rel=5.935e+00 (u=2.98e+02 v=7.06e+02 p=4.02e+00) cfl=0.224 gmres=3
+[newton] it=20 |R|=6.1114e+02 rel=4.733e+00 (u=2.63e+02 v=5.52e+02 p=1.29e+00) cfl=0.281 gmres=3
+[newton] it=21 |R|=4.7660e+02 rel=3.691e+00 (u=2.26e+02 v=4.20e+02 p=1.71e+00) cfl=0.361 gmres=4
+[newton] it=22 |R|=3.6537e+02 rel=2.830e+00 (u=1.84e+02 v=3.15e+02 p=2.44e+00) cfl=0.47 gmres=4
+[newton] it=23 |R|=2.7876e+02 rel=2.159e+00 (u=1.42e+02 v=2.40e+02 p=9.28e-01) cfl=0.616 gmres=5
+[newton] it=24 |R|=2.0414e+02 rel=1.581e+00 (u=1.01e+02 v=1.78e+02 p=1.05e+00) cfl=0.842 gmres=4
+[newton] it=25 |R|=1.4383e+02 rel=1.114e+00 (u=6.64e+01 v=1.28e+02 p=1.33e+00) cfl=1.19 gmres=5
+[newton] it=26 |R|=9.8994e+01 rel=7.667e-01 (u=4.27e+01 v=8.93e+01 p=7.62e-01) cfl=1.74 gmres=5
+[newton] it=27 |R|=6.8447e+01 rel=5.301e-01 (u=2.96e+01 v=6.17e+01 p=7.13e-01) cfl=2.51 gmres=7
+[newton] it=28 |R|=4.8793e+01 rel=3.779e-01 (u=2.29e+01 v=4.31e+01 p=1.40e+00) cfl=3.52 gmres=7
+[newton] it=29 |R|=3.5987e+01 rel=2.787e-01 (u=1.94e+01 v=3.03e+01 p=1.45e+00) cfl=4.77 gmres=7
+[newton] it=30 |R|=2.7041e+01 rel=2.094e-01 (u=1.59e+01 v=2.18e+01 p=2.05e+00) cfl=6.35 gmres=8
+[newton] it=31 |R|=2.1193e+01 rel=1.641e-01 (u=1.32e+01 v=1.66e+01 p=9.98e-01) cfl=8.11 gmres=7
+[newton] it=32 |R|=1.6822e+01 rel=1.303e-01 (u=1.08e+01 v=1.29e+01 p=5.32e-01) cfl=10.2 gmres=8
+[newton] it=33 |R|=1.3787e+01 rel=1.068e-01 (u=9.11e+00 v=1.03e+01 p=6.94e-01) cfl=12.5 gmres=7
+[newton] it=34 |R|=1.1469e+01 rel=8.883e-02 (u=7.81e+00 v=8.39e+00 p=3.60e-01) cfl=15 gmres=6
+[newton] it=35 |R|=9.6700e+00 rel=7.490e-02 (u=6.74e+00 v=6.93e+00 p=2.84e-01) cfl=17.8 gmres=7
+[newton] it=36 |R|=8.2543e+00 rel=6.393e-02 (u=5.84e+00 v=5.81e+00 p=4.93e-01) cfl=20.8 gmres=8
+[newton] it=37 |R|=7.0655e+00 rel=5.472e-02 (u=5.05e+00 v=4.94e+00 p=2.30e-01) cfl=24.3 gmres=8
+[newton] it=38 |R|=5.9118e+00 rel=4.579e-02 (u=4.29e+00 v=4.05e+00 p=3.13e-01) cfl=29.1 gmres=9
+[newton] it=39 |R|=4.9708e+00 rel=3.850e-02 (u=3.65e+00 v=3.34e+00 p=4.93e-01) cfl=34.6 gmres=8
+[newton] it=40 |R|=4.1645e+00 rel=3.226e-02 (u=3.15e+00 v=2.70e+00 p=3.42e-01) cfl=41.3 gmres=9
+[newton] it=41 |R|=3.5376e+00 rel=2.740e-02 (u=2.70e+00 v=2.23e+00 p=4.84e-01) cfl=48.6 gmres=8
+[newton] it=42 |R|=2.8695e+00 rel=2.223e-02 (u=2.30e+00 v=1.71e+00 p=3.53e-02) cfl=59.9 gmres=7
+[newton] it=43 |R|=2.3832e+00 rel=1.846e-02 (u=1.98e+00 v=1.32e+00 p=1.48e-02) cfl=72.1 gmres=7
+[newton] it=44 |R|=1.9919e+00 rel=1.543e-02 (u=1.71e+00 v=1.02e+00 p=6.62e-03) cfl=86.3 gmres=6
+[newton] it=45 |R|=1.6763e+00 rel=1.298e-02 (u=1.48e+00 v=7.94e-01 p=7.19e-03) cfl=103 gmres=7
+[newton] it=46 |R|=1.4217e+00 rel=1.101e-02 (u=1.28e+00 v=6.19e-01 p=1.43e-03) cfl=121 gmres=7
+[newton] it=47 |R|=1.2118e+00 rel=9.386e-03 (u=1.11e+00 v=4.85e-01 p=9.01e-04) cfl=142 gmres=8
+[newton] it=48 |R|=1.0377e+00 rel=8.038e-03 (u=9.64e-01 v=3.83e-01 p=5.39e-04) cfl=166 gmres=8
+[newton] it=49 |R|=8.9224e-01 rel=6.911e-03 (u=8.38e-01 v=3.05e-01 p=3.45e-04) cfl=193 gmres=8
+[newton] it=50 |R|=7.6979e-01 rel=5.962e-03 (u=7.30e-01 v=2.45e-01 p=3.76e-04) cfl=223 gmres=8
+[newton] it=51 |R|=6.6619e-01 rel=5.160e-03 (u=6.36e-01 v=1.98e-01 p=1.79e-04) cfl=258 gmres=7
+[newton] it=52 |R|=5.7784e-01 rel=4.476e-03 (u=5.55e-01 v=1.61e-01 p=1.58e-04) cfl=297 gmres=7
+[newton] it=53 |R|=5.0213e-01 rel=3.889e-03 (u=4.84e-01 v=1.32e-01 p=1.08e-04) cfl=342 gmres=7
+[newton] it=54 |R|=4.3688e-01 rel=3.384e-03 (u=4.23e-01 v=1.09e-01 p=7.38e-05) cfl=393 gmres=7
+[newton] it=55 |R|=3.8045e-01 rel=2.947e-03 (u=3.70e-01 v=9.01e-02 p=5.53e-05) cfl=452 gmres=7
+[newton] it=56 |R|=3.3139e-01 rel=2.567e-03 (u=3.23e-01 v=7.46e-02 p=4.51e-05) cfl=519 gmres=7
+[newton] it=57 |R|=2.8863e-01 rel=2.236e-03 (u=2.82e-01 v=6.19e-02 p=5.55e-05) cfl=595 gmres=7
+[newton] it=58 |R|=2.5121e-01 rel=1.946e-03 (u=2.46e-01 v=5.14e-02 p=2.37e-05) cfl=684 gmres=7
+[newton] it=59 |R|=2.1836e-01 rel=1.691e-03 (u=2.14e-01 v=4.28e-02 p=2.21e-05) cfl=787 gmres=6
+[newton] it=60 |R|=1.8943e-01 rel=1.467e-03 (u=1.86e-01 v=3.58e-02 p=1.52e-05) cfl=907 gmres=4
+[newton] it=61 |R|=1.6388e-01 rel=1.269e-03 (u=1.61e-01 v=3.00e-02 p=9.16e-05) cfl=1.05e+03 gmres=4
+[newton] it=62 |R|=1.4126e-01 rel=1.094e-03 (u=1.39e-01 v=2.54e-02 p=7.79e-06) cfl=1.22e+03 gmres=7
+[newton] it=63 |R|=1.2120e-01 rel=9.387e-04 (u=1.19e-01 v=2.16e-02 p=5.61e-06) cfl=1.42e+03 gmres=7
+[newton] it=64 |R|=1.0344e-01 rel=8.011e-04 (u=1.02e-01 v=1.86e-02 p=4.69e-06) cfl=1.66e+03 gmres=6
+[newton] it=65 |R|=8.7740e-02 rel=6.796e-04 (u=8.62e-02 v=1.62e-02 p=8.41e-06) cfl=1.96e+03 gmres=6
+[newton] it=66 |R|=7.3930e-02 rel=5.726e-04 (u=7.25e-02 v=1.43e-02 p=2.54e-06) cfl=2.32e+03 gmres=6
+[newton] it=67 |R|=6.1856e-02 rel=4.791e-04 (u=6.06e-02 v=1.26e-02 p=2.45e-06) cfl=2.78e+03 gmres=6
+[newton] it=68 |R|=5.1390e-02 rel=3.980e-04 (u=5.02e-02 v=1.12e-02 p=2.58e-06) cfl=3.34e+03 gmres=6
+[newton] it=69 |R|=4.2405e-02 rel=3.284e-04 (u=4.13e-02 v=9.82e-03 p=6.31e-07) cfl=4.05e+03 gmres=7
+[newton] it=70 |R|=3.4777e-02 rel=2.694e-04 (u=3.37e-02 v=8.57e-03 p=5.29e-06) cfl=4.94e+03 gmres=7
+[newton] it=71 |R|=2.8379e-02 rel=2.198e-04 (u=2.74e-02 v=7.41e-03 p=8.11e-07) cfl=6.06e+03 gmres=7
+[newton] it=72 |R|=2.3076e-02 rel=1.787e-04 (u=2.22e-02 v=6.33e-03 p=2.95e-07) cfl=7.45e+03 gmres=7
+[newton] it=73 |R|=1.8732e-02 rel=1.451e-04 (u=1.79e-02 v=5.37e-03 p=2.53e-07) cfl=9.17e+03 gmres=7
+[newton] it=74 |R|=1.5208e-02 rel=1.178e-04 (u=1.45e-02 v=4.52e-03 p=2.31e-07) cfl=1.13e+04 gmres=7
+[newton] it=75 |R|=1.2371e-02 rel=9.581e-05 (u=1.18e-02 v=3.79e-03 p=6.86e-07) cfl=1.39e+04 gmres=6
+[newton] it=76 |R|=1.0095e-02 rel=7.819e-05 (u=9.58e-03 v=3.18e-03 p=3.63e-07) cfl=1.7e+04 gmres=6
+[newton] it=77 |R|=8.2709e-03 rel=6.406e-05 (u=7.83e-03 v=2.66e-03 p=4.78e-07) cfl=2.08e+04 gmres=6
+[newton] it=78 |R|=6.8028e-03 rel=5.269e-05 (u=6.43e-03 v=2.23e-03 p=4.87e-07) cfl=2.53e+04 gmres=6
+[newton] it=79 |R|=5.6133e-03 rel=4.348e-05 (u=5.29e-03 v=1.87e-03 p=4.36e-07) cfl=3.06e+04 gmres=6
+[newton] it=80 |R|=4.6413e-03 rel=3.595e-05 (u=4.37e-03 v=1.56e-03 p=3.75e-07) cfl=3.7e+04 gmres=6
+[newton] it=81 |R|=3.8402e-03 rel=2.974e-05 (u=3.62e-03 v=1.29e-03 p=1.74e-07) cfl=4.47e+04 gmres=8
+[newton] it=82 |R|=3.1754e-03 rel=2.459e-05 (u=2.99e-03 v=1.06e-03 p=1.64e-07) cfl=5.41e+04 gmres=8
+[newton] it=83 |R|=2.6215e-03 rel=2.030e-05 (u=2.48e-03 v=8.56e-04 p=1.21e-07) cfl=6.55e+04 gmres=8
+[newton] it=84 |R|=2.1597e-03 rel=1.673e-05 (u=2.05e-03 v=6.87e-04 p=1.11e-07) cfl=7.96e+04 gmres=6
+[newton] it=85 |R|=1.7756e-03 rel=1.375e-05 (u=1.69e-03 v=5.45e-04 p=7.31e-08) cfl=9.68e+04 gmres=6
+[newton] it=86 |R|=1.4578e-03 rel=1.129e-05 (u=1.39e-03 v=4.28e-04 p=7.75e-08) cfl=1.18e+05 gmres=6
+[newton] it=87 |R|=1.1966e-03 rel=9.268e-06 (u=1.15e-03 v=3.33e-04 p=7.49e-08) cfl=1.44e+05 gmres=7
+[newton] it=88 |R|=9.8360e-04 rel=7.618e-06 (u=9.49e-04 v=2.58e-04 p=7.93e-08) cfl=1.75e+05 gmres=7
+[newton] it=89 |R|=8.1129e-04 rel=6.284e-06 (u=7.87e-04 v=1.98e-04 p=5.06e-08) cfl=2.12e+05 gmres=7
+[newton] it=90 |R|=6.7282e-04 rel=5.211e-06 (u=6.56e-04 v=1.52e-04 p=3.78e-08) cfl=2.55e+05 gmres=7
+[newton] it=91 |R|=5.6205e-04 rel=4.353e-06 (u=5.50e-04 v=1.16e-04 p=2.60e-08) cfl=3.06e+05 gmres=7
+[newton] it=92 |R|=4.7348e-04 rel=3.667e-06 (u=4.65e-04 v=8.92e-05 p=2.13e-08) cfl=3.63e+05 gmres=7
+[newton] it=93 |R|=4.0241e-04 rel=3.117e-06 (u=3.96e-04 v=6.90e-05 p=1.67e-08) cfl=4.27e+05 gmres=7
+[newton] it=94 |R|=3.4488e-04 rel=2.671e-06 (u=3.41e-04 v=5.39e-05 p=1.38e-08) cfl=4.98e+05 gmres=7
+[newton] it=95 |R|=2.9773e-04 rel=2.306e-06 (u=2.95e-04 v=4.27e-05 p=1.05e-08) cfl=5.77e+05 gmres=7
+[newton] it=96 |R|=2.5853e-04 rel=2.002e-06 (u=2.56e-04 v=3.44e-05 p=8.94e-09) cfl=6.65e+05 gmres=7
+[newton] it=97 |R|=2.2547e-04 rel=1.746e-06 (u=2.24e-04 v=2.82e-05 p=6.65e-09) cfl=7.62e+05 gmres=7
+[newton] it=98 |R|=1.9723e-04 rel=1.528e-06 (u=1.96e-04 v=2.35e-05 p=1.84e-08) cfl=8.71e+05 gmres=6
+[newton] it=99 |R|=1.7286e-04 rel=1.339e-06 (u=1.72e-04 v=1.99e-05 p=1.33e-08) cfl=9.94e+05 gmres=6
+[newton] it=100 |R|=1.5165e-04 rel=1.175e-06 (u=1.51e-04 v=1.71e-05 p=3.15e-09) cfl=1e+06 gmres=7
+[newton] it=101 |R|=1.3311e-04 rel=1.031e-06 (u=1.32e-04 v=1.47e-05 p=6.63e-09) cfl=1e+06 gmres=6
+[newton] it=102 |R|=1.1681e-04 rel=9.047e-07 (u=1.16e-04 v=1.27e-05 p=1.77e-09) cfl=1e+06 gmres=7
+[newton] done converged=True reason='' it=102 m_in=2.0000e+02 m_out=2.0000e+02 elapsed=19.9s
+--> uturn_r1_U2_second_order_upwind_jfnk: converged=True reason='' it=102 rel_final=9.05e-07 rel_min=9.05e-07 t=20s
+===== case flat_r1_U0.1_second_order_upwind_jfnk  (nx=72, ny=48, N=10368 unknowns) =====
+[newton] it=0 |R|=2.9012e+00 (u=2.89e-01 v=0.00e+00 p=2.89e+00) cfl=0.5
+[newton] it=1 |R|=1.0141e+00 rel=3.495e-01 (u=5.95e-01 v=5.85e-01 p=5.76e-01) cfl=1 gmres=1
+[newton] it=2 |R|=2.4892e-01 rel=8.580e-02 (u=2.27e-01 v=1.02e-01 p=1.02e-02) cfl=2 gmres=3
+[newton] it=3 |R|=1.1769e-01 rel=4.057e-02 (u=1.05e-01 v=5.37e-02 p=3.20e-03) cfl=4 gmres=5
+[newton] it=4 |R|=5.3190e-02 rel=1.833e-02 (u=4.55e-02 v=2.76e-02 p=8.68e-04) cfl=8 gmres=6
+[newton] it=5 |R|=2.1910e-02 rel=7.552e-03 (u=1.76e-02 v=1.30e-02 p=1.75e-04) cfl=16 gmres=5
+[newton] it=6 |R|=8.7709e-03 rel=3.023e-03 (u=6.62e-03 v=5.75e-03 p=3.26e-05) cfl=32 gmres=5
+[newton] it=7 |R|=3.4787e-03 rel=1.199e-03 (u=2.48e-03 v=2.44e-03 p=6.45e-06) cfl=64 gmres=5
+[newton] it=8 |R|=1.3750e-03 rel=4.739e-04 (u=9.35e-04 v=1.01e-03 p=1.18e-06) cfl=128 gmres=5
+[newton] it=9 |R|=5.4398e-04 rel=1.875e-04 (u=3.54e-04 v=4.13e-04 p=4.89e-07) cfl=256 gmres=5
+[newton] it=10 |R|=2.1335e-04 rel=7.354e-05 (u=1.35e-04 v=1.65e-04 p=4.91e-08) cfl=512 gmres=4
+[newton] it=11 |R|=8.3350e-05 rel=2.873e-05 (u=5.13e-05 v=6.57e-05 p=6.57e-09) cfl=1.02e+03 gmres=5
+[newton] it=12 |R|=3.2506e-05 rel=1.120e-05 (u=1.95e-05 v=2.60e-05 p=1.73e-09) cfl=2.05e+03 gmres=5
+[newton] it=13 |R|=1.2699e-05 rel=4.377e-06 (u=7.45e-06 v=1.03e-05 p=7.22e-10) cfl=4.1e+03 gmres=5
+[newton] it=14 |R|=4.9906e-06 rel=1.720e-06 (u=2.88e-06 v=4.08e-06 p=2.42e-10) cfl=8.19e+03 gmres=5
+[newton] it=15 |R|=1.9817e-06 rel=6.830e-07 (u=1.13e-06 v=1.63e-06 p=7.20e-11) cfl=1.64e+04 gmres=5
+[newton] done converged=True reason='' it=15 m_in=1.0000e+01 m_out=1.0000e+01 elapsed=3.4s
+--> flat_r1_U0.1_second_order_upwind_jfnk: converged=True reason='' it=15 rel_final=6.83e-07 rel_min=6.83e-07 t=3s
+===== case flat_r1_U1_second_order_upwind_jfnk  (nx=72, ny=48, N=10368 unknowns) =====
+[newton] it=0 |R|=4.0829e+01 (u=2.89e+01 v=0.00e+00 p=2.89e+01) cfl=0.5
+[newton] it=1 |R|=1.3708e+02 rel=3.357e+00 (u=1.30e+02 v=3.32e+01 p=2.75e+01) cfl=0.149 gmres=47 (gmres not converged)
+[newton] it=2 |R|=9.1858e+01 rel=2.250e+00 (u=8.85e+01 v=2.45e+01 p=2.73e+00) cfl=0.222 gmres=3
+[newton] it=3 |R|=7.8666e+01 rel=1.927e+00 (u=7.57e+01 v=2.12e+01 p=5.47e-01) cfl=0.26 gmres=3
+[newton] it=4 |R|=6.9364e+01 rel=1.699e+00 (u=6.68e+01 v=1.87e+01 p=1.54e+00) cfl=0.294 gmres=4
+[newton] it=5 |R|=5.9265e+01 rel=1.452e+00 (u=5.70e+01 v=1.62e+01 p=3.63e-01) cfl=0.344 gmres=4
+[newton] it=6 |R|=4.9083e+01 rel=1.202e+00 (u=4.71e+01 v=1.38e+01 p=1.95e-01) cfl=0.416 gmres=4
+[newton] it=7 |R|=3.8566e+01 rel=9.446e-01 (u=3.68e+01 v=1.15e+01 p=1.11e-01) cfl=0.529 gmres=4
+[newton] it=8 |R|=2.8324e+01 rel=6.937e-01 (u=2.67e+01 v=9.31e+00 p=1.32e-01) cfl=0.721 gmres=4
+[newton] it=9 |R|=1.9090e+01 rel=4.676e-01 (u=1.76e+01 v=7.48e+00 p=2.13e-01) cfl=1.07 gmres=4
+[newton] it=10 |R|=1.1948e+01 rel=2.926e-01 (u=1.04e+01 v=5.88e+00 p=4.67e-01) cfl=1.71 gmres=6
+[newton] it=11 |R|=7.4498e+00 rel=1.825e-01 (u=5.79e+00 v=4.67e+00 p=3.56e-01) cfl=2.74 gmres=6
+[newton] it=12 |R|=4.7811e+00 rel=1.171e-01 (u=3.28e+00 v=3.47e+00 p=2.59e-01) cfl=4.27 gmres=7
+[newton] it=13 |R|=3.1503e+00 rel=7.716e-02 (u=1.96e+00 v=2.40e+00 p=5.69e-01) cfl=6.48 gmres=7
+[newton] it=14 |R|=2.0495e+00 rel=5.020e-02 (u=1.23e+00 v=1.64e+00 p=4.43e-02) cfl=9.96 gmres=6
+[newton] it=15 |R|=1.3898e+00 rel=3.404e-02 (u=8.23e-01 v=1.12e+00 p=5.46e-02) cfl=14.7 gmres=7
+[newton] it=16 |R|=9.7263e-01 rel=2.382e-02 (u=5.85e-01 v=7.77e-01 p=1.09e-02) cfl=21 gmres=7
+[newton] it=17 |R|=7.0695e-01 rel=1.731e-02 (u=4.33e-01 v=5.59e-01 p=5.87e-03) cfl=28.9 gmres=9
+[newton] it=18 |R|=5.2504e-01 rel=1.286e-02 (u=3.23e-01 v=4.14e-01 p=2.91e-03) cfl=38.9 gmres=6
+[newton] it=19 |R|=3.9273e-01 rel=9.619e-03 (u=2.39e-01 v=3.12e-01 p=5.97e-04) cfl=52 gmres=6
+[newton] it=20 |R|=2.9252e-01 rel=7.164e-03 (u=1.75e-01 v=2.35e-01 p=2.89e-04) cfl=69.8 gmres=6
+[newton] it=21 |R|=2.1562e-01 rel=5.281e-03 (u=1.25e-01 v=1.75e-01 p=1.15e-04) cfl=94.7 gmres=6
+[newton] it=22 |R|=1.5692e-01 rel=3.843e-03 (u=8.86e-02 v=1.30e-01 p=6.20e-05) cfl=130 gmres=6
+[newton] it=23 |R|=1.1239e-01 rel=2.753e-03 (u=6.18e-02 v=9.38e-02 p=3.27e-05) cfl=182 gmres=6
+[newton] it=24 |R|=7.9174e-02 rel=1.939e-03 (u=4.26e-02 v=6.67e-02 p=1.68e-05) cfl=258 gmres=6
+[newton] it=25 |R|=5.4984e-02 rel=1.347e-03 (u=2.91e-02 v=4.67e-02 p=8.66e-06) cfl=371 gmres=6
+[newton] it=26 |R|=3.7659e-02 rel=9.224e-04 (u=1.97e-02 v=3.21e-02 p=4.57e-06) cfl=542 gmres=6
+[newton] it=27 |R|=2.5452e-02 rel=6.234e-04 (u=1.33e-02 v=2.17e-02 p=2.51e-06) cfl=802 gmres=6
+[newton] it=28 |R|=1.6990e-02 rel=4.161e-04 (u=8.92e-03 v=1.45e-02 p=1.45e-06) cfl=1.2e+03 gmres=6
+[newton] it=29 |R|=1.1213e-02 rel=2.746e-04 (u=5.97e-03 v=9.49e-03 p=8.62e-07) cfl=1.82e+03 gmres=6
+[newton] it=30 |R|=7.3254e-03 rel=1.794e-04 (u=3.97e-03 v=6.15e-03 p=5.02e-07) cfl=2.79e+03 gmres=6
+[newton] it=31 |R|=4.7438e-03 rel=1.162e-04 (u=2.63e-03 v=3.95e-03 p=3.09e-07) cfl=4.3e+03 gmres=6
+[newton] it=32 |R|=3.0504e-03 rel=7.471e-05 (u=1.73e-03 v=2.51e-03 p=1.92e-07) cfl=6.69e+03 gmres=6
+[newton] it=33 |R|=1.9523e-03 rel=4.782e-05 (u=1.13e-03 v=1.59e-03 p=1.43e-07) cfl=1.05e+04 gmres=6
+[newton] it=34 |R|=1.2477e-03 rel=3.056e-05 (u=7.34e-04 v=1.01e-03 p=1.86e-07) cfl=1.64e+04 gmres=6
+[newton] it=35 |R|=8.0006e-04 rel=1.960e-05 (u=4.74e-04 v=6.45e-04 p=1.12e-07) cfl=2.55e+04 gmres=6
+[newton] it=36 |R|=5.1773e-04 rel=1.268e-05 (u=3.05e-04 v=4.18e-04 p=6.85e-08) cfl=3.94e+04 gmres=6
+[newton] it=37 |R|=3.4006e-04 rel=8.329e-06 (u=1.96e-04 v=2.78e-04 p=4.30e-08) cfl=6e+04 gmres=6
+[newton] it=38 |R|=2.2764e-04 rel=5.575e-06 (u=1.27e-04 v=1.89e-04 p=2.82e-08) cfl=8.97e+04 gmres=6
+[newton] it=39 |R|=1.5540e-04 rel=3.806e-06 (u=8.28e-05 v=1.32e-04 p=1.90e-08) cfl=1.31e+05 gmres=6
+[newton] it=40 |R|=1.0782e-04 rel=2.641e-06 (u=5.47e-05 v=9.29e-05 p=1.28e-08) cfl=1.89e+05 gmres=6
+[newton] it=41 |R|=7.5606e-05 rel=1.852e-06 (u=3.67e-05 v=6.61e-05 p=8.43e-09) cfl=2.7e+05 gmres=6
+[newton] it=42 |R|=5.3238e-05 rel=1.304e-06 (u=2.50e-05 v=4.70e-05 p=9.86e-09) cfl=3.83e+05 gmres=5
+[newton] it=43 |R|=3.7450e-05 rel=9.172e-07 (u=1.72e-05 v=3.33e-05 p=5.50e-09) cfl=5.45e+05 gmres=5
+[newton] done converged=True reason='' it=43 m_in=1.0000e+02 m_out=1.0000e+02 elapsed=9.7s
+--> flat_r1_U1_second_order_upwind_jfnk: converged=True reason='' it=43 rel_final=9.17e-07 rel_min=9.17e-07 t=10s
+===== case flat_r1_U2_second_order_upwind_jfnk  (nx=72, ny=48, N=10368 unknowns) =====
+[newton] it=0 |R|=1.2911e+02 (u=1.15e+02 v=0.00e+00 p=5.77e+01) cfl=0.5
+[newton] it=1 |R|=8.0517e+02 rel=6.236e+00 (u=7.88e+02 v=1.44e+02 p=8.13e+01) cfl=0.0802 gmres=11 (gmres not converged)
+[newton] it=2 |R|=5.1406e+02 rel=3.982e+00 (u=4.96e+02 v=1.33e+02 p=1.18e+01) cfl=0.126 gmres=3
+[newton] it=3 |R|=4.5273e+02 rel=3.507e+00 (u=4.38e+02 v=1.13e+02 p=6.63e+00) cfl=0.143 gmres=3
+[newton] it=4 |R|=4.3450e+02 rel=3.365e+00 (u=4.21e+02 v=1.07e+02 p=1.64e+01) cfl=0.149 gmres=4
+[newton] it=5 |R|=4.5231e+02 rel=3.503e+00 (u=4.39e+02 v=1.03e+02 p=3.05e+01) cfl=0.143 gmres=4
+[newton] it=6 |R|=4.0300e+02 rel=3.121e+00 (u=3.92e+02 v=9.15e+01 p=7.07e+00) cfl=0.16 gmres=4
+[newton] it=7 |R|=3.6895e+02 rel=2.858e+00 (u=3.59e+02 v=8.52e+01 p=2.24e+00) cfl=0.175 gmres=4
+[newton] it=8 |R|=3.3586e+02 rel=2.601e+00 (u=3.27e+02 v=7.86e+01 p=1.30e+00) cfl=0.192 gmres=4
+[newton] it=9 |R|=3.0171e+02 rel=2.337e+00 (u=2.93e+02 v=7.14e+01 p=6.40e-01) cfl=0.214 gmres=3
+[newton] it=10 |R|=2.6641e+02 rel=2.063e+00 (u=2.59e+02 v=6.39e+01 p=4.92e-01) cfl=0.242 gmres=4
+[newton] it=11 |R|=2.2953e+02 rel=1.778e+00 (u=2.23e+02 v=5.63e+01 p=4.24e-01) cfl=0.281 gmres=3
+[newton] it=12 |R|=1.9231e+02 rel=1.490e+00 (u=1.86e+02 v=4.91e+01 p=4.99e-01) cfl=0.336 gmres=3
+[newton] it=13 |R|=1.5530e+02 rel=1.203e+00 (u=1.49e+02 v=4.26e+01 p=2.54e+00) cfl=0.416 gmres=4
+[newton] it=14 |R|=1.1944e+02 rel=9.251e-01 (u=1.13e+02 v=3.74e+01 p=1.09e+00) cfl=0.54 gmres=4
+[newton] it=15 |R|=8.6930e+01 rel=6.733e-01 (u=8.06e+01 v=3.27e+01 p=6.25e-01) cfl=0.743 gmres=4
+[newton] it=16 |R|=6.0734e+01 rel=4.704e-01 (u=5.32e+01 v=2.93e+01 p=4.35e-01) cfl=1.06 gmres=5
+[newton] it=17 |R|=4.2181e+01 rel=3.267e-01 (u=3.36e+01 v=2.55e+01 p=6.33e-01) cfl=1.53 gmres=6
+[newton] it=18 |R|=3.0102e+01 rel=2.331e-01 (u=2.14e+01 v=2.10e+01 p=2.03e+00) cfl=2.14 gmres=5
+[newton] it=19 |R|=2.2120e+01 rel=1.713e-01 (u=1.43e+01 v=1.67e+01 p=2.39e+00) cfl=2.92 gmres=7
+[newton] it=20 |R|=1.9020e+01 rel=1.473e-01 (u=1.29e+01 v=1.34e+01 p=3.99e+00) cfl=3.39 gmres=6
+[newton] it=21 |R|=1.8778e+01 rel=1.454e-01 (u=1.39e+01 v=1.24e+01 p=2.33e+00) cfl=3.44 gmres=7
+[newton] it=22 |R|=1.1270e+01 rel=8.729e-02 (u=7.43e+00 v=8.43e+00 p=7.94e-01) cfl=5.73 gmres=5
+[newton] it=23 |R|=8.2253e+00 rel=6.371e-02 (u=5.28e+00 v=6.29e+00 p=3.83e-01) cfl=7.85 gmres=7
+[newton] it=24 |R|=6.5806e+00 rel=5.097e-02 (u=4.28e+00 v=4.99e+00 p=4.07e-01) cfl=9.81 gmres=6
+[newton] it=25 |R|=5.4116e+00 rel=4.191e-02 (u=3.55e+00 v=4.08e+00 p=1.29e-01) cfl=11.9 gmres=7
+[newton] it=26 |R|=4.5013e+00 rel=3.486e-02 (u=2.95e+00 v=3.39e+00 p=2.02e-01) cfl=14.3 gmres=6
+[newton] it=27 |R|=3.7294e+00 rel=2.889e-02 (u=2.42e+00 v=2.83e+00 p=3.42e-02) cfl=17.3 gmres=8
+[newton] it=28 |R|=3.0902e+00 rel=2.393e-02 (u=1.97e+00 v=2.37e+00 p=1.59e-01) cfl=20.9 gmres=5
+[newton] it=29 |R|=2.5297e+00 rel=1.959e-02 (u=1.58e+00 v=1.97e+00 p=1.26e-02) cfl=25.5 gmres=6
+[newton] it=30 |R|=2.0490e+00 rel=1.587e-02 (u=1.25e+00 v=1.62e+00 p=7.44e-03) cfl=31.5 gmres=6
+[newton] it=31 |R|=1.6333e+00 rel=1.265e-02 (u=9.76e-01 v=1.31e+00 p=4.12e-03) cfl=39.5 gmres=6
+[newton] it=32 |R|=1.2796e+00 rel=9.911e-03 (u=7.46e-01 v=1.04e+00 p=2.23e-03) cfl=50.5 gmres=5
+[newton] it=33 |R|=9.8559e-01 rel=7.634e-03 (u=5.62e-01 v=8.10e-01 p=1.01e-03) cfl=65.5 gmres=5
+[newton] it=34 |R|=7.4430e-01 rel=5.765e-03 (u=4.17e-01 v=6.16e-01 p=4.62e-04) cfl=86.7 gmres=6
+[newton] it=35 |R|=5.5254e-01 rel=4.280e-03 (u=3.07e-01 v=4.59e-01 p=2.27e-04) cfl=117 gmres=6
+[newton] it=36 |R|=4.0430e-01 rel=3.131e-03 (u=2.25e-01 v=3.36e-01 p=1.09e-04) cfl=160 gmres=7
+[newton] it=37 |R|=2.9255e-01 rel=2.266e-03 (u=1.64e-01 v=2.42e-01 p=2.52e-03) cfl=221 gmres=7
+[newton] it=38 |R|=2.0997e-01 rel=1.626e-03 (u=1.19e-01 v=1.73e-01 p=3.49e-05) cfl=307 gmres=7
+[newton] it=39 |R|=1.5004e-01 rel=1.162e-03 (u=8.58e-02 v=1.23e-01 p=1.85e-05) cfl=430 gmres=8
+[newton] it=40 |R|=1.0702e-01 rel=8.289e-04 (u=6.16e-02 v=8.75e-02 p=1.18e-05) cfl=603 gmres=8
+[newton] it=41 |R|=7.6466e-02 rel=5.923e-04 (u=4.41e-02 v=6.25e-02 p=8.68e-06) cfl=844 gmres=8
+[newton] it=42 |R|=5.4979e-02 rel=4.258e-04 (u=3.15e-02 v=4.51e-02 p=6.95e-06) cfl=1.17e+03 gmres=7
+[newton] it=43 |R|=3.9876e-02 rel=3.089e-04 (u=2.25e-02 v=3.29e-02 p=5.31e-06) cfl=1.62e+03 gmres=7
+[newton] it=44 |R|=2.9317e-02 rel=2.271e-04 (u=1.62e-02 v=2.44e-02 p=4.23e-06) cfl=2.2e+03 gmres=7
+[newton] it=45 |R|=2.1899e-02 rel=1.696e-04 (u=1.18e-02 v=1.85e-02 p=3.19e-06) cfl=2.95e+03 gmres=7
+[newton] it=46 |R|=1.6628e-02 rel=1.288e-04 (u=8.71e-03 v=1.42e-02 p=2.89e-06) cfl=3.88e+03 gmres=5
+[newton] it=47 |R|=1.2817e-02 rel=9.927e-05 (u=6.55e-03 v=1.10e-02 p=1.99e-06) cfl=5.04e+03 gmres=7
+[newton] it=48 |R|=9.9975e-03 rel=7.743e-05 (u=5.01e-03 v=8.65e-03 p=1.60e-06) cfl=6.46e+03 gmres=7
+[newton] it=49 |R|=7.8598e-03 rel=6.088e-05 (u=3.88e-03 v=6.84e-03 p=1.25e-06) cfl=8.21e+03 gmres=7
+[newton] it=50 |R|=6.2034e-03 rel=4.805e-05 (u=3.03e-03 v=5.41e-03 p=9.42e-07) cfl=1.04e+04 gmres=7
+[newton] it=51 |R|=4.8981e-03 rel=3.794e-05 (u=2.38e-03 v=4.28e-03 p=7.02e-07) cfl=1.32e+04 gmres=7
+[newton] it=52 |R|=3.8584e-03 rel=2.988e-05 (u=1.87e-03 v=3.37e-03 p=5.37e-07) cfl=1.67e+04 gmres=7
+[newton] it=53 |R|=3.0261e-03 rel=2.344e-05 (u=1.47e-03 v=2.65e-03 p=3.94e-07) cfl=2.13e+04 gmres=7
+[newton] it=54 |R|=2.3597e-03 rel=1.828e-05 (u=1.15e-03 v=2.06e-03 p=3.14e-07) cfl=2.74e+04 gmres=8
+[newton] it=55 |R|=1.8276e-03 rel=1.416e-05 (u=8.90e-04 v=1.60e-03 p=2.24e-07) cfl=3.53e+04 gmres=8
+[newton] it=56 |R|=1.4050e-03 rel=1.088e-05 (u=6.87e-04 v=1.23e-03 p=1.63e-07) cfl=4.59e+04 gmres=8
+[newton] it=57 |R|=1.0717e-03 rel=8.300e-06 (u=5.27e-04 v=9.33e-04 p=1.19e-07) cfl=6.02e+04 gmres=8
+[newton] it=58 |R|=8.1076e-04 rel=6.280e-06 (u=4.02e-04 v=7.04e-04 p=7.95e-08) cfl=7.96e+04 gmres=8
+[newton] it=59 |R|=6.0818e-04 rel=4.711e-06 (u=3.04e-04 v=5.27e-04 p=5.64e-08) cfl=1.06e+05 gmres=8
+[newton] it=60 |R|=4.5223e-04 rel=3.503e-06 (u=2.28e-04 v=3.90e-04 p=3.89e-08) cfl=1.43e+05 gmres=8
+[newton] it=61 |R|=3.3322e-04 rel=2.581e-06 (u=1.70e-04 v=2.86e-04 p=2.56e-08) cfl=1.94e+05 gmres=7
+[newton] it=62 |R|=2.4325e-04 rel=1.884e-06 (u=1.26e-04 v=2.08e-04 p=1.70e-08) cfl=2.65e+05 gmres=7
+[newton] it=63 |R|=1.7586e-04 rel=1.362e-06 (u=9.26e-05 v=1.50e-04 p=1.14e-08) cfl=3.67e+05 gmres=7
+[newton] it=64 |R|=1.2589e-04 rel=9.750e-07 (u=6.76e-05 v=1.06e-04 p=7.90e-09) cfl=5.13e+05 gmres=7
+[newton] done converged=True reason='' it=64 m_in=2.0000e+02 m_out=2.0000e+02 elapsed=13.4s
+--> flat_r1_U2_second_order_upwind_jfnk: converged=True reason='' it=64 rel_final=9.75e-07 rel_min=9.75e-07 t=13s
+
+==== summary ====
+case                                         Re  conv           reason   it  rel_final    rel_min   t[s]
+uturn_r1_U0.1_second_order_upwind_jfnk    10000  True                    20   8.18e-07   8.18e-07      6
+uturn_r1_U1_second_order_upwind_jfnk     100000  True                    77   9.71e-07   9.71e-07     15
+uturn_r1_U2_second_order_upwind_jfnk     200000  True                   102   9.05e-07   9.05e-07     20
+flat_r1_U0.1_second_order_upwind_jfnk     10000  True                    15   6.83e-07   6.83e-07      3
+flat_r1_U1_second_order_upwind_jfnk      100000  True                    43   9.17e-07   9.17e-07     10
+flat_r1_U2_second_order_upwind_jfnk      200000  True                    64   9.75e-07   9.75e-07     13
+[ProcessDiagnostics] レポート出力: /home/user/ykep-cae/docs/generated/process_usage_report.md

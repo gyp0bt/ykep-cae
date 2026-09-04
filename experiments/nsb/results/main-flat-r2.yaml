@@ -1,0 +1,48 @@
+flat_r2_U1_mine:
+  converged: false
+  reason: max_iter
+  n_iter: 80
+  rel_final: 2.0642195824815017
+  rel_steady_final: 3.8736046087649787
+  rel_min: 1.0
+  first_step_ratio: 38.05880925652182
+  mass_ratio: 1.00000000703128
+  p_inlet_mean: 141.15267593094174
+  speed_max: 4.725393022134871
+  elapsed: 194.8251517380004
+flat_r2_U1_floor:
+  converged: true
+  reason: ''
+  n_iter: 70
+  rel_final: 8.500108709433192e-07
+  rel_steady_final: 8.500153479574344e-07
+  rel_min: 8.500108709433192e-07
+  first_step_ratio: 2.5786449976695676
+  mass_ratio: 0.9999999999999387
+  p_inlet_mean: 2380.984752278067
+  speed_max: 1.3356535204180584
+  elapsed: 163.939263321
+flat_r2_U2_mine:
+  converged: false
+  reason: max_iter
+  n_iter: 80
+  rel_final: 50.35208941891511
+  rel_steady_final: 100.44053376658708
+  rel_min: 1.0
+  first_step_ratio: 178.13512934682362
+  mass_ratio: 1.0000001810605281
+  p_inlet_mean: -250718.5656496489
+  speed_max: 35.13206349533534
+  elapsed: 177.17109467400041
+flat_r2_U2_floor:
+  converged: false
+  reason: max_iter
+  n_iter: 80
+  rel_final: 1.7121115127419938e-05
+  rel_steady_final: 1.7122860728713245e-05
+  rel_min: 1.7121115127419938e-05
+  first_step_ratio: 3.5398854466587815
+  mass_ratio: 0.999999999999689
+  p_inlet_mean: 5614.718390955605
+  speed_max: 2.4696744792402012
+  elapsed: 196.36687277500005
