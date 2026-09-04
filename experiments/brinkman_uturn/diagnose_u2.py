@@ -7,6 +7,8 @@
   D. 1 次風上（リミター/2 次精度の影響を除く）
   E. defect correction（GMRES の影響を除く）
   F. 継続法: U=1 の収束解を初期値に U=2
+  G. 擬似時間の速度スケール下限を U_in に（静止初期場での Δτ を小さく）+ cfl_init=1
+  H. G + defect correction
 
 使用例::
 
@@ -65,6 +67,13 @@ def main() -> None:
         ),
         "E_defect_correction": BrinkmanSolverSettings(
             jacobian_mode=JacobianMode.DEFECT_CORRECTION, **base
+        ),
+        "G_floor1_cfl1": BrinkmanSolverSettings(velocity_floor_ratio=1.0, cfl_init=1.0, **base),
+        "H_floor1_cfl1_dc": BrinkmanSolverSettings(
+            velocity_floor_ratio=1.0,
+            cfl_init=1.0,
+            jacobian_mode=JacobianMode.DEFECT_CORRECTION,
+            **base,
         ),
     }
     out: dict[str, dict] = {}

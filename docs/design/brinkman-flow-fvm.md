@@ -37,7 +37,7 @@ $$
 | 外側 | Newton（残差は選択スキーム、ヤコビアンは常に **1 次風上**で解析的に組む） |
 | 内側 | GMRES（`jacobian="jfnk"`: 有限差分 $J_2 v$、`"defect_correction"`: $J_1 \delta=-R_2$） |
 | 前処理 | `scipy.sparse.linalg.splu` による $J_1$ の完全 LU |
-| 擬似時間 | 対角に $\rho V/\Delta\tau$ を加算。$\Delta\tau = \mathrm{CFL}\,\Delta x/(|u|+|v|+\epsilon)$、SER で CFL を成長 |
+| 擬似時間 | 対角に $\rho V/\Delta\tau$ を加算。$\Delta\tau = \mathrm{CFL}\,\Delta x/\max(|u|+|v|,\ r\,U_\mathrm{in})$（$r$=`velocity_floor_ratio`）、SER で CFL を成長 |
 | 陰的緩和 | 運動量対角を $a_P/\alpha_u$ に置換（残差は変えない） |
 
 収束判定は $\|R\|_2/\|R_0\|_2 <$ `newton_tol`。発散（NaN / 残差爆発 / GMRES 破綻 / 反復上限）は

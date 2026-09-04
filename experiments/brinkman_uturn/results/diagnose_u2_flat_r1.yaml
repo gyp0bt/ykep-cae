@@ -1,0 +1,57 @@
+A_baseline:
+  converged: false
+  reason: max_iter
+  n_newton: 80
+  rel_final: 15.308815819251267
+  rel_min: 1.0
+  elapsed: 18.672217893000038
+B_cfl0.5:
+  converged: true
+  reason: ''
+  n_newton: 64
+  rel_final: 9.75047154254025e-07
+  rel_min: 9.75047154254025e-07
+  elapsed: 16.533918670999924
+C_linesearch:
+  converged: true
+  reason: ''
+  n_newton: 61
+  rel_final: 7.718406411856437e-07
+  rel_min: 7.718406411856437e-07
+  elapsed: 19.255225801999927
+D_first_order:
+  converged: false
+  reason: diverged
+  n_newton: 34
+  rel_final: 13525345.15967028
+  rel_min: 1.0
+  elapsed: 7.312458932000027
+E_defect_correction:
+  converged: true
+  reason: ''
+  n_newton: 78
+  rel_final: 7.898999446832544e-07
+  rel_min: 7.898999446832544e-07
+  elapsed: 13.097123653999915
+G_floor1_cfl1:
+  converged: true
+  reason: ''
+  n_newton: 53
+  rel_final: 8.51101924084322e-07
+  rel_min: 8.51101924084322e-07
+  elapsed: 11.118694346999973
+H_floor1_cfl1_dc:
+  converged: true
+  reason: ''
+  n_newton: 58
+  rel_final: 8.998267896763946e-07
+  rel_min: 8.998267896763946e-07
+  elapsed: 10.387342917000069
+F_continuation:
+  converged: false
+  reason: diverged
+  n_newton: 14
+  rel_final: 32563573109.320835
+  rel_min: 0.34071899832381725
+  elapsed: 18.79741960199999
+  stage1_converged: true

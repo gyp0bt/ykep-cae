@@ -137,6 +137,20 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [ ] Phase 6.8: 水槽システム統合デモ（1〜2 PR）
 - [ ] Phase 6.9: 日周期拡張 + 設計最適化の足場（将来）
 
+## Phase 7: 2D Brinkman 補正 NS (FVM, Newton–Krylov) 収束性研究（進行中）
+
+薄流路の深さ平均 2D 流れ（Brinkman 貫通項）を同位置 FVM + Newton–Krylov で定常解析し、
+メッシュ細分化・流速増加で収束が破綻する現象を再現・分析する（学習目的の実験）。
+詳細は [設計文書](design/brinkman-flow-fvm.md) と [status-28](status/status-28.md)。
+
+- [x] `BrinkmanFlowFVMProcess`（Newton + GMRES/LU(J1)、JFNK / defect correction、擬似時間 SER、陰的緩和）
+- [x] `UTurnThicknessProcess`（flat / uturn 厚さ場）
+- [x] 1 次風上ヤコビアンの FD 検証テスト、質量保存・Hele-Shaw 圧損の物理テスト
+- [x] 再現スイープ（72×48 の 1×/2×/4× × U=0.1/1/2 × flat/uturn）— status-28
+- [x] U=2 失敗機構切り分け（CFL 初期値 / ラインサーチ / 1 次風上 / defect correction / 継続法）
+- [ ] 発散対策の本質的検討（擬似時間の CFL 制御則、初期場、非定常性の有無の確認）
+- [ ] 非定常（時間精度）モードで定常解の存在を確認
+
 ## 将来構想
 
 - LES / DES

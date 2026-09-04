@@ -108,6 +108,9 @@ class BrinkmanSolverSettings:
         ||R||/||R0|| がこの値を超えたら発散として停止
     line_search : bool
         Armijo 型の簡易ラインサーチ（既定 False: 再現実験のため）
+    velocity_floor_ratio : float
+        擬似時間の速度スケール下限 = velocity_floor_ratio × |u_inlet|。
+        Δτ = CFL·Δx / max(|u|+|v|, 下限)。静止初期場では下限が Δτ を決める
     """
 
     convection_scheme: ConvectionSchemeType = ConvectionSchemeType.SECOND_ORDER_UPWIND
@@ -125,6 +128,7 @@ class BrinkmanSolverSettings:
     gmres_maxiter: int = 5
     divergence_ratio: float = 1.0e6
     line_search: bool = False
+    velocity_floor_ratio: float = 0.1
 
 
 @dataclass(frozen=True)

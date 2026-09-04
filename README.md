@@ -15,7 +15,7 @@ FDM（差分法）・FVM（有限体積法）による流体ソルバー基盤�
 
 ## 現在の状態
 
-**286 テスト** -- 2026-09-02 [単軸押出解析 設計策定](docs/design/single-screw-extruder.md)（展開チャネル 2.5D、RTD 目的、**実装未着手** / [status-27](docs/status/status-27.md)） | 契約違反 **0件**（11プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**300 テスト** -- 2026-09-04 [2D Brinkman 補正 NS (FVM, Newton–Krylov)](docs/design/brinkman-flow-fvm.md) 新設 + U ターン/平板の収束破綻を再現し機構を切り分け（初回 Newton ステップの残差増幅が原因、擬似時間制御で回復 / [status-28](docs/status/status-28.md)） | 契約違反 **0件**（13プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 ## パッケージ構成
 

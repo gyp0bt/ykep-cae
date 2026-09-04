@@ -1,0 +1,57 @@
+A_baseline:
+  converged: false
+  reason: diverged
+  n_newton: 18
+  rel_final: 8359902.268730309
+  rel_min: 1.0
+  elapsed: 8.222698815999934
+B_cfl0.5:
+  converged: false
+  reason: max_iter
+  n_newton: 80
+  rel_final: 3.594829056201757e-05
+  rel_min: 3.594829056201757e-05
+  elapsed: 19.315062069000078
+C_linesearch:
+  converged: false
+  reason: max_iter
+  n_newton: 80
+  rel_final: 1.7903579329021309
+  rel_min: 0.7706682813937207
+  elapsed: 34.864061725000056
+D_first_order:
+  converged: false
+  reason: max_iter
+  n_newton: 80
+  rel_final: 2.1514285439841445
+  rel_min: 1.0
+  elapsed: 14.158041053000034
+E_defect_correction:
+  converged: false
+  reason: max_iter
+  n_newton: 80
+  rel_final: 1.9933555831931693e-05
+  rel_min: 1.9933555831931693e-05
+  elapsed: 12.875614569000163
+G_floor1_cfl1:
+  converged: false
+  reason: max_iter
+  n_newton: 80
+  rel_final: 3.455830930106798e-06
+  rel_min: 3.455830930106798e-06
+  elapsed: 18.932012291000092
+H_floor1_cfl1_dc:
+  converged: false
+  reason: max_iter
+  n_newton: 80
+  rel_final: 7.23469797827576e-06
+  rel_min: 7.23469797827576e-06
+  elapsed: 12.238909078000006
+F_continuation:
+  converged: true
+  reason: ''
+  n_newton: 75
+  rel_final: 8.034790943952909e-07
+  rel_min: 8.034790943952909e-07
+  elapsed: 26.271852456000033
+  stage1_converged: true

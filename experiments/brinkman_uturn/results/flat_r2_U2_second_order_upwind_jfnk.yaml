@@ -1,0 +1,87 @@
+tag: flat_r2_U2_second_order_upwind_jfnk
+model: flat
+refine: 2
+nx: 144
+ny: 96
+u_inlet: 2.0
+re_inlet: 199999.99999999994
+scheme: second_order_upwind
+jacobian_mode: jfnk
+settings:
+  convection_scheme: second_order_upwind
+  jacobian_mode: jfnk
+  venkat_k: 5.0
+  newton_tol: 1.0e-06
+  newton_abs_tol: 1.0e-10
+  newton_max_iter: 60
+  cfl_init: 5.0
+  cfl_max: 1000000.0
+  ser_growth: 2.0
+  alpha_u: 0.7
+  gmres_tol: 0.001
+  gmres_restart: 40
+  gmres_maxiter: 5
+  divergence_ratio: 1000000.0
+  line_search: false
+converged: false
+failure_reason: diverged
+n_newton: 7
+elapsed_seconds: 29.96519204599997
+residual_history:
+- 91.30211647381807
+- 8174.206291221767
+- 3644.162867986332
+- 192470.26828714632
+- 5631558.137060062
+- 10141732.01905342
+- 11344427.5047984
+- 563329453.5429729
+residual_components:
+- - 81.66645459386598
+  - 0.0
+  - 40.824829046386306
+- - 8162.997727387729
+  - 297.90663293769546
+  - 307.19412781518656
+- - 3630.771371584694
+  - 288.5302686054211
+  - 119.0484766381725
+- - 192266.6208878537
+  - 8786.091534133971
+  - 1074.8313571960596
+- - 5629021.076152192
+  - 167661.87584853757
+  - 21407.258319558663
+- - 10128831.198525403
+  - 511257.49484828394
+  - 11075.740766833744
+- - 10552074.720145538
+  - 4161554.520912764
+  - 176687.52520264586
+- - 117809353.74100952
+  - 550788377.3026665
+  - 9653643.273194939
+cfl_history:
+- 0.5
+- 1.0
+- 0.1
+- 0.010000000000000002
+- 0.005552856382400928
+- 0.004964162479488771
+- 0.0004964162479488771
+gmres_iterations:
+- 15
+- 6
+- 43
+- 35
+- 19
+- 67
+- 200
+final_relative_residual: 6169949.561952532
+min_relative_residual: 1.0
+mass_in: 200.0
+mass_out: -202.75452528638186
+u_abs_max: 1969.671447708279
+v_abs_max: 471.2276723637534
+p_max: 888094730.1956401
+p_min: -861215046.7987787

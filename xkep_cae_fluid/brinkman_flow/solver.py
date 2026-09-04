@@ -117,7 +117,7 @@ class BrinkmanFlowFVMProcess(SolverProcess["BrinkmanFlowInput", "BrinkmanFlowRes
         converged = False
         failure = ""
         n_newton = 0
-        u_floor = 0.1 * abs(inp.u_inlet)
+        u_floor = s.velocity_floor_ratio * abs(inp.u_inlet)
         h_min = min(disc.dx, disc.dy)
 
         self._emit(
