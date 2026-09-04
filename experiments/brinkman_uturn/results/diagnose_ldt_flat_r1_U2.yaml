@@ -1,0 +1,88 @@
+L_floor0.1:
+  converged: true
+  reason: ''
+  n_newton: 64
+  rel_final: 9.745421172789628e-07
+  rel_min: 9.745421172789628e-07
+  first_step_ratio: 6.236302201589482
+  steady_residual_ratio: 9.745421172789628e-07
+  mass_in: 199.99999999999997
+  mass_out: 200.00000000004908
+  elapsed: 56.1297718980004
+L_nofloor:
+  converged: false
+  reason: max_iter
+  n_newton: 80
+  rel_final: 0.00041990068080174323
+  rel_min: 0.00041990068080174323
+  first_step_ratio: 50.781868463006376
+  steady_residual_ratio: 0.00041990068080174323
+  mass_in: 199.99999999999997
+  mass_out: 199.99999999958953
+  elapsed: 70.66153683999983
+L_rc_floor0.1:
+  converged: true
+  reason: ''
+  n_newton: 62
+  rel_final: 9.588962796449792e-07
+  rel_min: 9.588962796449792e-07
+  first_step_ratio: 4.858142994426007
+  steady_residual_ratio: 9.97587807594966e-07
+  mass_in: 199.99999999999997
+  mass_out: 199.99999999998326
+  elapsed: 57.978488332999405
+L_rc_nofloor:
+  converged: false
+  reason: max_iter
+  n_newton: 80
+  rel_final: 9.733253435699413e-06
+  rel_min: 9.733253435699413e-06
+  first_step_ratio: 50.780316328071386
+  steady_residual_ratio: 9.750607622749011e-06
+  mass_in: 199.99999999999997
+  mass_out: 199.99999999978402
+  elapsed: 64.63535232899994
+G_floor0.1:
+  converged: true
+  reason: ''
+  n_newton: 75
+  rel_final: 9.424504900631429e-07
+  rel_min: 9.424504900631429e-07
+  first_step_ratio: 6.236302201589482
+  steady_residual_ratio: 9.424504900631429e-07
+  mass_in: 199.99999999999997
+  mass_out: 199.9999999999656
+  elapsed: 60.569605298999704
+G_rc_floor0.1:
+  converged: true
+  reason: ''
+  n_newton: 75
+  rel_final: 9.03609072141459e-07
+  rel_min: 9.03609072141459e-07
+  first_step_ratio: 4.858142994426007
+  steady_residual_ratio: 1.2814027022490793e-06
+  mass_in: 199.99999999999997
+  mass_out: 199.99999999998238
+  elapsed: 62.073076798999864
+L_floor0.1_cfl5:
+  converged: false
+  reason: diverged
+  n_newton: 18
+  rel_final: 2300366.0944528515
+  rel_min: 1.0
+  first_step_ratio: 34.54663250872916
+  steady_residual_ratio: 2300366.0944528515
+  mass_in: 199.99999999999997
+  mass_out: -14342.126163970519
+  elapsed: 122.46255069900053
+G_floor0.1_cfl5:
+  converged: true
+  reason: ''
+  n_newton: 57
+  rel_final: 8.029071433191411e-07
+  rel_min: 8.029071433191411e-07
+  first_step_ratio: 34.54663250872916
+  steady_residual_ratio: 8.029071433191411e-07
+  mass_in: 199.99999999999997
+  mass_out: 200.00000000001143
+  elapsed: 34.18115825899986

@@ -4,7 +4,7 @@
 
 **日付**: 2026-09-04
 **ブランチ**: `claude/2dfvm-brinkman-convergence-tn39cz`
-**テスト数**: 300（既存 286 + 13、`pytest --collect-only` 基準。pyamg/numba 導入環境で 291 passed / 8 skipped / 1 xfailed）（+13: `tests/test_brinkman_flow.py`）
+**テスト数**: 302（既存 286 + 15、`pytest --collect-only` 基準。pyamg/numba 導入環境で 291 passed / 8 skipped / 1 xfailed）（+15: `tests/test_brinkman_flow.py`）
 **契約違反**: 0 件（登録プロセス 13）
 
 ## 目的
@@ -147,18 +147,89 @@ flat は uturn より悪い（144×96 U=1 で uturn は停滞、flat は 1e7 ま
   慣性が効くのは左端の狭い領域だけ。
 - 144×96 と 72×48 で場の構造は同じ（メッシュ依存性は小さい）。
 
+## 局所 Δτ vs 大域 Δτ の切り分け（「局所時間増分にすると発散する」の再現）
+
+ユーザ側で局所時間増分を試すと発散したとの報告を受け、本実装に
+`pseudo_time_mode`（LOCAL / GLOBAL）と `rhie_chow_pseudo_time`（RC 係数を
+$d_f = V/(a_P+\rho V/\Delta\tau)$ とする変種）を追加して比較した
+（`experiments/brinkman_uturn/diagnose_local_dtau.py`、newton_max_iter=80、SOU+Venkat、JFNK、α_u=0.7）。
+
+- LOCAL: $\Delta\tau_P = \mathrm{CFL}\,\Delta x / \max(|u|_P+|v|_P,\ r\,U_\mathrm{in})$
+- GLOBAL: 上式の全セル最小値を一律に使用
+- floor0.1: $r=0.1$、nofloor: $r=10^{-6}$（実質、静止セルで $\Delta\tau\to\infty$）
+- 初期場は静止（u=v=p=0）。初期場では全セルが速度下限で決まるので LOCAL と GLOBAL の 1 反復目は同一
+
+### 72×48、U=2 m/s（ログ: `logs/diag-ldt-{uturn,flat}-r1-U2.log`、YAML: `results/diagnose_ldt_*_r1_U2.yaml`）
+
+| 変種 | Δτ | 速度下限 | RC に Δτ | cfl_init | uturn | flat |
+|---|---|---|---|---|---|---|
+| L_floor0.1 | 局所 | 0.1 U_in | 無 | 0.5 | 未収束（80 反復で 3.6e-5、単調減少中） | **収束**（64） |
+| L_nofloor | 局所 | 無し | 無 | 0.5 | **停滞**（80 反復で 35、rel_min=1.0、CFL≈0.02 に張り付き） | 未収束（4.2e-4、減少中） |
+| L_rc_floor0.1 | 局所 | 0.1 U_in | 有 | 0.5 | 未収束（3.1e-5、定常残差 3.9e-5） | **収束**（62） |
+| L_rc_nofloor | 局所 | 無し | 有 | 0.5 | 未収束（1.5e-4、途中 1.5e3 まで増幅） | 未収束（9.7e-6） |
+| G_floor0.1 | 大域 | 0.1 U_in | 無 | 0.5 | 未収束（5.0e-4） | **収束**（75） |
+| G_rc_floor0.1 | 大域 | 0.1 U_in | 有 | 0.5 | 未収束（1.5e-5、定常残差 1.9e-5） | **収束**（75） |
+| L_floor0.1_cfl5 | 局所 | 0.1 U_in | 無 | 5 | **発散**（3 反復、1.3e6） | **発散**（18 反復、2.3e6、m_out/m_in=−72） |
+| G_floor0.1_cfl5 | 大域 | 0.1 U_in | 無 | 5 | 未収束（3.4e-6、ほぼ収束） | **収束**（57） |
+
+（括弧内は 80 反復時点の相対残差 ||R||/||R0||、または収束反復数）
+
+### 144×96、U=1 m/s、uturn（ログ: `logs/diag-ldt-uturn-r2-U1.log`、YAML: `results/diagnose_ldt_uturn_r2_U1.yaml`）
+
+80 反復ではいずれも未収束（newton_tol=1e-6 未達）。80 反復時点の相対残差で比較する。
+
+| 変種 | 1 反復目増幅 | 80 反復時 ||R||/||R0|| |
+|---|---|---|
+| L_floor0.1 (cfl 0.5) | 20.6× | 2.5e-4 |
+| L_nofloor (cfl 0.5) | 29.8× | **2.5e-1**（ほぼ停滞） |
+| L_rc_floor0.1 (cfl 0.5) | 8.6× | 2.6e-4（定常残差 3.4e-4） |
+| L_rc_nofloor (cfl 0.5) | 29.8× | 8.7e-4 |
+| G_floor0.1 (cfl 0.5) | 20.6× | 3.2e-3 |
+| G_rc_floor0.1 (cfl 0.5) | 8.6× | 3.5e-4 |
+| L_floor0.1_cfl5 | 22.1× | 7.4e-2 |
+| G_floor0.1_cfl5 | 22.1× | **5.3e-5**（最良） |
+
+細分化しても傾向は同じ: 速度下限の無い局所 Δτ が最悪、cfl_init=5 では局所 Δτ が大域 Δτ に大きく劣る。
+一方 cfl_init=0.5 では局所（floor 有）が大域より速い。つまり局所 Δτ は「適切な CFL・速度下限のもとでは有利、
+CFL が大きい／下限が無いと破綻」で、大域 Δτ の方が CFL に対して寛容。
+
+### 読み取り
+
+1. **局所 Δτ を「Δx/|u|」だけで決めると破綻する（技術的ミスマッチ）**。
+   静止初期場・閉塞部・流路外の低速セルでは $|u|\to 0$ で $\Delta\tau\to\infty$ となり、
+   擬似時間の対角補強がそこで消えて素の Newton になる。1 反復目の残差増幅が
+   26.6×（floor 有）→ 41.5×（floor 無）に悪化し、uturn では 80 反復たっても初期残差を下回らず、
+   SER が CFL を 0.02 に押し下げたまま停滞した。flat も収束が大幅に遅れた。
+   **同じコードで速度下限 $0.1\,U_\mathrm{in}$ を入れるだけで局所 Δτ は大域 Δτ と同等以上に収束する**ので、
+   局所 Δτ 自体が悪いのではなく、低速セルでの Δτ の上限（速度下限、または拡散・Brinkman 抵抗による制限）が無いことが原因。
+2. **同じ CFL でも局所 Δτ は大域 Δτ より「弱い」**。流れが発達すると局所 Δτ は噴流部だけ小さく、
+   遠方は速度下限で決まる大きい Δτ のまま。大域 Δτ は噴流部の最小値を全域に使うので遠方の減衰が 10 倍強い。
+   cfl_init=5 で局所は 3 反復で発散、大域は収束（flat）/ほぼ収束（uturn）したのはこの差。
+   したがって「大域 Δτ で通っていた CFL をそのまま局所 Δτ に持ち込むと発散する」のは実装ミスではなく想定内の挙動で、
+   局所化する場合は CFL を下げるか（本実験では 0.5）、残差増加時にステップを棄却して CFL を下げる大域化が必要。
+3. **RC 係数に擬似時間項を含めても致命的ではない**（本実装では）。1 反復目の増幅はむしろ小さく（8.9×）、
+   収束解の定常残差もほぼ同じ。ただし残差が Δτ 場に依存するため、収束判定を「擬似時間込みの残差」で行うと
+   定常残差との差（uturn で 3.1e-5 vs 3.9e-5）が生じる。局所 Δτ でこれが大きくなる兆候は見られなかった。
+4. **手元コードでの確認ポイント**（実装ミスか否かの判別）:
+   - 局所 Δτ に速度下限や拡散/抵抗による上限があるか。無いなら $\Delta\tau_P = \mathrm{CFL}\,\Delta x/\max(|u|_P, 0.1U_\mathrm{in})$ を試す
+   - 局所化した CFL 値が大域 Δτ で使っていた値のままではないか（本実験: 局所は 0.5 なら可、5 は発散）
+   - 擬似時間項を残差側にも入れているか（入れると Δτ が場所ごとに違う分だけ「定常解」が変わる。運動量対角のみに加えるのが正しい）
+   - 圧力（連続式）の対角に擬似時間項を加えていないか（本実装は u, v のみ）
+   - RC 係数の $a_P$ に擬似時間項が入っている場合は収束判定を Δτ 非依存の残差で行う
+
 ## 次にやること
 
 - [ ] 1 反復目の残差増幅を抑える大域化: 残差が増えた更新を棄却して CFL を下げて再試行（backtracking on CFL）
 - [ ] 初期場を Stokes–Brinkman 解（対流無し）にしてから Newton を開始する
 - [ ] inlet 速度ランプ（U を 0.1→2 と段階的に上げる継続法の自動化、flat での発散の再検証）
 - [ ] 288×192 で cfl_init=0.5 / 速度下限=U_in の効果を確認（本 status では 4× は基準設定のみ）
+- [ ] 局所 Δτ に拡散・Brinkman 抵抗の時間スケール上限（Δτ ≤ CFL·min(Δx/|u|, ρ/(12μ_b/h²), ρΔx²/μ)）を入れた変種で速度下限の代替になるか確認
 - [ ] 非定常モードを追加し、U=2 flat の定常解が物理的に安定か（渦放出しないか）を確認
 - [ ] Brinkman 係数 12 の妥当性（深さ平均モデルとしての整合）を設計文書で明記済み、必要なら係数を可変にする
 
 ## ファイル
 
 - `xkep_cae_fluid/brinkman_flow/{data,geometry,assembly,solver}.py`
-- `tests/test_brinkman_flow.py`（13 件）
+- `tests/test_brinkman_flow.py`（15 件）
 - `docs/design/brinkman-flow-fvm.md`
-- `experiments/brinkman_uturn/{sweep,diagnose_u2,summarize}.py` + `results*/` + `logs/`
+- `experiments/brinkman_uturn/{sweep,diagnose_u2,diagnose_local_dtau,summarize,plot_fields}.py` + `results*/` + `logs/` + `output/`
