@@ -26,6 +26,13 @@ class JacobianMode(Enum):
     DEFECT_CORRECTION = "defect_correction"  # J1 δ = -R2 を LU で直接求解
 
 
+class PseudoTimeMode(Enum):
+    """擬似時間増分の取り方."""
+
+    LOCAL = "local"  # セルごとに Δτ = CFL·Δx / max(|u|+|v|, r·U_in)
+    GLOBAL = "global"  # 全セル一律に Δτ = min_cells(局所 Δτ)
+
+
 class ThicknessModel(Enum):
     """厚さ場のモデル種別."""
 
@@ -111,6 +118,12 @@ class BrinkmanSolverSettings:
     velocity_floor_ratio : float
         擬似時間の速度スケール下限 = velocity_floor_ratio × |u_inlet|。
         Δτ = CFL·Δx / max(|u|+|v|, 下限)。静止初期場では下限が Δτ を決める
+    pseudo_time_mode : PseudoTimeMode
+        LOCAL: セル局所 Δτ、GLOBAL: 局所 Δτ の全セル最小値を一律に使う
+    rhie_chow_pseudo_time : bool
+        True なら Rhie–Chow 係数を d_f = V/(a_P + ρV/Δτ) とする（擬似時間項を
+        運動量対角に含めたまま RC を組む実装の再現用）。残差が Δτ に依存するようになる。
+        既定 False（d_f = V/a_P、残差は Δτ に依存しない）
     """
 
     convection_scheme: ConvectionSchemeType = ConvectionSchemeType.SECOND_ORDER_UPWIND
@@ -129,6 +142,8 @@ class BrinkmanSolverSettings:
     divergence_ratio: float = 1.0e6
     line_search: bool = False
     velocity_floor_ratio: float = 0.1
+    pseudo_time_mode: PseudoTimeMode = PseudoTimeMode.LOCAL
+    rhie_chow_pseudo_time: bool = False
 
 
 @dataclass(frozen=True)
@@ -214,6 +229,9 @@ class BrinkmanFlowResult:
         inlet / outlet の質量流量 [kg/s]（面速度ベース）
     elapsed_seconds : float
         計算時間
+    steady_residual_ratio : float
+        最終場で評価した Δτ 非依存の定常残差 ||R(x)||/||R0||。
+        `rhie_chow_pseudo_time=False` では residual_history[-1]/residual_history[0] と一致する
     """
 
     u: np.ndarray
@@ -229,3 +247,4 @@ class BrinkmanFlowResult:
     mass_in: float
     mass_out: float
     elapsed_seconds: float
+    steady_residual_ratio: float = float("nan")

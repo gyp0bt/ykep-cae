@@ -17,6 +17,7 @@ from xkep_cae_fluid.brinkman_flow import (
     BrinkmanSolverSettings,
     ConvectionSchemeType,
     JacobianMode,
+    PseudoTimeMode,
     ThicknessInput,
     ThicknessModel,
     ThicknessResult,
@@ -150,6 +151,35 @@ class TestBrinkmanFlowConvergence:
         )
         res = BrinkmanFlowFVMProcess().execute(inp)
         assert res.converged, res.failure_reason
+
+    def test_global_pseudo_time_converges(self):
+        inp = _input(
+            36,
+            24,
+            ThicknessModel.UTURN,
+            0.1,
+            pseudo_time_mode=PseudoTimeMode.GLOBAL,
+            newton_max_iter=80,
+        )
+        res = BrinkmanFlowFVMProcess().execute(inp)
+        assert res.converged, res.failure_reason
+        # 既定（RC 係数に擬似時間項を含めない）では定常残差 = 最終残差
+        rel = res.residual_history[-1] / res.residual_history[0]
+        assert res.steady_residual_ratio == pytest.approx(rel, rel=1e-9)
+
+    def test_rhie_chow_pseudo_time_reports_steady_residual(self):
+        """RC 係数に擬似時間項を含める変種は Δτ 非依存の定常残差を別途報告する."""
+        inp = _input(
+            36,
+            24,
+            ThicknessModel.UTURN,
+            0.1,
+            rhie_chow_pseudo_time=True,
+            newton_max_iter=80,
+        )
+        res = BrinkmanFlowFVMProcess().execute(inp)
+        assert np.isfinite(res.steady_residual_ratio)
+        assert len(res.residual_history) == res.n_newton + 1
 
 
 class TestBrinkmanFlowPhysics:

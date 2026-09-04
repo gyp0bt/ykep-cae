@@ -19,6 +19,7 @@ from xkep_cae_fluid.brinkman_flow.data import (
     BrinkmanFlowInput,
     BrinkmanFlowResult,
     JacobianMode,
+    PseudoTimeMode,
 )
 from xkep_cae_fluid.core.base import AbstractProcess, ProcessMeta
 from xkep_cae_fluid.core.categories import SolverProcess
@@ -92,8 +93,24 @@ class BrinkmanFlowFVMProcess(SolverProcess["BrinkmanFlowInput", "BrinkmanFlowRes
         p = np.zeros(shape) if inp.p0 is None else inp.p0.astype(np.float64)
         x = np.concatenate([u.ravel(), v.ravel(), p.ravel()])
 
+        u_floor = s.velocity_floor_ratio * abs(inp.u_inlet)
+        h_min = min(disc.dx, disc.dy)
+
+        def pseudo_diag(xx: np.ndarray, cfl_now: float) -> np.ndarray:
+            """擬似時間対角 ρV/Δτ (nx, ny)。GLOBAL では全セル最小 Δτ を一律に使う."""
+            uu, vv, _ = disc.split(xx)
+            speed = np.maximum(np.abs(uu) + np.abs(vv), u_floor)
+            dtau = cfl_now * h_min / speed
+            if s.pseudo_time_mode is PseudoTimeMode.GLOBAL:
+                dtau = np.full_like(dtau, float(dtau.min()))
+            return inp.rho * disc.vol / dtau
+
+        # RC 係数に擬似時間項を含める変種では残差が Δτ に依存する（Newton 反復内で凍結）
+        rc_diag: np.ndarray | None = None
+
         def resid(xx: np.ndarray) -> np.ndarray:
-            return disc.residual(xx, s.convection_scheme, s.venkat_k)
+            st_ = disc.compute_state(xx, s.convection_scheme, s.venkat_k, rc_diag)
+            return disc.residual_from_state(xx, st_)
 
         def norms(r: np.ndarray) -> tuple[float, float, float, float]:
             ru, rv, rp = r[:n], r[n : 2 * n], r[2 * n :]
@@ -104,7 +121,10 @@ class BrinkmanFlowFVMProcess(SolverProcess["BrinkmanFlowInput", "BrinkmanFlowRes
                 float(np.linalg.norm(rp)),
             )
 
-        st = disc.compute_state(x, s.convection_scheme, s.venkat_k)
+        cfl = s.cfl_init
+        if s.rhie_chow_pseudo_time:
+            rc_diag = pseudo_diag(x, cfl)
+        st = disc.compute_state(x, s.convection_scheme, s.venkat_k, rc_diag)
         r = disc.residual_from_state(x, st)
         r_norm, ru, rv, rp = norms(r)
         r0 = max(r_norm, 1e-300)
@@ -113,12 +133,9 @@ class BrinkmanFlowFVMProcess(SolverProcess["BrinkmanFlowInput", "BrinkmanFlowRes
         comps: list[tuple[float, float, float]] = [(ru, rv, rp)]
         cfl_hist: list[float] = []
         gmres_hist: list[int] = []
-        cfl = s.cfl_init
         converged = False
         failure = ""
         n_newton = 0
-        u_floor = s.velocity_floor_ratio * abs(inp.u_inlet)
-        h_min = min(disc.dx, disc.dy)
 
         self._emit(
             f"[newton] it=0 |R|={r_norm:.4e} (u={ru:.2e} v={rv:.2e} p={rp:.2e}) cfl={cfl:.3g}"
@@ -136,10 +153,14 @@ class BrinkmanFlowFVMProcess(SolverProcess["BrinkmanFlowInput", "BrinkmanFlowRes
                 break
 
             # 擬似時間 + 陰的緩和の対角補強
-            uu, vv, _ = disc.split(x)
-            speed = np.maximum(np.abs(uu) + np.abs(vv), u_floor)
-            dtau = cfl * h_min / speed
-            aug = inp.rho * disc.vol / dtau + (1.0 - s.alpha_u) / s.alpha_u * st.a_p
+            tau_diag = pseudo_diag(x, cfl)
+            if s.rhie_chow_pseudo_time:
+                # Δτ が変わると残差も変わるので、今回の Δτ で状態・残差を取り直す
+                rc_diag = tau_diag
+                st = disc.compute_state(x, s.convection_scheme, s.venkat_k, rc_diag)
+                r = disc.residual_from_state(x, st)
+                r_norm = float(np.linalg.norm(r))
+            aug = tau_diag + (1.0 - s.alpha_u) / s.alpha_u * st.a_p
             aug_vec = np.concatenate([aug.ravel(), aug.ravel(), np.zeros(n)])
 
             J1 = disc.jacobian_first_order(st) + sparse.diags(aug_vec)
@@ -191,7 +212,7 @@ class BrinkmanFlowFVMProcess(SolverProcess["BrinkmanFlowInput", "BrinkmanFlowRes
             else:
                 x = x + delta
 
-            st = disc.compute_state(x, s.convection_scheme, s.venkat_k)
+            st = disc.compute_state(x, s.convection_scheme, s.venkat_k, rc_diag)
             r = disc.residual_from_state(x, st)
             r_new, ru, rv, rp = norms(r)
             ratio = r_norm / r_new if r_new > 0.0 and np.isfinite(r_new) else 0.1
@@ -217,10 +238,13 @@ class BrinkmanFlowFVMProcess(SolverProcess["BrinkmanFlowInput", "BrinkmanFlowRes
 
         u, v, p = disc.split(x)
         m_in, m_out = disc.mass_flow(st)
+        # Δτ に依存しない定常残差（RC 変種では最終残差と一致しない）
+        r_steady = float(np.linalg.norm(disc.residual(x, s.convection_scheme, s.venkat_k)))
         elapsed = time.perf_counter() - t0
         self._emit(
             f"[newton] done converged={converged} reason='{failure}' it={n_newton} "
-            f"m_in={m_in:.4e} m_out={m_out:.4e} elapsed={elapsed:.1f}s"
+            f"m_in={m_in:.4e} m_out={m_out:.4e} |R_steady|/|R0|={r_steady / r0:.3e} "
+            f"elapsed={elapsed:.1f}s"
         )
         return BrinkmanFlowResult(
             u=u.copy(),
@@ -236,4 +260,5 @@ class BrinkmanFlowFVMProcess(SolverProcess["BrinkmanFlowInput", "BrinkmanFlowRes
             mass_in=m_in,
             mass_out=m_out,
             elapsed_seconds=elapsed,
+            steady_residual_ratio=r_steady / r0,
         )

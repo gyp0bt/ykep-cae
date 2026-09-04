@@ -38,6 +38,8 @@ $$
 | 内側 | GMRES（`jacobian="jfnk"`: 有限差分 $J_2 v$、`"defect_correction"`: $J_1 \delta=-R_2$） |
 | 前処理 | `scipy.sparse.linalg.splu` による $J_1$ の完全 LU |
 | 擬似時間 | 対角に $\rho V/\Delta\tau$ を加算。$\Delta\tau = \mathrm{CFL}\,\Delta x/\max(|u|+|v|,\ r\,U_\mathrm{in})$（$r$=`velocity_floor_ratio`）、SER で CFL を成長 |
+| 局所/大域 Δτ | `pseudo_time_mode`: `LOCAL`（セルごとの Δτ、既定）/ `GLOBAL`（局所 Δτ の全セル最小値を一律に使用） |
+| RC と擬似時間 | 既定は $d_f = V/a_P$（残差は Δτ に依存しない）。`rhie_chow_pseudo_time=True` で $d_f = V/(a_P + \rho V/\Delta\tau)$ とする再現用変種（残差が Δτ に依存し、収束解も Δτ 場に依存する）。結果の `steady_residual_ratio` に Δτ 非依存の定常残差を常に報告 |
 | 陰的緩和 | 運動量対角を $a_P/\alpha_u$ に置換（残差は変えない） |
 
 収束判定は $\|R\|_2/\|R_0\|_2 <$ `newton_tol`。発散（NaN / 残差爆発 / GMRES 破綻 / 反復上限）は

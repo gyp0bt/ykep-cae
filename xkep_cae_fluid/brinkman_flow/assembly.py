@@ -240,9 +240,17 @@ class BrinkmanDiscretization:
         return ufx, vfx, ufy, vfy, pfx, pfy
 
     def compute_state(
-        self, x: np.ndarray, scheme: ConvectionSchemeType, venkat_k: float
+        self,
+        x: np.ndarray,
+        scheme: ConvectionSchemeType,
+        venkat_k: float,
+        pseudo_diag: np.ndarray | None = None,
     ) -> StateArrays:
-        """面速度・RC 質量流束・対流面値を計算する."""
+        """面速度・RC 質量流束・対流面値を計算する.
+
+        pseudo_diag に (nx, ny) の擬似時間対角 ρV/Δτ を渡すと、RC 係数を
+        d_f = V/(a_P + ρV/Δτ) として組む（既定 None: d_f = V/a_P）。
+        """
         u, v, p = self.split(x)
         ufx, vfx, ufy, vfy, pfx, pfy = self._linear_face_values(u, v, p)
         rho, dx, dy, vol = self.rho, self.dx, self.dy, self.vol
@@ -258,7 +266,7 @@ class BrinkmanDiscretization:
             + self.diff_diag
             + self.drag * vol
         )
-        d_cell = vol / a_p
+        d_cell = vol / a_p if pseudo_diag is None else vol / (a_p + pseudo_diag)
         dfx = np.zeros((self.nx + 1, self.ny))
         dfy = np.zeros((self.nx, self.ny + 1))
         dfx[1:-1] = 0.5 * (d_cell[:-1] + d_cell[1:])

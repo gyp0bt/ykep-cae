@@ -7,6 +7,7 @@ from xkep_cae_fluid.brinkman_flow.data import (
     BrinkmanSolverSettings,
     ConvectionSchemeType,
     JacobianMode,
+    PseudoTimeMode,
     ThicknessModel,
     ThicknessSpec,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "BrinkmanSolverSettings",
     "ConvectionSchemeType",
     "JacobianMode",
+    "PseudoTimeMode",
     "ThicknessInput",
     "ThicknessModel",
     "ThicknessResult",
