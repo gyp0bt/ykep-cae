@@ -1,6 +1,6 @@
 # nsb: 手元構成ミラーの Brinkman-NS 実験パッケージ
 
-[<- README](../README.md) | [数理ノート（総和規約）](theory.md) | [設計文書（共有離散化）](../docs/design/brinkman-flow-fvm.md) | [status-28](../docs/status/status-28.md)
+[<- README](../README.md) | [数理ノート（総和規約）](theory.md) | [設計文書（共有離散化）](../docs/design/brinkman-flow-fvm.md) | [status-30](../docs/status/status-30.md)
 
 手元の 2D FVM Brinkman 補正 Navier-Stokes コードと**同じファイル構成・同じ制御則**で比較するための薄いレイヤ。
 離散化（残差、1 次風上ヤコビアン、Rhie–Chow、境界条件）は
@@ -19,7 +19,7 @@ Newton + 擬似時間の制御則だけを `solver.solve_steady` に関数とし
 
 ## `NSBSettings` の「踏んではいけない線」スイッチ
 
-| 設定 | 既定（手元構成の推定） | 修正構成 | 影響（status-28 の実験結果） |
+| 設定 | 既定（手元構成の推定） | 修正構成 | 影響（status-30 の実験結果） |
 |---|---|---|---|
 | `local_dtau` | True（局所 Δτ） | True / False | 大域 Δτ は同じ CFL で減衰が約 10 倍強く、高 CFL に寛容 |
 | `velocity_floor` [m/s] | 0（下限なし） | 0.1·U_in | 下限なしだと静止・低速セルで Δτ→∞ となり Newton が素になる。停滞の主因 |

@@ -129,7 +129,7 @@ xkep-cae-fluid を基盤として、**90×30×45 cm（W×D×H）水草水槽**�
   - 運動量方程式に `-μ/K·u - C_F·ρ|u|·u` を体積ソース項として追加（`assembly.py` の Source 配線拡張）
   - ADA コロラドサンド物性プリセット、ろ材プリセット
 
-#### 6.4b [status-28 予定]: 物理検証
+#### 6.4b [status-30 予定]: 物理検証
 
 - 1D Darcy 流れ解析解、Ergun 式比較、底床内部流速の妥当性
 
@@ -144,7 +144,7 @@ xkep-cae-fluid を基盤として、**90×30×45 cm（W×D×H）水草水槽**�
 
 ### Phase 6.6: 生体反応ソース項（2 PR）
 
-#### 6.6a [status-30 予定]: BiologicalReactionProcess
+#### 6.6a [status-31 予定]: BiologicalReactionProcess
 
 - 新規: `xkep_cae_fluid/aquarium/biology.py`
   - 光合成: `R_p = V_max · I/(I+K_I) · CO2/(CO2+K_c) · Q10^((T-T0)/10)`

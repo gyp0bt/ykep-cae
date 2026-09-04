@@ -1,8 +1,8 @@
 # nsb 数理ノート: Brinkman 補正 NS の FVM 離散化と Newton–擬似時間反復（総和規約）
 
-[<- README](../README.md) | [<- nsb/README](README.md) | [設計文書](../docs/design/brinkman-flow-fvm.md) | [status-28](../docs/status/status-28.md)
+[<- README](../README.md) | [<- nsb/README](README.md) | [設計文書](../docs/design/brinkman-flow-fvm.md) | [status-30](../docs/status/status-30.md)
 
-本ノートは status-28 の再現実験で使った数理を、実装（`xkep_cae_fluid/brinkman_flow/assembly.py`、
+本ノートは status-30 の再現実験で使った数理を、実装（`xkep_cae_fluid/brinkman_flow/assembly.py`、
 `nsb/solver.py`）と 1 対 1 に対応する形で総和規約で書き出したものである。
 「なぜ落ちるか」の機構解析（§9）が主眼で、そこに至る定義（§1–§8）を先に固定する。
 
@@ -236,7 +236,7 @@ $$
 $$
 
 を全セルに使う。流れが発達すると最小値は噴流部（$|u| \approx U_\mathrm{in}$ 以上）で決まり、遠方（$|u| \approx r U_\mathrm{in}$）の $D$ は局所 Δτ より
-$U_\mathrm{in}/(r U_\mathrm{in}) = 1/r = 10$ 倍大きい。同じ CFL で減衰が 10 倍強い分、高 CFL に寛容（status-28: cfl 5 で局所は発散、大域は収束）。
+$U_\mathrm{in}/(r U_\mathrm{in}) = 1/r = 10$ 倍大きい。同じ CFL で減衰が 10 倍強い分、高 CFL に寛容（status-30: cfl 5 で局所は発散、大域は収束）。
 
 ### 4.3 SER（switched evolution relaxation）
 
@@ -266,7 +266,7 @@ D^{\mathrm{relax}}_P \approx \frac{1-\alpha_u}{\alpha_u}\, \rho |u_P| \Delta y
 $$
 
 つまり陰的緩和は**速度下限のない局所 Δτ（CFL ≈ 2.3）と同じもの**で、静止・低速セルでは $\sum_f \mu A_f/d_f + \kappa V$ の分しか残らない。
-流路部で $\kappa V = 1.2$、$\rho U_\mathrm{in} \Delta y = 16$（72×48, U=2）なので、緩和は Δτ の速度下限の代わりにならない（status-28 の α_u 実験）。
+流路部で $\kappa V = 1.2$、$\rho U_\mathrm{in} \Delta y = 16$（72×48, U=2）なので、緩和は Δτ の速度下限の代わりにならない（status-30 の α_u 実験）。
 
 ## 6. 擬似時間項を残差にも含める場合（dual-time 型）
 
@@ -414,7 +414,7 @@ Fluent の pseudo-transient automatic time scale が領域長さと境界速度�
 - backtracking（残差 2 倍超で棄却、CFL 半減、1 歩目は対象外、cfl_min あり）: flat は発動せず、uturn は 3 回の棄却で CFL を下げた分だけ遅れて未収束。
   残差増加の主因が「必要な離脱」と「GMRES 未収束の序盤」なので、棄却より $\Delta\tau$ の下限が本質。
 
-## 10. 実験結果の要約（詳細は status-28）
+## 10. 実験結果の要約（詳細は status-30）
 
 | 線 | 影響 | 対処 |
 |---|---|---|

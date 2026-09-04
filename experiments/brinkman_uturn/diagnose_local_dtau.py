@@ -7,7 +7,7 @@
   L_rc_nofloor      同上 + 速度下限ほぼ無し
   G_floor0.1        大域 Δτ（局所 Δτ の全セル最小値）
   G_rc_floor0.1     大域 Δτ + RC 係数に擬似時間項
-  L_floor0.1_cfl5   局所 Δτ、cfl_init=5（status-28 の基準 A 相当）
+  L_floor0.1_cfl5   局所 Δτ、cfl_init=5（status-30 の基準 A 相当）
   G_floor0.1_cfl5   大域 Δτ、cfl_init=5
 
 使用例::
