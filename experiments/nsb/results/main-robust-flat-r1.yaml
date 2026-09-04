@@ -1,0 +1,52 @@
+flat_r1_U2_fixed:
+  converged: true
+  reason: ''
+  n_iter: 64
+  n_rejected: 0
+  rel_final: 9.745421172789628e-07
+  rel_steady_final: 9.745421172789628e-07
+  rel_min: 9.745421172789628e-07
+  first_step_ratio: 6.236302201589482
+  mass_ratio: 1.0000000000002456
+  p_inlet_mean: 5655.12422025083
+  speed_max: 2.456937067288049
+  elapsed: 62.54188233700006
+flat_r1_U2_fixed_bt:
+  converged: true
+  reason: ''
+  n_iter: 64
+  n_rejected: 0
+  rel_final: 9.745421172789628e-07
+  rel_steady_final: 9.745421172789628e-07
+  rel_min: 9.745421172789628e-07
+  first_step_ratio: 6.236302201589482
+  mass_ratio: 1.0000000000002456
+  p_inlet_mean: 5655.12422025083
+  speed_max: 2.456937067288049
+  elapsed: 65.03538429499895
+flat_r1_U2_fixed_stokes:
+  converged: true
+  reason: ''
+  n_iter: 47
+  n_rejected: 0
+  rel_final: 7.715330981271017e-07
+  rel_steady_final: 7.715330981271017e-07
+  rel_min: 7.715330981271017e-07
+  first_step_ratio: 0.7175432376936594
+  mass_ratio: 0.999999999999002
+  p_inlet_mean: 5655.128877660932
+  speed_max: 2.4569372239537963
+  elapsed: 44.79547413899854
+flat_r1_U2_fixed_stokes_bt:
+  converged: true
+  reason: ''
+  n_iter: 47
+  n_rejected: 0
+  rel_final: 7.715330981271017e-07
+  rel_steady_final: 7.715330981271017e-07
+  rel_min: 7.715330981271017e-07
+  first_step_ratio: 0.7175432376936594
+  mass_ratio: 0.999999999999002
+  p_inlet_mean: 5655.128877660932
+  speed_max: 2.4569372239537963
+  elapsed: 44.83565268500024
