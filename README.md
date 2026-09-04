@@ -15,7 +15,7 @@ FDM（差分法）・FVM（有限体積法）による流体ソルバー基盤�
 
 ## 現在の状態
 
-**302 テスト** -- 2026-09-04 [2D Brinkman 補正 NS (FVM, Newton–Krylov)](docs/design/brinkman-flow-fvm.md) 新設 + U ターン/平板の収束破綻を再現し機構を切り分け（初回 Newton ステップの残差増幅が原因、擬似時間制御で回復。局所 Δτ は速度下限無し・高 CFL で破綻 / [status-28](docs/status/status-28.md)） | 契約違反 **0件**（13プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**308 テスト** -- 2026-09-04 [2D Brinkman 補正 NS (FVM, Newton–Krylov)](docs/design/brinkman-flow-fvm.md) 新設 + U ターン/平板の収束破綻を再現し機構を切り分け（初回 Newton ステップの残差増幅が原因、擬似時間制御で回復。局所 Δτ は速度下限無し・高 CFL で破綻。手元構成ミラー [nsb/](nsb/README.md) で再現 / [status-28](docs/status/status-28.md)） | 契約違反 **0件**（13プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 ## パッケージ構成
 
@@ -67,7 +67,9 @@ xkep_cae_fluid/
 |   +-- benchmark_solver_methods.py      # ソルバー手法別ベンチマーク
 |   +-- aquarium_heater_natural_convection.py  # Geometry+Heater+NC 3 段（Phase 6.2b）
 |   +-- aquarium_filter_circulation.py         # Geometry+Heater+Filter+NC 4 段（Phase 6.3b）
-+-- experiments/brinkman_uturn/  # Brinkman U ターン収束性スイープ（sweep.py / diagnose_u2.py / results / logs）
++-- experiments/brinkman_uturn/  # Brinkman U ターン収束性スイープ（sweep.py / diagnose_u2.py / diagnose_local_dtau.py / results / logs）
++-- nsb/               # 手元構成ミラー（core / solver / utils / geo、離散化は brinkman_flow を共有）+ ルート main.py
++-- experiments/nsb/   # nsb パラメータスタディの results / logs
 +-- tests/             # テスト
 ```
 

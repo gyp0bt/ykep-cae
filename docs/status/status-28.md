@@ -4,7 +4,7 @@
 
 **日付**: 2026-09-04
 **ブランチ**: `claude/2dfvm-brinkman-convergence-tn39cz`
-**テスト数**: 302（既存 286 + 15、`pytest --collect-only` 基準。pyamg/numba 導入環境で 291 passed / 8 skipped / 1 xfailed）（+15: `tests/test_brinkman_flow.py`）
+**テスト数**: 308（既存 286 + 15 + 6、`pytest --collect-only` 基準。pyamg/numba 導入環境で 291 passed / 8 skipped / 1 xfailed）（+15: `tests/test_brinkman_flow.py`、+6: `tests/test_nsb.py`）
 **契約違反**: 0 件（登録プロセス 13）
 
 ## 目的
@@ -217,6 +217,51 @@ CFL が大きい／下限が無いと破綻」で、大域 Δτ の方が CFL �
    - 圧力（連続式）の対角に擬似時間項を加えていないか（本実装は u, v のみ）
    - RC 係数の $a_P$ に擬似時間項が入っている場合は収束判定を Δτ 非依存の残差で行う
 
+## 手元構成ミラー `nsb/` の新設と「踏んでいる線」の再現
+
+ユーザ側は「速度下限なし・cfl_init=0.5・擬似時間項が残差にも入っているかも」とのことなので、
+手元コードと同じファイル構成（`nsb/{core,solver,utils,geo}.py` + ルート `main.py`）で薄いレイヤを作り、
+制御則の線を `NSBSettings` のスイッチとして明示した（`nsb/README.md`）。
+離散化は `BrinkmanDiscretization` を共有し、Newton + 擬似時間の制御則だけを `solve_steady` に関数として書き下している。
+「速度下限あり・擬似時間項は対角のみ」の構成では Process ソルバーと同じ解に収束することをテストで確認
+（`tests/test_nsb.py::TestNSBConvergence::test_fixed_config_matches_process_solver`）。
+
+比較した構成（いずれも局所 Δτ、cfl_init=0.5、SOU+Venkat、JFNK、α_u=0.7、80 反復上限）:
+
+| 構成 | 速度下限 | 擬似時間項を残差に |
+|---|---|---|
+| mine（手元構成の推定） | なし | 含める（u_prev = 前ステップ） |
+| mine_nores | なし | 含めない |
+| floor | 0.1 U_in | 含める |
+| fixed（本リポジトリ基準） | 0.1 U_in | 含めない |
+
+### 72×48（ログ: `experiments/nsb/logs/main-{uturn,flat}-r1.log`、YAML: `experiments/nsb/results/main-*-r1.yaml`）
+
+| ケース | mine | mine_nores | floor | fixed |
+|---|---|---|---|---|
+| uturn U=0.1 | 収束（21） | 収束（20） | 収束（21） | 収束（20） |
+| uturn U=1 | 未収束（9.0e-6） | 未収束（1.5e-6） | 収束（79） | 収束（77） |
+| uturn U=2 | **停滞**（10、定常残差 20） | **停滞**（37） | 未収束（6.0e-5、減少中） | 未収束（3.6e-5、減少中） |
+| flat U=0.1 | 収束（16） | 収束（15） | 収束（16） | 収束（15） |
+| flat U=1 | 未収束（1.0e-5） | 収束（62） | 収束（43） | 収束（43） |
+| flat U=2 | **停滞**（1.75、定常残差 3.2） | 未収束（4.4e-4） | 収束（58） | 収束（64） |
+
+（括弧内は収束反復数、または 80 反復時の相対残差）
+
+手元の観察「U=0.1 は通る、上げると落ちる、flat の方が悪い（本実験では U=2 で両者とも停滞）」が mine 構成で再現できた。
+mine の uturn U=2 の履歴を見ると、1 反復目は全セル Δτ=1e30（速度下限なし＋静止初期場 → 擬似時間が完全に消えた素の Newton）で
+残差が 41.5× に増幅し、以後 Δτ の範囲が [1.7e-5, 6e2] s と 7 桁にわたるまま CFL≈0.03〜0.06 で停滞した。
+
+### 線ごとの効き方
+
+1. **速度下限なし（最も効く）**: mine → floor で uturn U=1・flat U=1/U=2 が収束に転じる。
+   静止初期場では Δτ=∞ になるので 1 反復目が擬似時間なしの Newton になるのが直接の原因。
+2. **擬似時間項を残差に含める（副作用は小さいが SER を鈍らせる）**: u_prev を毎ステップ更新している限り定常解は同じで、
+   収束すれば定常残差も同程度に小さい。ただし収束判定・SER に使う残差が ρV δ/Δτ を含むため、flat U=1 で
+   mine_nores（62 反復で収束）が mine（80 反復で 1e-5）より速い。**もし u_prev を初期場に固定していれば
+   定常解が初期場へのペナルティで歪む**ので、手元コードでは u_prev の更新タイミングを確認すること。
+3. **cfl_init=0.5**: 局所 Δτ ではこの値で問題なし（5 だと発散、上の切り分け参照）。
+
 ## 次にやること
 
 - [ ] 1 反復目の残差増幅を抑える大域化: 残差が増えた更新を棄却して CFL を下げて再試行（backtracking on CFL）
@@ -233,3 +278,4 @@ CFL が大きい／下限が無いと破綻」で、大域 Δτ の方が CFL �
 - `tests/test_brinkman_flow.py`（15 件）
 - `docs/design/brinkman-flow-fvm.md`
 - `experiments/brinkman_uturn/{sweep,diagnose_u2,diagnose_local_dtau,summarize,plot_fields}.py` + `results*/` + `logs/` + `output/`
+- `nsb/{__init__,core,solver,utils,geo}.py` + `nsb/README.md`、ルート `main.py`、`tests/test_nsb.py`（6 件）、`experiments/nsb/{logs,results}/`

@@ -1,0 +1,24 @@
+===== uturn_r2_U1_mine =====
+[nsb] it=0 |R|=2.8873e+01 cfl=0.5
+[nsb] it=1 |R_tau|=8.6629e+02 rel=3.000e+01 |R_steady|/|R0|=3.000e+01 cfl=0.5 dtau=[1.00e+30,1.00e+30] gmres=11 (gmres not converged)
+[nsb] it=2 |R_tau|=7.7407e+02 rel=2.681e+01 |R_steady|/|R0|=4.699e+01 cfl=0.05 dtau=[1.77e-05,6.33e+01] gmres=33 (gmres not converged)
+[nsb] it=3 |R_tau|=3.7989e+02 rel=1.316e+01 |R_steady|/|R0|=2.451e+01 cfl=0.056 dtau=[2.00e-05,1.91e+01] gmres=10
+[nsb] it=4 |R_tau|=3.2939e+02 rel=1.141e+01 |R_steady|/|R0|=1.946e+01 cfl=0.112 dtau=[4.02e-05,5.36e+02] gmres=8
+[nsb] it=5 |R_tau|=3.5032e+02 rel=1.213e+01 |R_steady|/|R0|=1.850e+01 cfl=0.129 dtau=[4.69e-05,1.09e+03] gmres=8
+[nsb] it=6 |R_tau|=1.1694e+03 rel=4.050e+01 |R_steady|/|R0|=4.449e+01 cfl=0.121 dtau=[4.47e-05,7.26e+02] gmres=12
+[nsb] it=7 |R_tau|=3.5822e+02 rel=1.241e+01 |R_steady|/|R0|=1.853e+01 cfl=0.0364 dtau=[1.36e-05,5.48e+01] gmres=16
+[nsb] it=8 |R_tau|=4.3021e+02 rel=1.490e+01 |R_steady|/|R0|=1.973e+01 cfl=0.0727 dtau=[2.73e-05,9.86e+01] gmres=27
+[nsb] it=9 |R_tau|=5.7028e+02 rel=1.975e+01 |R_steady|/|R0|=2.636e+01 cfl=0.0605 dtau=[2.29e-05,8.54e+01] gmres=11
+[nsb] it=10 |R_tau|=3.0990e+02 rel=1.073e+01 |R_steady|/|R0|=1.902e+01 cfl=0.0457 dtau=[1.74e-05,6.85e+01] gmres=7
+[nsb] it=11 |R_tau|=3.2658e+02 rel=1.131e+01 |R_steady|/|R0|=2.095e+01 cfl=0.084 dtau=[3.21e-05,1.31e+02] gmres=10
+[nsb] it=12 |R_tau|=8.1351e+02 rel=2.818e+01 |R_steady|/|R0|=3.500e+01 cfl=0.0798 dtau=[3.08e-05,1.33e+02] gmres=14
+[nsb] it=13 |R_tau|=3.7361e+02 rel=1.294e+01 |R_steady|/|R0|=2.173e+01 cfl=0.032 dtau=[1.25e-05,5.68e+01] gmres=8
+[nsb] it=14 |R_tau|=3.1775e+02 rel=1.100e+01 |R_steady|/|R0|=2.197e+01 cfl=0.064 dtau=[2.50e-05,1.13e+02] gmres=9
+[nsb] it=15 |R_tau|=3.2185e+02 rel=1.115e+01 |R_steady|/|R0|=2.219e+01 cfl=0.0753 dtau=[2.96e-05,1.39e+02] gmres=9
+[nsb] it=16 |R_tau|=3.2488e+02 rel=1.125e+01 |R_steady|/|R0|=2.231e+01 cfl=0.0743 dtau=[2.95e-05,1.43e+02] gmres=8
+[nsb] it=17 |R_tau|=3.2295e+02 rel=1.118e+01 |R_steady|/|R0|=2.225e+01 cfl=0.0736 dtau=[2.94e-05,1.46e+02] gmres=9
+[nsb] it=18 |R_tau|=3.3475e+02 rel=1.159e+01 |R_steady|/|R0|=2.252e+01 cfl=0.0741 dtau=[2.98e-05,1.51e+02] gmres=9
+[nsb] it=19 |R_tau|=6.2178e+03 rel=2.153e+02 |R_steady|/|R0|=2.166e+02 cfl=0.0715 dtau=[2.90e-05,1.50e+02] gmres=15
+[nsb] it=20 |R_tau|=1.3238e+03 rel=4.585e+01 |R_steady|/|R0|=7.109e+01 cfl=0.00715 dtau=[1.75e-06,2.07e+01] gmres=37 (gmres not converged)
+[nsb] it=21 |R_tau|=6.7851e+02 rel=2.350e+01 |R_steady|/|R0|=4.674e+01 cfl=0.0143 dtau=[3.49e-06,1.18e+01] gmres=12
+[nsb] it=22 |R_tau|=5.7968e+02 rel=2.008e+01 |R_steady|/|R0|=3.955e+01 cfl=0.0279 dtau=[6.83e-06,1.98e+01] gmres=8
