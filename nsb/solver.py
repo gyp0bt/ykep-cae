@@ -7,6 +7,8 @@
   [RC]      Rhie–Chow 係数に擬似時間項を含めるか
   [線形]    JFNK（GMRES + LU(J1)）か LU 直接（defect correction）
   [SER]     残差比で CFL を増減
+  [初期場]  静止場 / Stokes–Brinkman 解
+  [棄却]    残差が増えた更新を棄却して CFL を下げる backtracking
 """
 
 from __future__ import annotations
@@ -104,6 +106,20 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
     p = np.zeros(shape) if inp.p0 is None else inp.p0.astype(float)
     x = np.concatenate([u.ravel(), v.ravel(), p.ravel()])
 
+    # [初期場] Stokes–Brinkman 解: 運動量の対流項（inlet の運動量流束を含む）を落とした線形問題を
+    # ゼロ場から 1 回の LU で解く。対流項込みの残差をゼロ場で解くと inlet 運動量流束が
+    # ソースとして残り、流速が U_in の 10 倍超の非物理的な噴流になるので注意
+    if s.init_field == "stokes":
+        st0 = disc.compute_state(x, s.scheme, s.venkat_k)
+        r_init = disc.residual_from_state(x, st0, convection=False)
+        J0 = disc.jacobian_first_order(st0, convection=False).tocsc()
+        x = x + spla.splu(J0).solve(-r_init)
+        u0_, v0_, _ = disc.split(x)
+        emit(
+            f"[nsb] stokes init: |R_stokes(0)|={np.linalg.norm(r_init):.4e} "
+            f"speed_max={np.hypot(u0_, v0_).max():.3g} m/s"
+        )
+
     # 擬似時間ステップ内で凍結する量
     rc_diag: np.ndarray | None = None  # [RC] RC 係数に含める ρV/Δτ
     tau_diag = np.zeros(n)  # ρV/Δτ（u, v 各 n 要素分）
@@ -134,6 +150,8 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
     converged = False
     failure = ""
     n_iter = 0
+    n_rejected = 0
+    n_rej_step = 0
     emit(f"[nsb] it=0 |R|={r_norm:.4e} cfl={cfl:.3g}")
 
     while n_iter < s.newton_max_iter:
@@ -170,12 +188,34 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
                 failure = "gmres_breakdown"
                 step_ok = False
                 break
-            x = x + delta
-            n_iter += 1
+            x_new = x + delta
 
             # ステップ終了時の残差（擬似時間項込み: 収束判定・SER に使う）と定常残差
-            r_tau_new = resid(x)
-            r_new = float(np.linalg.norm(r_tau_new))
+            r_new = float(np.linalg.norm(resid(x_new)))
+
+            # [棄却] 残差が reject_growth 倍を超えて増えたら更新を捨て、CFL を半分にして Δτ を組み直す
+            if (
+                s.reject_growth > 0.0
+                and n_iter >= 1  # 静止初期場からの 1 歩目は残差が必ず増えるので棄却しない
+                and n_rej_step < s.max_rejects
+                and cfl > s.cfl_min
+                and (not np.isfinite(r_new) or r_new > s.reject_growth * r_norm)
+            ):
+                n_rej_step += 1
+                n_rejected += 1
+                cfl *= 0.5
+                emit(
+                    f"[nsb]   reject: |R_tau|={r_new:.4e} > {s.reject_growth:g}×{r_norm:.4e} "
+                    f"-> cfl={cfl:.3g} (rejects={n_rej_step})"
+                )
+                dtau = compute_dtau(uu, vv, disc.dx, disc.dy, cfl, s)
+                tau_diag = (inp.rho * disc.vol / dtau).ravel()
+                rc_diag = tau_diag.reshape(shape) if s.rc_with_pseudo_time else None
+                step_ok = False  # 擬似時間ステップをやり直す（SER をスキップ）
+                break
+
+            x = x_new
+            n_iter += 1
             r_steady_new = float(np.linalg.norm(steady_resid(x)))
             hist.append(r_new)
             hist_steady.append(r_steady_new)
@@ -188,7 +228,10 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
             if not np.isfinite(r_new):
                 break
         if not step_ok:
-            break
+            if failure:
+                break
+            continue  # 棄却: 同じ x から縮めた CFL で再試行
+        n_rej_step = 0
 
         # ---- [SER] 残差比で CFL を更新 ----
         ratio = r_norm / r_new if r_new > 0.0 and np.isfinite(r_new) else 0.1
@@ -209,7 +252,7 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
     elapsed = time.perf_counter() - t0
     emit(
         f"[nsb] done converged={converged} reason='{failure}' it={n_iter} "
-        f"m_in={m_in:.4e} m_out={m_out:.4e} elapsed={elapsed:.1f}s"
+        f"m_in={m_in:.4e} m_out={m_out:.4e} rejected={n_rejected} elapsed={elapsed:.1f}s"
     )
     return NSBResult(
         u=u.copy(),
@@ -224,4 +267,5 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
         mass_in=m_in,
         mass_out=m_out,
         elapsed=elapsed,
+        n_rejected=n_rejected,
     )

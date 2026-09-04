@@ -93,6 +93,17 @@ class NSBSettings:
         GMRES 設定
     divergence_ratio : float
         ||R||/||R0|| がこれを超えたら発散停止
+    init_field : str
+        "zero": 静止場から開始 / "stokes": 対流を無視した Stokes–Brinkman 解
+        （ゼロ場からの擬似時間なし 1 次風上 Newton 1 ステップ）を初期場にし、
+        その残差を収束判定の基準 R0 にする
+    reject_growth : float
+        0 より大なら、更新後の残差が reject_growth × 更新前残差を超えたステップを棄却し、
+        CFL を半分にして再試行する（backtracking on CFL）。0 で無効
+    max_rejects : int
+        1 擬似時間ステップあたりの棄却回数上限（超えたら受け入れる）
+    cfl_min : float
+        棄却で CFL を下げる下限。Δτ→0 では圧力が連続式を満たすために発散するので必要
     """
 
     convection: str = "sou"
@@ -113,6 +124,10 @@ class NSBSettings:
     gmres_restart: int = 40
     gmres_maxiter: int = 5
     divergence_ratio: float = 1.0e6
+    init_field: str = "zero"
+    reject_growth: float = 0.0
+    max_rejects: int = 6
+    cfl_min: float = 1.0e-2
 
     @property
     def scheme(self) -> ConvectionSchemeType:
@@ -205,6 +220,8 @@ class NSBResult:
         inlet / outlet 質量流量 [kg/s]
     elapsed : float
         計算時間 [s]
+    n_rejected : int
+        棄却した更新の回数（線形解の追加コスト）
     """
 
     u: np.ndarray
@@ -219,6 +236,7 @@ class NSBResult:
     mass_in: float
     mass_out: float
     elapsed: float
+    n_rejected: int = 0
 
     @property
     def rel_residual(self) -> float:

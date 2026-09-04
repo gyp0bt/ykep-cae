@@ -377,9 +377,13 @@ class BrinkmanDiscretization:
         st = self.compute_state(x, scheme, venkat_k)
         return self.residual_from_state(x, st)
 
-    def residual_from_state(self, x: np.ndarray, st: StateArrays) -> np.ndarray:
+    def residual_from_state(
+        self, x: np.ndarray, st: StateArrays, convection: bool = True
+    ) -> np.ndarray:
+        """残差 [R_u, R_v, R_p]。convection=False で運動量の対流項を落とす（Stokes–Brinkman）."""
         u, v, p = self.split(x)
         dx, dy, mu, vol = self.dx, self.dy, self.mu, self.vol
+        cs = 1.0 if convection else 0.0
 
         def div(fxv: np.ndarray, fyv: np.ndarray) -> np.ndarray:
             return fxv[1:] - fxv[:-1] + fyv[:, 1:] - fyv[:, :-1]
@@ -397,13 +401,13 @@ class BrinkmanDiscretization:
             return mu * div(dy * gxf, dx * gyf)  # 流入側が正
 
         r_u = (
-            div(st.fx * st.conv_ufx, st.fy * st.conv_ufy)
+            cs * div(st.fx * st.conv_ufx, st.fy * st.conv_ufy)
             - diffusion(u, self.u_left)
             + (st.pfx[1:] - st.pfx[:-1]) * dy
             + self.drag * vol * u
         )
         r_v = (
-            div(st.fx * st.conv_vfx, st.fy * st.conv_vfy)
+            cs * div(st.fx * st.conv_vfx, st.fy * st.conv_vfy)
             - diffusion(v, self.v_left)
             + (st.pfy[:, 1:] - st.pfy[:, :-1]) * dx
             + self.drag * vol * v
@@ -415,9 +419,12 @@ class BrinkmanDiscretization:
     # 1 次風上ヤコビアン
     # ------------------------------------------------------------------
     def jacobian_first_order(
-        self, st: StateArrays, newton_convection: bool = True
+        self, st: StateArrays, newton_convection: bool = True, convection: bool = True
     ) -> sparse.csr_matrix:
-        """1 次風上・RC 係数凍結のヤコビアン（3N×3N、ブロック順 [u, v, p]）."""
+        """1 次風上・RC 係数凍結のヤコビアン（3N×3N、ブロック順 [u, v, p]）.
+
+        convection=False で運動量の対流項（Newton 項含む）を落とす（Stokes–Brinkman 用）。
+        """
         n = self.n
         rho, dx, dy = self.rho, self.dx, self.dy
         nfx, nfy = (self.nx + 1) * self.ny, self.nx * (self.ny + 1)
@@ -447,14 +454,14 @@ class BrinkmanDiscretization:
         dFx_du = rho * dy * self.Ux
         dFy_dv = rho * dx * self.Uy
 
-        base = conv - self.Ldiff + self.drag_v
+        base = (conv if convection else sparse.csr_matrix((n, n))) - self.Ldiff + self.drag_v
         J_up = dy * (self.Dx @ self.Px)
         J_vp = dx * (self.Dy @ self.Py)
         J_uu = base
         J_vv = base
         J_uv = sparse.csr_matrix((n, n))
         J_vu = sparse.csr_matrix((n, n))
-        if newton_convection:
+        if newton_convection and convection:
             Du_x = self.Dx @ sparse.diags(st.conv_ufx.ravel())
             Du_y = self.Dy @ sparse.diags(st.conv_ufy.ravel())
             Dv_x = self.Dx @ sparse.diags(st.conv_vfx.ravel())
