@@ -86,6 +86,8 @@ ykep の構造格子の計算結果（速度 U・圧力 P・温度 T・追加ス
    任意法線 (1,1,0.5)（三角形〜六角形の切り口）、`section=False`（クリップのみ）、`c` キーの on/off、切り口の probe
    （`shot-cut-on.png` / `shot-cut-flip.png` / `shot-cut-free.png` / `shot-cavity-cut.png`）。
    テスト: messi `test_viz.py` +6、`test_cli.py` +3、ykep `test_post_mirador.py` +2、`test_inp_runner.py` の引数解釈・view テストを拡張。
+   CI の `test` ジョブ（messi 無し）で零法線テストが `MiradorUnavailableError` になったので、`cut_plane` の検証も
+   messi import より前（`_normalize_cut_plane`）に移した（追記 5 と同じ型の修正。`sys.modules["messi"] = None` で再現 → `test_post_mirador.py` 単体で 7 passed / 6 skipped、messi ありで 13 passed）。
 
 ## 調査で分かったこと
 

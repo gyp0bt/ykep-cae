@@ -407,6 +407,21 @@ def _embedded_data(html: str) -> dict[str, Any]:
     return json.loads(html[start:end])
 
 
+def _normalize_cut_plane(
+    cut_plane: tuple[tuple[float, float, float], float] | None,
+) -> tuple[tuple[float, float, float], float] | None:
+    """``cut_plane`` を検証して float 化する（messi 非依存。零法線・非数は ValueError）."""
+    if cut_plane is None:
+        return None
+    normal, d = cut_plane
+    n = tuple(float(v) for v in normal)
+    if len(n) != 3 or not all(np.isfinite(n)) or not any(n):
+        raise ValueError(f"cut_plane の法線が不正です（零ベクトル / 非数）: {normal!r}")
+    if not np.isfinite(float(d)):
+        raise ValueError(f"cut_plane の位置 d が非数です: {d!r}")
+    return (n[0], n[1], n[2]), float(d)
+
+
 def export_mirador(inp: MiradorExportInput) -> MiradorExportResult:
     """:class:`MiradorExportProcess` の本体（messi の Mesher を組んで ``export_html``）."""
     # 入力検証と六面体メッシュ構築は messi 非依存なので先に済ませる（messi 未導入でも
@@ -419,6 +434,7 @@ def export_mirador(inp: MiradorExportInput) -> MiradorExportResult:
     scalar_names = [k for k, v in fields.items() if v.ndim == 3]
     vector_names = [k for k, v in fields.items() if v.ndim == 4]
 
+    cut_plane = _normalize_cut_plane(inp.cut_plane)
     slices = resolve_slices(inp.slices, (x, y, z), inp.auto_slices)
     hexmesh = build_structured_hex_mesh(
         x, y, z, mask=inp.mask, slices=slices, domain_name=inp.domain_name
@@ -466,14 +482,8 @@ def export_mirador(inp: MiradorExportInput) -> MiradorExportResult:
     extra: dict[str, Any] = {}
     if inp.panel_collapsed:
         extra["panel_collapsed"] = True
-    if inp.cut_plane is not None:
-        normal, d = inp.cut_plane
-        n = tuple(float(v) for v in normal)
-        if len(n) != 3 or not all(np.isfinite(n)) or not any(n):
-            raise ValueError(f"cut_plane の法線が不正です（零ベクトル / 非数）: {normal!r}")
-        if not np.isfinite(float(d)):
-            raise ValueError(f"cut_plane の位置 d が非数です: {d!r}")
-        extra["cut_plane"] = (n, float(d))
+    if cut_plane is not None:
+        extra["cut_plane"] = cut_plane
     mesh.export_html(
         str(out),
         title=inp.title,
