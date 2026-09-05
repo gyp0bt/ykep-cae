@@ -70,12 +70,41 @@ class TestStructuredMeshAPI:
         assert result.mesh.connectivity.shape == (8, 8)
 
     def test_internal_face_count(self):
-        """内部面数が正しいこと."""
+        """内部面数が正しいこと（face_neighbour の長さ = 内部面数）."""
         nx, ny, nz = 3, 4, 5
         inp = StructuredMeshInput(Lx=1.0, Ly=1.0, Lz=1.0, nx=nx, ny=ny, nz=nz)
         result = StructuredMeshProcess().process(inp)
         expected = (nx - 1) * ny * nz + nx * (ny - 1) * nz + nx * ny * (nz - 1)
-        assert len(result.mesh.face_owner) == expected
+        assert result.mesh.n_internal_faces == expected
+        assert len(result.mesh.face_neighbour) == expected
+
+    def test_boundary_faces_and_patches(self):
+        """境界面が内部面の後ろに 6 パッチ（XM..ZP）で並び、法線が外向きであること."""
+        nx, ny, nz = 3, 4, 5
+        inp = StructuredMeshInput(Lx=1.0, Ly=2.0, Lz=3.0, nx=nx, ny=ny, nz=nz, origin=(1, 2, 3))
+        m = StructuredMeshProcess().process(inp).mesh
+        assert m.n_boundary_faces == 2 * (ny * nz + nx * nz + nx * ny)
+        assert m.n_faces == m.n_internal_faces + m.n_boundary_faces
+        assert len(m.face_owner) == m.n_faces
+        assert list(m.boundary_patches) == ["XM", "XP", "YM", "YP", "ZM", "ZP"]
+        assert np.array_equal(
+            np.concatenate([m.boundary_patches[k] for k in m.boundary_patches]),
+            m.boundary_faces,
+        )
+        expect = {
+            "XM": (0, 1.0, -1.0),
+            "XP": (0, 2.0, 1.0),
+            "YM": (1, 2.0, -1.0),
+            "YP": (1, 4.0, 1.0),
+            "ZM": (2, 3.0, -1.0),
+            "ZP": (2, 6.0, 1.0),
+        }
+        for name, (axis, coord, sign) in expect.items():
+            faces = m.patch_faces(name)
+            np.testing.assert_allclose(m.face_centers[faces, axis], coord)
+            np.testing.assert_allclose(m.face_normals[faces, axis], sign)
+        with pytest.raises(KeyError):
+            m.patch_faces("TOP")
 
     def test_face_normals_unit(self):
         """面法線が単位ベクトルであること."""
@@ -152,7 +181,26 @@ class TestStructuredMeshPhysics:
         """面のオーナー < 隣接 であること（構造化格子の場合）."""
         inp = StructuredMeshInput(Lx=1.0, Ly=1.0, Lz=1.0, nx=4, ny=3, nz=2)
         result = StructuredMeshProcess().process(inp)
-        assert np.all(result.mesh.face_owner < result.mesh.face_neighbour)
+        m = result.mesh
+        assert np.all(m.face_owner[: m.n_internal_faces] < m.face_neighbour)
+
+    def test_cells_closed_and_divergence_volume(self):
+        """各セルの面積ベクトル和がゼロ、発散定理の体積がセル体積と一致（原点オフセット込み）."""
+        inp = StructuredMeshInput(
+            Lx=1.0, Ly=2.0, Lz=0.5, nx=3, ny=4, nz=2, origin=(1.0, 2.0, 3.0), stretch_x=(3.0, 1.0)
+        )
+        m = StructuredMeshProcess().process(inp).mesh
+        n_int = m.n_internal_faces
+        area_vec = m.face_normals * m.face_areas[:, None]
+        closure = np.zeros((m.n_cells, 3))
+        np.add.at(closure, m.face_owner, area_vec)
+        np.add.at(closure, m.face_neighbour, -area_vec[:n_int])
+        np.testing.assert_allclose(closure, 0.0, atol=1e-14)
+        contrib = (m.face_centers * area_vec).sum(axis=1) / 3.0
+        vol = np.zeros(m.n_cells)
+        np.add.at(vol, m.face_owner, contrib)
+        np.add.at(vol, m.face_neighbour, -contrib[:n_int])
+        np.testing.assert_allclose(vol, m.cell_volumes, rtol=1e-12)
 
     def test_face_area_times_normal_consistent(self):
         """面面積と法線が整合すること."""

@@ -11,11 +11,13 @@ from pathlib import Path
 
 import numpy as np
 
+from xkep_cae_fluid.core.data import CELL_TYPE_HEX, CELL_TYPE_TET
 from xkep_cae_fluid.core.mesh_reader import (
     PolyMeshInput,
     PolyMeshReaderProcess,
     PolyMeshResult,
     _is_binary_format,
+    build_ordered_connectivity,
     parse_boundary,
     parse_faces,
     parse_faces_binary,
@@ -276,6 +278,57 @@ class TestPolyMeshReaderPhysics:
             # 面積ゼロでない面は単位ベクトル
             nonzero = norms > 1e-12
             np.testing.assert_allclose(norms[nonzero], 1.0, rtol=1e-10)
+
+    def test_hex_connectivity_ordered(self):
+        """connectivity が C3D8 の節点順序（底面 4 + 上面 4、右手系）で復元されること."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mesh_dir = Path(tmpdir) / "polyMesh"
+            _create_test_polymesh(mesh_dir)
+            m = PolyMeshReaderProcess().process(PolyMeshInput(str(mesh_dir))).mesh
+        assert m.connectivity.shape == (2, 8)
+        assert np.all(m.cell_types == CELL_TYPE_HEX)
+        pts = m.node_coords
+        for c in range(m.n_cells):
+            n = m.connectivity[c]
+            e1 = pts[n[1]] - pts[n[0]]
+            e2 = pts[n[3]] - pts[n[0]]
+            e3 = pts[n[4]] - pts[n[0]]
+            np.testing.assert_allclose(e1, [0.5, 0.0, 0.0])
+            np.testing.assert_allclose(e2, [0.0, 1.0, 0.0])
+            np.testing.assert_allclose(e3, [0.0, 0.0, 1.0])
+            # 上面は底面の真上
+            np.testing.assert_allclose(pts[n[4:]] - pts[n[:4]], [[0.0, 0.0, 1.0]] * 4)
+        assert m.connectivity[0].tolist() == [0, 1, 4, 3, 6, 7, 10, 9]
+
+    def test_boundary_patches_on_mesh(self):
+        """boundary の startFace/nFaces が MeshData.boundary_patches の面インデックスになること."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mesh_dir = Path(tmpdir) / "polyMesh"
+            _create_test_polymesh(mesh_dir)
+            m = PolyMeshReaderProcess().process(PolyMeshInput(str(mesh_dir))).mesh
+        assert m.n_internal_faces == 1
+        assert m.n_boundary_faces == 10
+        assert m.patch_faces("inlet").tolist() == [1]
+        assert m.patch_faces("outlet").tolist() == [2]
+        assert m.patch_faces("walls").tolist() == list(range(3, 11))
+        # inlet 面は x=0 で外向き -x
+        np.testing.assert_allclose(m.face_normals[1], [-1.0, 0.0, 0.0])
+
+    def test_tet_connectivity_ordered(self):
+        """四面体の面リストから底面 + 頂点の順序（右手系）が復元されること."""
+        pts = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        # 外向き面（owner=0 のみ）
+        faces = [[0, 2, 1], [0, 1, 3], [1, 2, 3], [0, 3, 2]]
+        owner = np.zeros(4, dtype=np.int64)
+        neighbour = np.zeros(0, dtype=np.int64)
+        conn, types = build_ordered_connectivity(pts, faces, owner, neighbour, 1)
+        assert types.tolist() == [CELL_TYPE_TET]
+        n = conn[0]
+        assert sorted(n.tolist()) == [0, 1, 2, 3]
+        e1 = pts[n[1]] - pts[n[0]]
+        e2 = pts[n[2]] - pts[n[0]]
+        e3 = pts[n[3]] - pts[n[0]]
+        assert np.dot(np.cross(e1, e2), e3) > 0
 
 
 class TestParserFunctions:
