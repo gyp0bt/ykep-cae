@@ -14,6 +14,11 @@ from xkep_cae_fluid.scalar_transport.data import (
     ScalarTransportInput,
     ScalarTransportResult,
 )
+from xkep_cae_fluid.scalar_transport.fvm import (
+    ScalarTransportFVMInput,
+    ScalarTransportFVMProcess,
+    ScalarTransportFVMResult,
+)
 from xkep_cae_fluid.scalar_transport.solver import ScalarTransportProcess
 
 __all__ = [
@@ -24,4 +29,7 @@ __all__ = [
     "ScalarTransportInput",
     "ScalarTransportResult",
     "ScalarTransportProcess",
+    "ScalarTransportFVMInput",
+    "ScalarTransportFVMProcess",
+    "ScalarTransportFVMResult",
 ]
