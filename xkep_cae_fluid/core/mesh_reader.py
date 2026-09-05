@@ -345,7 +345,7 @@ def parse_boundary(text: str) -> dict[str, dict]:
 # ---------------------------------------------------------------------------
 
 
-def _compute_face_geometry(
+def compute_face_geometry(
     points: np.ndarray,
     faces: list[list[int]],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -378,7 +378,7 @@ def _compute_face_geometry(
     return areas, normals, centers
 
 
-def _compute_cell_geometry(
+def compute_cell_geometry(
     points: np.ndarray,
     faces: list[list[int]],
     owner: np.ndarray,
@@ -622,10 +622,10 @@ class PolyMeshReaderProcess(PreProcess["PolyMeshInput", "PolyMeshResult"]):
         n_internal_faces = len(neighbour)
 
         # 面の幾何情報
-        face_areas, face_normals, face_centers = _compute_face_geometry(points, faces_list)
+        face_areas, face_normals, face_centers = compute_face_geometry(points, faces_list)
 
         # セルの幾何情報
-        cell_volumes, cell_centers = _compute_cell_geometry(
+        cell_volumes, cell_centers = compute_cell_geometry(
             points, faces_list, owner, neighbour, n_cells
         )
 
