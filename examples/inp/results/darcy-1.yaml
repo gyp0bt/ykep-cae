@@ -4,7 +4,7 @@ step: Steady
 procedure: DARCY
 steady: true
 turbulence: LAMINAR
-commit: 9b1cd3a
+commit: 04b0e70
 parameters:
   p_in: 1000.0
   mu: 0.001
@@ -23,6 +23,7 @@ mesh:
     - YP
     - ZM
     - ZP
+  max_nonorthogonality_deg: 14.036243467926614
 solver:
   process: DarcyFlowProcess
   linear_solver: direct
@@ -30,16 +31,16 @@ solver:
   max_iter: 1000
   viscosity: 0.001
 converged: true
-residual: 6.441588495154703e-16
-elapsed_seconds: 0.003429925000091316
-max_abs_velocity: 0.00025570660341141715
+residual: 6.919767568286336e-16
+elapsed_seconds: 0.0339256809966173
+max_abs_velocity: 0.00025116501804001894
 pressure_range:
-  - 18.716291309098818
-  - 981.2837086909009
-inflow_m3s: 2.5640895136524874e-06
-outflow_m3s: 2.5640895136524416e-06
-max_mass_residual: 9.290892640195607e-21
-wall_seconds: 0.0062560659971495625
+  - 15.373717281274036
+  - 984.6262827177454
+inflow_m3s: 2.51846827212496e-06
+outflow_m3s: 2.5184682720386122e-06
+max_mass_residual: 2.34137591742585e-17
+wall_seconds: 0.04340824300015811
 output_files:
   - darcy-1.npz
   - darcy-1.vtk

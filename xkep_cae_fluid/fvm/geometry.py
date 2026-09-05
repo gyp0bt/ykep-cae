@@ -1,4 +1,9 @@
-"""面ベース FVM の幾何演算（補間重み・面物性・面フラックス・勾配）."""
+"""面ベース FVM の幾何演算（補間重み・面物性・面フラックス・勾配・非直交分解）.
+
+非直交メッシュでは内部面の面ベクトル S_f = n_f A_f を over-relaxed 分解
+S_f = E_f + T_f（E_f ∥ セル中心間ベクトル、|E_f| = A_f/(n_f·e_f)）し、
+E_f 成分を陰的（係数行列）、T_f 成分を陽的（遅延補正）に扱う。直交メッシュでは T_f = 0。
+"""
 
 from __future__ import annotations
 
@@ -38,6 +43,53 @@ def face_interpolation_weights(mesh: MeshData) -> np.ndarray:
     return w
 
 
+def face_decomposition(mesh: MeshData) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """内部面の over-relaxed 分解 S_f = E_f + T_f.
+
+    Returns
+    -------
+    e_mag : np.ndarray
+        |E_f| = A_f / (n_f·e_f) (n_internal_faces,)。直交なら A_f
+    t_vec : np.ndarray
+        T_f = S_f − E_f (n_internal_faces, ndim)。直交ならゼロ
+    d_pn : np.ndarray
+        セル中心間距離 |x_N − x_P| (n_internal_faces,)
+    """
+    _require_faces(mesh)
+    n_int = mesh.n_internal_faces
+    nd = mesh.face_normals.shape[1]
+    d_vec = mesh.cell_centers[mesh.face_neighbour] - mesh.cell_centers[mesh.face_owner[:n_int]]
+    d_pn = np.linalg.norm(d_vec, axis=1)
+    e = d_vec / np.where(d_pn > 0, d_pn, 1.0)[:, None]
+    n = mesh.face_normals[:n_int, :nd]
+    cos = np.sum(n * e, axis=1)
+    if np.any(cos <= 1e-6):
+        raise ValueError("内部面の法線とセル中心間ベクトルがほぼ直交しています（メッシュが不正）")
+    area = mesh.face_areas[:n_int]
+    e_mag = area / cos
+    t_vec = n * area[:, None] - e * e_mag[:, None]
+    return e_mag, t_vec, d_pn
+
+
+def max_nonorthogonality_deg(mesh: MeshData) -> float:
+    """内部面の最大非直交角 [deg]（n_f と e_f のなす角）。直交メッシュなら 0."""
+    _require_faces(mesh)
+    n_int = mesh.n_internal_faces
+    if n_int == 0:
+        return 0.0
+    nd = mesh.face_normals.shape[1]
+    d_vec = mesh.cell_centers[mesh.face_neighbour] - mesh.cell_centers[mesh.face_owner[:n_int]]
+    d_pn = np.linalg.norm(d_vec, axis=1)
+    e = d_vec / np.where(d_pn > 0, d_pn, 1.0)[:, None]
+    cos = np.clip(np.sum(mesh.face_normals[:n_int, :nd] * e, axis=1), -1.0, 1.0)
+    return float(np.degrees(np.arccos(cos.min())))
+
+
+def is_orthogonal(mesh: MeshData, tol_deg: float = 1e-6) -> bool:
+    """非直交補正が不要（最大非直交角が ``tol_deg`` 以下）か."""
+    return max_nonorthogonality_deg(mesh) <= tol_deg
+
+
 def internal_face_values(
     mesh: MeshData, phi: np.ndarray, weights: np.ndarray | None = None
 ) -> np.ndarray:
@@ -48,6 +100,18 @@ def internal_face_values(
         weights = face_interpolation_weights(mesh)
     owner = mesh.face_owner[:n_int]
     return weights * phi[owner] + (1.0 - weights) * phi[mesh.face_neighbour]
+
+
+def face_gradient(
+    mesh: MeshData, grad: np.ndarray, weights: np.ndarray | None = None
+) -> np.ndarray:
+    """内部面の勾配（セル勾配の距離重み付き線形補間）(n_internal_faces, ndim)."""
+    _require_faces(mesh)
+    n_int = mesh.n_internal_faces
+    if weights is None:
+        weights = face_interpolation_weights(mesh)
+    owner = mesh.face_owner[:n_int]
+    return weights[:, None] * grad[owner] + (1.0 - weights)[:, None] * grad[mesh.face_neighbour]
 
 
 def face_diffusivity(mesh: MeshData, gamma: float | np.ndarray) -> np.ndarray:
@@ -149,10 +213,14 @@ def cell_gradient(
     phi: np.ndarray,
     bfaces: BoundaryFaces,
     gamma: float | np.ndarray | None = None,
+    n_iter: int = 2,
 ) -> np.ndarray:
     """Green–Gauss のセル勾配 ∇φ_P = (1/V_P) Σ_f φ_f S_f (n_cells, ndim).
 
     内部面は距離重み付き線形補間、境界面は :func:`boundary_face_values`。
+    Dirichlet 以外の境界面では φ_b に接線方向の外挿 ∇φ_P·t_b（t_b は面中心へのベクトルの
+    接線成分）を加える。これは勾配自身に依存するので ``n_iter`` 回反復する
+    （非直交メッシュの境界セルで線形場の勾配が改善する。直交メッシュでは t_b = 0）。
     """
     _require_faces(mesh)
     n_int = mesh.n_internal_faces
@@ -162,11 +230,71 @@ def cell_gradient(
     if gamma is not None:
         g = np.full(mesh.n_cells, float(gamma)) if np.isscalar(gamma) else np.asarray(gamma)
         gamma_owner = g[bfaces.owner]
-    phi_b = boundary_face_values(phi, bfaces, gamma_owner)
-    phi_f = np.concatenate([phi_int, phi_b])
+    phi_b0 = boundary_face_values(phi, bfaces, gamma_owner)
     s_f = mesh.face_normals[:, :nd] * mesh.face_areas[:, None]
-    contrib = phi_f[:, None] * s_f
-    grad = np.zeros((mesh.n_cells, nd))
-    np.add.at(grad, mesh.face_owner, contrib)
-    np.add.at(grad, mesh.face_neighbour, -contrib[:n_int])
-    return grad / mesh.cell_volumes[:, None]
+
+    r_b = mesh.face_centers[bfaces.faces, :nd] - mesh.cell_centers[bfaces.owner, :nd]
+    n_b = mesh.face_normals[bfaces.faces, :nd]
+    t_b = r_b - np.sum(r_b * n_b, axis=1)[:, None] * n_b
+    extrapolate = ~bfaces.is_dirichlet
+    needs_iter = bool(np.any(np.abs(t_b[extrapolate]) > 1e-14)) if np.any(extrapolate) else False
+
+    def gauss(phi_b: np.ndarray) -> np.ndarray:
+        phi_f = np.concatenate([phi_int, phi_b])
+        contrib = phi_f[:, None] * s_f
+        grad = np.zeros((mesh.n_cells, nd))
+        np.add.at(grad, mesh.face_owner, contrib)
+        np.add.at(grad, mesh.face_neighbour, -contrib[:n_int])
+        return grad / mesh.cell_volumes[:, None]
+
+    grad = gauss(phi_b0)
+    if not needs_iter:
+        return grad
+    for _ in range(max(int(n_iter) - 1, 0)):
+        phi_b = phi_b0.copy()
+        phi_b[extrapolate] += np.sum(grad[bfaces.owner[extrapolate]] * t_b[extrapolate], axis=1)
+        grad = gauss(phi_b)
+    return grad
+
+
+def cell_gradient_lsq(
+    mesh: MeshData,
+    phi: np.ndarray,
+    bfaces: BoundaryFaces | None = None,
+    gamma: float | np.ndarray | None = None,
+) -> np.ndarray:
+    """重み付き最小二乗のセル勾配 (n_cells, ndim).
+
+    内部面の隣接セル（両向き）と Dirichlet 境界面（面中心の既知値）を点集合にして
+    min Σ w (∇φ·r − Δφ)²、w = 1/|r|² を解く。線形場では境界セルでも厳密
+    （Green–Gauss は非 Dirichlet 境界に接するセルで法線方向の勾配を過小評価する）。
+    情報の無い方向（例: 1 セル厚の押し出しメッシュの z）は擬似逆行列でゼロになる。
+    """
+    _require_faces(mesh)
+    n = mesh.n_cells
+    n_int = mesh.n_internal_faces
+    nd = mesh.face_normals.shape[1]
+    owner = mesh.face_owner[:n_int]
+    nb = mesh.face_neighbour
+    xc = mesh.cell_centers[:, :nd]
+    r = xc[nb] - xc[owner]
+    dphi = phi[nb] - phi[owner]
+    w = 1.0 / np.maximum(np.sum(r * r, axis=1), 1e-300)
+    G = np.zeros((n, nd, nd))
+    rhs = np.zeros((n, nd))
+    outer = w[:, None, None] * r[:, :, None] * r[:, None, :]
+    np.add.at(G, owner, outer)
+    np.add.at(G, nb, outer)
+    np.add.at(rhs, owner, (w * dphi)[:, None] * r)
+    np.add.at(rhs, nb, (w * dphi)[:, None] * r)
+    if bfaces is not None and np.any(bfaces.is_dirichlet):
+        d = bfaces.is_dirichlet
+        own_b = bfaces.owner[d]
+        r_b = mesh.face_centers[bfaces.faces[d], :nd] - xc[own_b]
+        dphi_b = bfaces.value[d] - phi[own_b]
+        w_b = 1.0 / np.maximum(np.sum(r_b * r_b, axis=1), 1e-300)
+        np.add.at(G, own_b, w_b[:, None, None] * r_b[:, :, None] * r_b[:, None, :])
+        np.add.at(rhs, own_b, (w_b * dphi_b)[:, None] * r_b)
+    scale = np.maximum(np.max(np.abs(G).reshape(n, -1), axis=1), 1e-300)
+    G_inv = np.linalg.pinv(G / scale[:, None, None], rcond=1e-10)
+    return np.einsum("nij,nj->ni", G_inv, rhs / scale[:, None])

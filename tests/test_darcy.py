@@ -155,26 +155,33 @@ class TestDarcyFlowPhysics:
         np.testing.assert_allclose(res.mass_residual, 0.0, atol=1e-12 * S)
 
     def test_sheared_inp_mesh_gives_same_flow(self):
-        """せん断で歪んだ .inp 六面体メッシュでも一様流（u = K Δp/(μ L)）が出る."""
+        """せん断で歪んだ .inp 六面体メッシュ（非直交）でも一様流 u = K Δp/(μ L) が厳密に出る.
+
+        x += 0.15 y のせん断で XM/XP 面が傾くので、面ごとに p = Δp(1 − x) を Dirichlet で与える
+        （YM/YP は水平のまま = 不透過壁と整合）。非直交補正の反復で線形圧力・一様速度に収束する。
+        """
         nx, ny, nz = 6, 2, 2
         text = _lattice_text(nx, ny, nz, 1.0 / nx, 0.1, 0.1)
         case = build_case(parse_inp_text(text))
         coords = case.nodes.coords.copy()
-        coords[:, 1] += 0.15 * coords[:, 0]  # y をせん断（x 方向の流れに対して非直交）
+        coords[:, 0] += 0.15 * coords[:, 1]
         case = replace(case, nodes=replace(case.nodes, coords=coords))
         mesh = InpMeshProcess().execute(InpMeshInput(case=case)).mesh
         dp = 200.0
-        res = DarcyFlowProcess().execute(
-            DarcyFlowInput(
-                mesh=mesh,
-                permeability=K,
-                viscosity=MU,
-                bcs={"XM": DarcyPatchBC.pressure_bc(dp), "XP": DarcyPatchBC.pressure_bc(0.0)},
+        bcs = {
+            name: DarcyPatchBC.pressure_bc(
+                dp * (1.0 - mesh.face_centers[mesh.patch_faces(name), 0])
             )
+            for name in ("XM", "XP")
+        }
+        res = DarcyFlowProcess().execute(
+            DarcyFlowInput(mesh=mesh, permeability=K, viscosity=MU, bcs=bcs, tol=1e-12)
         )
         u_exact = K * dp / MU
-        # 非直交補正なしなので厳密ではないが、一様流は面に垂直な成分で保たれる
-        np.testing.assert_allclose(res.velocity[:, 0], u_exact, rtol=5e-2)
+        assert res.n_nonorthogonal_iter > 1
+        np.testing.assert_allclose(res.p, dp * (1.0 - mesh.cell_centers[:, 0]), rtol=1e-8)
+        np.testing.assert_allclose(res.velocity[:, 0], u_exact, rtol=1e-8)
+        np.testing.assert_allclose(res.velocity[:, 1:], 0.0, atol=1e-8 * u_exact)
         np.testing.assert_allclose(res.inflow, res.outflow, rtol=1e-10)
         np.testing.assert_allclose(res.mass_residual, 0.0, atol=1e-12 * u_exact)
 

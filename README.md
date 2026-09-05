@@ -38,7 +38,7 @@ xkep_cae_fluid/
 |   +-- testing.py     # binds_to（テスト紐付け）
 |   +-- strategies/    # Strategy Protocol 定義 + 具象スキーム（拡散/対流/TVD/非直交補正）
 |   +-- docs/          # コアモジュール設計文書
-+-- fvm/               # 面ベース FVM 共通低レイヤー（方程式ファミリー非依存、Phase 11）
++-- fvm/               # 面ベース FVM 共通低レイヤー（方程式ファミリー非依存、非直交補正、Phase 11）
 |   +-- boundary.py    # PatchBC（Dirichlet/Neumann/Robin/ゼロ勾配）+ resolve_boundary（パッチ名 → 境界面配列）
 |   +-- geometry.py    # 面補間重み・調和平均・面質量流束・Green-Gauss 勾配
 |   +-- assembly.py    # 拡散・1 次風上対流・時間項・ソース項の係数行列（体積積分形）
@@ -85,7 +85,7 @@ xkep_cae_fluid/
 |   +-- output.py      # InpOutputWriterProcess（NPZ / YAML サマリ / VTK RECTILINEAR or UNSTRUCTURED）
 |   +-- runner.py      # InpCaseRunnerProcess（方程式ファミリーで振り分け）
 |   +-- cli.py         # ykep コマンド（ykep -j=<job>.inp int）
-+-- heat_transfer/     # 3次元非定常伝熱解析 (FDM)
++-- heat_transfer/     # 3次元非定常伝熱解析 (FDM) + fvm.py（面ベース FVM 版、非構造メッシュ可）
 |   +-- data.py        # HeatTransferInput / HeatTransferResult / BoundarySpec (Robin対応)
 |   +-- solver.py      # HeatTransferFDMProcess (ヤコビ/GS/疎行列/AMG/Numba)
 |   +-- solver_vectorized.py  # NumPy ベクトル化ヤコビ法

@@ -2,8 +2,10 @@
 
 - :class:`InpToNaturalConvectionProcess`: ``*NAVIER STOKES``（層流、等温/伝熱連成）
   → :class:`~xkep_cae_fluid.natural_convection.data.NaturalConvectionInput`
-- :class:`InpToHeatTransferProcess`: ``*HEAT TRANSFER``
+- :class:`InpToHeatTransferProcess`: ``*HEAT TRANSFER``（構造格子）
   → :class:`~xkep_cae_fluid.heat_transfer.data.HeatTransferInput`
+- :class:`InpToHeatTransferFVMProcess`: ``*HEAT TRANSFER``（非構造 :class:`~xkep_cae_fluid.inp.mesh.InpMeshResult` 経由）
+  → :class:`~xkep_cae_fluid.heat_transfer.fvm.HeatTransferFVMInput`
 - :class:`InpToDarcyProcess`: ``*DARCY``（非構造 :class:`~xkep_cae_fluid.inp.mesh.InpMeshResult` 経由）
   → :class:`~xkep_cae_fluid.darcy.data.DarcyFlowInput`
 
@@ -22,6 +24,7 @@ import numpy as np
 from xkep_cae_fluid.core.base import AbstractProcess, ProcessMeta
 from xkep_cae_fluid.core.categories import PreProcess
 from xkep_cae_fluid.darcy.data import DarcyFlowInput, DarcyPatchBC
+from xkep_cae_fluid.fvm import PatchBC
 from xkep_cae_fluid.heat_transfer.data import (
     BoundaryCondition as HTBoundaryCondition,
 )
@@ -31,6 +34,7 @@ from xkep_cae_fluid.heat_transfer.data import (
 from xkep_cae_fluid.heat_transfer.data import (
     HeatTransferInput,
 )
+from xkep_cae_fluid.heat_transfer.fvm import HeatTransferFVMInput
 from xkep_cae_fluid.inp.case import (
     BoundaryCondition,
     BoundaryKind,
@@ -80,7 +84,7 @@ class InpMappingInput:
 
 @dataclass(frozen=True)
 class InpMeshMappingInput:
-    """非構造メッシュ（:class:`InpMeshResult`）経由のマッピング入力（``*DARCY``）."""
+    """非構造メッシュ（:class:`InpMeshResult`）経由のマッピング入力（``*DARCY`` / ``*HEAT TRANSFER``）."""
 
     case: CaseDefinition
     mesh: InpMeshResult
@@ -707,10 +711,154 @@ class InpToHeatTransferProcess(PreProcess["InpMappingInput", "HeatTransferMappin
 
 
 # ---------------------------------------------------------------------------
-# Darcy（DarcyFlowProcess、非構造メッシュ経由）
+# 伝熱（HeatTransferFVMProcess、非構造メッシュ経由）
 # ---------------------------------------------------------------------------
 
 _LINEAR_SOLVERS = {"DIRECT": "direct", "BICGSTAB": "bicgstab", "AMG": "amg"}
+
+
+def _spec_to_patch_bc(spec: HTBoundarySpec) -> PatchBC:
+    """構造格子版の境界仕様を面ベース FVM の :class:`PatchBC` に写す."""
+    if spec.condition == HTBoundaryCondition.DIRICHLET:
+        return PatchBC.dirichlet(spec.value)
+    if spec.condition == HTBoundaryCondition.NEUMANN:
+        return PatchBC.neumann(spec.value)
+    if spec.condition == HTBoundaryCondition.ROBIN:
+        return PatchBC.robin(spec.h_conv, spec.T_inf)
+    return PatchBC.zero_gradient()
+
+
+def _resolve_patch_name(target: str, mesh: InpMeshResult) -> str:
+    name = target.strip().upper()
+    patches = mesh.mesh.boundary_patches or {}
+    if name not in patches:
+        raise UnsupportedFeatureError(
+            f"境界 target {target!r} は *SURFACE でも予約面名（{', '.join(FACE_NAMES)}）"
+            f"でもありません（定義済み: {sorted(patches)}）"
+        )
+    return name
+
+
+def _ht_patch_bcs(
+    case: CaseDefinition, step: StepDefinition, mesh: InpMeshResult
+) -> dict[str, PatchBC]:
+    """``*BOUNDARY`` / ``*DFLUX, S`` / ``*SFILM`` をパッチ名 → :class:`PatchBC` に展開する.
+
+    競合規則は構造格子版 :func:`_ht_bc` と同じ（温度固定と熱流束の同時指定は拒否）。
+    """
+    bcs: dict[str, list[BoundaryCondition]] = {}
+    for bc in case.boundaries + step.boundaries:
+        bcs.setdefault(_resolve_patch_name(bc.target, mesh), []).append(bc)
+    flux: dict[str, float] = {}
+    for fl in case.fluxes + step.fluxes:
+        if fl.label != FluxLabel.SURFACE:
+            continue
+        name = _resolve_patch_name(fl.target, mesh)
+        flux[name] = flux.get(name, 0.0) + fl.magnitude
+    films: dict[str, FilmCondition] = {}
+    for film in case.films + step.films:
+        name = _resolve_patch_name(film.target, mesh)
+        if name in films:
+            raise UnsupportedFeatureError(f"面 {name} に *SFILM が重複しています")
+        films[name] = film
+    out: dict[str, PatchBC] = {}
+    for name in sorted(set(bcs) | set(flux) | set(films)):
+        spec = _ht_bc(name, bcs.get(name, []), films.get(name), flux.get(name))
+        out[name] = _spec_to_patch_bc(spec)
+    return out
+
+
+def _body_flux_unstructured(
+    case: CaseDefinition, step: StepDefinition, mesh: InpMeshResult
+) -> np.ndarray | None:
+    q = np.zeros(mesh.n_cells)
+    found = False
+    for fl in case.fluxes + step.fluxes:
+        if fl.label != FluxLabel.BODY:
+            continue
+        q[mesh.mask_for_elements(case.element_ids_of(fl.target))] += fl.magnitude
+        found = True
+    return q if found else None
+
+
+def map_heat_transfer_fvm(
+    case: CaseDefinition, mesh: InpMeshResult, step: StepDefinition
+) -> HeatTransferFVMInput:
+    """``*HEAT TRANSFER`` ステップを非構造メッシュの :class:`HeatTransferFVMInput` に変換する."""
+    _check_procedure_common(step, EquationFamily.HEAT_TRANSFER)
+    proc = step.procedure
+    k = np.zeros(mesh.n_cells)
+    C = np.zeros(mesh.n_cells)
+    for mask, mat, _kind in _mesh_section_coverage(case, mesh):
+        k[mask] = mat.require("conductivity")
+        if proc.steady:
+            rho = mat.density if mat.density is not None else 1.0
+            cp = mat.specific_heat if mat.specific_heat is not None else 1.0
+        else:
+            rho = mat.require("density")
+            cp = mat.require("specific_heat")
+        C[mask] = rho * cp
+    q = _body_flux_unstructured(case, step, mesh)
+    T0 = _initial_cell_field_unstructured(case, mesh, InitialConditionKind.TEMPERATURE, 300.0)
+    bcs = _ht_patch_bcs(case, step, mesh)
+
+    for cat in (ControlCategory.DISCRETIZATION, ControlCategory.RELAXATION):
+        if step.control_values(cat):
+            raise UnsupportedFeatureError(
+                f"*CONTROLS, PARAMETERS={cat.value} は *HEAT TRANSFER では未対応"
+            )
+    solver = step.control_values(ControlCategory.SOLVER)
+    _check_keys(solver, _HT_SOLVER_KEYS, "SOLVER")
+    method = "bicgstab"
+    if "METHOD" in solver:
+        key = _norm_value(solver["METHOD"])
+        if key not in _LINEAR_SOLVERS:
+            raise UnsupportedFeatureError(
+                f"SOLVER METHOD={solver['METHOD']} は非構造メッシュの伝熱では未対応"
+                f"（{sorted(_LINEAR_SOLVERS)}）"
+            )
+        method = _LINEAR_SOLVERS[key]
+    max_iter = _as_int(solver.get("MAX_ITER", "500"), "MAX_ITER")
+    tol = _as_float(solver.get("TOL", "1e-8"), "TOL")
+    tinc = step.control_values(ControlCategory.TIME_INCREMENTATION)
+    _check_keys(tinc, _TIME_INC_KEYS, "TIME INCREMENTATION")
+    output_interval = _as_int(tinc.get("OUTPUT_INTERVAL", "0"), "OUTPUT_INTERVAL")
+    if output_interval <= 0:
+        output_interval = max((o.frequency for o in step.outputs), default=1)
+    return HeatTransferFVMInput(
+        mesh=mesh.mesh,
+        conductivity=k,
+        T0=T0,
+        heat_capacity=C,
+        heat_source=q,
+        bcs=bcs,
+        dt=proc.dt,
+        t_end=proc.time_period,
+        output_interval=output_interval,
+        linear_solver=method,
+        tol=tol,
+        max_iter=max_iter,
+    )
+
+
+class InpToHeatTransferFVMProcess(PreProcess["InpMeshMappingInput", "HeatTransferFVMInput"]):
+    """``*HEAT TRANSFER`` を非構造メッシュの :class:`HeatTransferFVMInput` に変換する PreProcess."""
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="InpToHeatTransferFVM",
+        module="pre",
+        version="0.1.0",
+        document_path="../../docs/design/inp-format.md",
+    )
+    uses: ClassVar[list[type[AbstractProcess]]] = []
+
+    def process(self, input_data: InpMeshMappingInput) -> HeatTransferFVMInput:
+        return map_heat_transfer_fvm(input_data.case, input_data.mesh, input_data.step)
+
+
+# ---------------------------------------------------------------------------
+# Darcy（DarcyFlowProcess、非構造メッシュ経由）
+# ---------------------------------------------------------------------------
 
 
 def _mesh_section_coverage(

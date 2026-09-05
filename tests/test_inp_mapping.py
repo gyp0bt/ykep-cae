@@ -7,6 +7,7 @@ import pytest
 
 from xkep_cae_fluid.core.testing import binds_to
 from xkep_cae_fluid.darcy.data import DarcyBCKind
+from xkep_cae_fluid.fvm import BCKind
 from xkep_cae_fluid.heat_transfer.data import BoundaryCondition as HTBC
 from xkep_cae_fluid.inp.builder import build_case
 from xkep_cae_fluid.inp.grid import recover_structured_grid
@@ -14,6 +15,7 @@ from xkep_cae_fluid.inp.mapping import (
     InpMappingInput,
     InpMeshMappingInput,
     InpToDarcyProcess,
+    InpToHeatTransferFVMProcess,
     InpToHeatTransferProcess,
     InpToNaturalConvectionProcess,
     UnsupportedFeatureError,
@@ -398,3 +400,83 @@ class TestInpToDarcyAPI:
         assert old in DARCY_TEXT
         with pytest.raises((UnsupportedFeatureError, ValueError), match=match):
             InpToDarcyProcess().execute(_darcy_input(DARCY_TEXT.replace(old, new)))
+
+
+HT_SKEW_TEXT = """\
+*HEADING
+ heat transfer on a box mesh via the unstructured path
+*GRID, NX=4, NY=2, NZ=2, LX=0.4, LY=0.2, LZ=0.2
+*MATERIAL, NAME=M
+*DENSITY
+ 1000.
+*SPECIFIC HEAT
+ 2.
+*CONDUCTIVITY
+ 5.
+*SOLID SECTION, ELSET=ALL, MATERIAL=M
+*INITIAL CONDITIONS, TYPE=TEMPERATURE
+ ALL, 310.
+*STEP
+*HEAT TRANSFER, STEADY STATE
+*BOUNDARY, TYPE=TEMPERATURE
+ XM, 400.
+*DFLUX
+ XP, S, 250.
+ ALL, BF, 1000.
+*SFILM
+ ZP, F, 290., 12.
+*CONTROLS, PARAMETERS=SOLVER
+ METHOD=BICGSTAB, TOL=1e-9, MAX_ITER=50
+*END STEP
+"""
+
+
+@binds_to(InpToHeatTransferFVMProcess)
+class TestInpToHeatTransferFVMAPI:
+    def test_full_mapping(self):
+        inp = InpToHeatTransferFVMProcess().execute(_darcy_input(HT_SKEW_TEXT))
+        assert inp.mesh.n_cells == 16
+        assert np.all(np.asarray(inp.conductivity) == 5.0)
+        assert np.all(np.asarray(inp.heat_capacity) == 2000.0)
+        assert np.all(inp.T0 == 310.0) and np.all(inp.heat_source == 1000.0)
+        assert inp.bcs["XM"].kind == BCKind.DIRICHLET and inp.bcs["XM"].value == 400.0
+        assert inp.bcs["XP"].kind == BCKind.NEUMANN and inp.bcs["XP"].flux == 250.0
+        assert inp.bcs["ZP"].kind == BCKind.ROBIN and (inp.bcs["ZP"].h, inp.bcs["ZP"].phi_inf) == (
+            12.0,
+            290.0,
+        )
+        assert set(inp.bcs) == {"XM", "XP", "ZP"}
+        assert (inp.linear_solver, inp.tol, inp.max_iter) == ("bicgstab", 1e-9, 50)
+        assert inp.dt == 0.0
+
+    @pytest.mark.parametrize(
+        "old,new,match",
+        [
+            (
+                "*BOUNDARY, TYPE=TEMPERATURE\n XM, 400.",
+                "*BOUNDARY, TYPE=TEMPERATURE\n LID, 400.",
+                "予約面名",
+            ),
+            ("*BOUNDARY, TYPE=TEMPERATURE\n XM, 400.", "*BOUNDARY, TYPE=WALL\n XM", "TEMPERATURE"),
+            (" XP, S, 250.", " XM, S, 250.", "同時"),
+            ("METHOD=BICGSTAB", "METHOD=JACOBI", "METHOD"),
+            (
+                "*CONTROLS, PARAMETERS=SOLVER",
+                "*CONTROLS, PARAMETERS=RELAXATION\n TEMPERATURE=0.5\n*CONTROLS, PARAMETERS=SOLVER",
+                "RELAXATION",
+            ),
+        ],
+    )
+    def test_unsupported(self, old: str, new: str, match: str):
+        assert old in HT_SKEW_TEXT
+        with pytest.raises(UnsupportedFeatureError, match=match):
+            InpToHeatTransferFVMProcess().execute(_darcy_input(HT_SKEW_TEXT.replace(old, new)))
+
+    def test_transient_needs_density_and_specific_heat(self):
+        text = HT_SKEW_TEXT.replace("*HEAT TRANSFER, STEADY STATE", "*HEAT TRANSFER\n 1., 10.")
+        inp = InpToHeatTransferFVMProcess().execute(_darcy_input(text))
+        assert inp.dt == 1.0 and inp.t_end == 10.0
+        with pytest.raises(ValueError, match="density"):
+            InpToHeatTransferFVMProcess().execute(
+                _darcy_input(text.replace("*DENSITY\n 1000.\n", ""))
+            )

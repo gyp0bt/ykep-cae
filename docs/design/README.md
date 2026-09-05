@@ -42,7 +42,8 @@
 |------|--------|------|------|
 | [natural-convection-fdm.md](natural-convection-fdm.md) | `docs/design/` | 3D自然対流ソルバー (SIMPLE法+Boussinesq+練成) | 完了 |
 | [scalar-transport-fdm.md](scalar-transport-fdm.md) | `docs/design/` | 汎用スカラー輸送ソルバー (Phase 6.1a 水槽 CAE 基盤) | 完了 |
-| [darcy-flow-fvm.md](darcy-flow-fvm.md) | `docs/design/` | DarcyFlowProcess（`*DARCY`、面ベース FVM、非構造六面体メッシュ可） | 完了（experimental） |
+| [darcy-flow-fvm.md](darcy-flow-fvm.md) | `docs/design/` | DarcyFlowProcess（`*DARCY`、面ベース FVM、非構造六面体メッシュ可、非直交補正） | 完了（experimental） |
+| [heat-transfer-fvm.md](heat-transfer-fvm.md) | `docs/design/` | HeatTransferFVMProcess（面ベース FVM 版の伝熱、構造格子 FDM と一致、`*HEAT TRANSFER` の非構造経路） | 完了（experimental） |
 | [brinkman-flow-fvm.md](brinkman-flow-fvm.md) | `docs/design/` | 2D Brinkman 補正 NS (FVM, Newton–Krylov) と U ターン収束性再現実験 | 実験中 |
 | (未作成) | - | 乱流モデル Strategy 設計 | 予定 |
 

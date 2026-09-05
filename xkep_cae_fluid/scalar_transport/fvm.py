@@ -23,8 +23,8 @@ from xkep_cae_fluid.fvm import (
     assemble_scalar_transport,
     face_mass_flux,
     make_linear_solver,
-    relative_residual,
     resolve_boundary,
+    solve_corrected,
 )
 
 
@@ -57,6 +57,8 @@ class ScalarTransportFVMInput:
     linear_solver : str
         ``direct`` / ``bicgstab`` / ``amg``
     tol, max_iter : 反復解法の設定
+    max_nonorthogonal_iter : int
+        非直交メッシュでの遅延補正の最大反復回数（直交メッシュでは 1 回）
     name : str
         スカラー名（ログ用）
     """
@@ -75,6 +77,7 @@ class ScalarTransportFVMInput:
     linear_solver: str = "bicgstab"
     tol: float = 1e-8
     max_iter: int = 500
+    max_nonorthogonal_iter: int = 20
     name: str = "phi"
 
     @property
@@ -138,18 +141,23 @@ class ScalarTransportFVMProcess(
         tol_ok = max(inp.tol * 10.0, 1e-6)
 
         def step(phi_old: np.ndarray | None) -> tuple[np.ndarray, float]:
-            A, b = assemble_scalar_transport(
-                mesh,
-                gamma=inp.diffusivity,
-                bfaces=bfaces,
-                mass_flux=mass_flux,
-                source=inp.source,
-                rho=inp.rho,
-                dt=inp.dt if phi_old is not None else 0.0,
-                phi_old=phi_old,
+            def build(phi_corr: np.ndarray | None):
+                return assemble_scalar_transport(
+                    mesh,
+                    gamma=inp.diffusivity,
+                    bfaces=bfaces,
+                    mass_flux=mass_flux,
+                    source=inp.source,
+                    rho=inp.rho,
+                    dt=inp.dt if phi_old is not None else 0.0,
+                    phi_old=phi_old,
+                    phi_correction=phi_corr,
+                )
+
+            x, resid, _n = solve_corrected(
+                mesh, build, solver, phi, max_iter=inp.max_nonorthogonal_iter, tol=inp.tol
             )
-            x = solver.solve(A, b, x0=phi)
-            return x, relative_residual(A, x, b)
+            return x, resid
 
         if not inp.is_transient:
             phi, resid = step(None)

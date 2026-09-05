@@ -53,6 +53,27 @@ ykep のソルバーを 3 層に分ける。
 - `assemble_convection(mesh, mass_flux, bfaces) -> (A, b)`: 1 次風上。境界は流出 → φ_P、流入 → Dirichlet なら φ_b（右辺）、それ以外は φ_P
 - `assemble_scalar_transport(mesh, gamma=, bfaces=, mass_flux=, source=, rho=, dt=, phi_old=)`: 上 2 つ + ソース S V_P + 陰的 Euler ρ V_P / dt
 
+### 非直交補正（`geometry.face_decomposition` / `assembly.nonorthogonal_correction`）
+
+内部面の面ベクトル S_f = n_f A_f を over-relaxed 分解 S_f = E_f + T_f する
+（E_f ∥ e_f = (x_N − x_P)/d_PN、|E_f| = A_f/(n_f·e_f)、T_f = S_f − E_f）。
+
+- 陰的部分: `assemble_diffusion` の係数 a_f = Γ_f |E_f|/d_PN（直交メッシュでは A_f/d_PN）
+- 陽的部分（遅延補正）: `nonorthogonal_correction(mesh, φ, Γ, bfaces)` が
+  Γ_f (∇φ)_f·T_f を owner に +、neighbour に − で右辺に足す。(∇φ)_f は Green–Gauss セル勾配
+  `cell_gradient`（Dirichlet 以外の境界面では φ_b に接線外挿 ∇φ_P·t_b を加え 2 回反復）の線形補間
+- 傾いた境界面（Dirichlet / Robin）: 法線勾配を (φ_b − φ_P − ∇φ_P·t_b)/d_b と評価する接線補正
+  −c_b (∇φ_P·t_b)（`boundary_tangent`、c_b = Γ_P A_b/d_b または U A_b）
+- `diffusive_face_flux(mesh, φ, Γ, bfaces)` は同じ分解で全面の J_f = −Γ∇φ·S_f を返す
+  （Darcy の面流量、熱収支の検査に使う）
+- `solve_corrected(mesh, build, solver, φ0, max_iter, tol)` が「補正を前回の φ で評価 → 解く」を
+  ‖Δφ‖/‖φ‖ < tol まで反復する。`is_orthogonal(mesh)` なら 1 回で終わる。
+  各方程式ファミリーの Input に `max_nonorthogonal_iter`（既定 20）がある
+
+一様せん断した六面体メッシュでは、全面 Dirichlet の線形場が補正の反復で厳密に再現され、
+面フラックスも厳密（`tests/test_fvm_layer.py::TestNonorthogonalPhysics`）。
+補正は遅延評価なので、収束解の質量不整合（Darcy）は tol × 流量のオーダーになる。
+
 ### `fvm/linear.py` — 線形ソルバー Strategy
 
 `LinearSolverStrategy` Protocol（`solve(A, b)`）の具象:
@@ -92,7 +113,8 @@ FVM 側（境界流出入を含む）とは一致しない。
 
 1. `ScalarTransportFVMProcess`（本文書、パイロット）
 2. `DarcyFlowProcess`（[darcy-flow-fvm.md](darcy-flow-fvm.md)、新ファミリー、最初の非構造ケース）
-3. `HeatTransferFDMProcess` → 面カーネル版（境界条件式 5 か所・調和平均 5 か所の複製を吸収）
+3. `HeatTransferFVMProcess`（[heat-transfer-fvm.md](heat-transfer-fvm.md)、構造格子 FDM と 1e-8 で一致、
+   `*HEAT TRANSFER` の非箱格子 / `--mesh=unstructured` 経路）— 済
 4. `BrinkmanFlowFVMProcess`（演算子合成 `Dx@diag(f)@W` を owner/neighbour で組み直す）
 5. `NaturalConvectionFDMProcess`（SIMPLE、Rhie–Chow を面リストで）
 
@@ -100,5 +122,7 @@ FVM 側（境界流出入を含む）とは一致しない。
 
 - `tests/test_fvm_layer.py`: 1D 拡散の線形解（等間隔・不等間隔）、Neumann の勾配、Robin の平衡と
   既存 FDM 係数との一致、2 領域物性の直列抵抗、風上の一様流輸送、対流拡散の単調性、時間項・ソース項、
-  Green–Gauss 勾配の厳密性、線形ソルバー 3 種の一致
+  Green–Gauss 勾配の厳密性、線形ソルバー 3 種の一致、非直交分解（直交で退化、せん断で角度）、
+  せん断メッシュの線形場と面フラックスの厳密性
 - `tests/test_scalar_transport_fvm.py`: `ScalarTransportFVMProcess` の API と構造格子 FDM との回帰
+- `tests/test_heat_transfer_fvm.py`: `HeatTransferFVMProcess` の API、FDM との回帰、せん断メッシュの線形場・熱収支

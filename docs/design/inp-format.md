@@ -24,16 +24,18 @@ InpCaseBuildProcess      KeywordBlock 列 → CaseDefinition（中立表現）
 StructuredGridRecoveryProcess
                          *NODE/*ELEMENT（または *GRID）→ StructuredGridMap
                          （軸平行の完全な箱格子であることを検証、要素→(i,j,k)、*SURFACE→領域面）
-                         *NAVIER STOKES / *HEAT TRANSFER のステップがあるときだけ
+                         *NAVIER STOKES / *HEAT TRANSFER のステップがあり、mesh_mode が unstructured でないとき。
+                         箱格子でなければ（mesh_mode=auto）*HEAT TRANSFER は非構造経路へ落ちる
 InpMeshProcess           *NODE/*ELEMENT → 面ベースの非構造 MeshData（任意の六面体 / 四辺形、
-                         *SURFACE → 境界パッチ、*ELSET → セル集合）。*DARCY のステップがあるときだけ
-                         （設計: unstructured-inp-mesh.md）
+                         *SURFACE → 境界パッチ、*ELSET → セル集合）。*DARCY、または構造格子に
+                         復元しない *HEAT TRANSFER のステップがあるとき（設計: unstructured-inp-mesh.md）
 InpToNaturalConvectionProcess   *NAVIER STOKES → NaturalConvectionInput
-InpToHeatTransferProcess        *HEAT TRANSFER → HeatTransferInput（+ 線形解法名）
+InpToHeatTransferProcess        *HEAT TRANSFER → HeatTransferInput（+ 線形解法名、構造格子）
+InpToHeatTransferFVMProcess     *HEAT TRANSFER → HeatTransferFVMInput（非構造メッシュ経由、パッチ境界条件）
 InpToDarcyProcess               *DARCY → DarcyFlowInput（非構造メッシュ経由）
-NaturalConvectionFDMProcess / HeatTransferFDMProcess / DarcyFlowProcess
+NaturalConvectionFDMProcess / HeatTransferFDMProcess / HeatTransferFVMProcess / DarcyFlowProcess
 InpOutputWriterProcess   *OUTPUT, FIELD → <job>.npz / <job>.yaml / <job>.vtk / <job>.html（MiradorExportProcess）
-                         非構造（*DARCY）では NPZ に node_coords / connectivity、VTK は UNSTRUCTURED_GRID
+                         非構造では NPZ に node_coords / connectivity、VTK は UNSTRUCTURED_GRID
 InpCaseRunnerProcess     上記を束ねる BatchProcess（ykep コマンドの本体）
 ```
 
@@ -49,11 +51,14 @@ ykep job=cavity-nc-1 interactive -o=results             # 拡張子 .inp は省�
 ykep -j=cavity-nc-1 view -o=results --slice=x=0.05     # 解析せず NPZ → HTML（messi mirador 3D ビューア）
 ykep -j=case.inp int -p n=24 -p L=0.2                   # *PARAMETER の初期値（.inp 内定義が優先）
 ykep -j=case.inp --check                                # 解析せず読込・格子復元・マッピングのみ検証
+ykep -j=plate-ht-1.inp int --mesh=unstructured          # 箱格子でも面ベース非構造経路（HeatTransferFVM）で解く
 python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイント無しでも同じ
 ```
 
 - `int` / `interactive`: 反復ログを端末にも表示。無指定でもログは常に `<out>/<job>.log` に残る
   （CLAUDE.md のログ出力ルール。`tee` 相当をコマンド側で担保）
+- `--mesh=auto|structured|unstructured`（`InpJobInput.mesh_mode`）: `auto`（既定）は箱格子なら構造格子、
+  そうでなければ非構造。`structured` は箱格子でなければエラー、`unstructured` は `*NAVIER STOKES` があるとエラー
 - 終了コード: 0 = 収束、3 = 未収束（ファイルは出力済み）、1 = エラー、2 = 引数エラー
 - 出力先は既定で .inp と同じディレクトリ（Abaqus と同じ）
 
@@ -95,7 +100,7 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 | キーワード | パラメータ | データ行（非定常） | ykep ソルバー |
 |---|---|---|---|
 | `*NAVIER STOKES` | `TURBULENCE=LAMINAR`, `STEADY STATE`, `HEAT TRANSFER=NONE\|COUPLED` | `dt, time_period` | `NaturalConvectionFDMProcess`（SIMPLE 系）。`NONE` は β=0・温度一様・温度境界無視 |
-| `*HEAT TRANSFER` | `STEADY STATE` | `dt, time_period` | `HeatTransferFDMProcess` |
+| `*HEAT TRANSFER` | `STEADY STATE` | `dt, time_period` | `HeatTransferFDMProcess`（箱格子）/ [`HeatTransferFVMProcess`](heat-transfer-fvm.md)（非箱格子または `--mesh=unstructured`。境界は `*SURFACE` 名 / 予約面名のパッチ、`*SFILM` / `*DFLUX` S・BF 可） |
 | `*DARCY` | `STEADY STATE` | – | `DarcyFlowProcess`（面ベース FVM、非構造六面体メッシュ可）。境界は `TYPE=PRESSURE` / `VELOCITY`（1 成分なら法線流入速度、3 成分なら内向き法線成分）/ `WALL` / `SYMMETRY`（不透過）。`*SFILM` / `*DFLUX` / `*DLOAD` は不可 |
 
 `TURBULENCE` は `LAMINAR` 以外を明示エラーにする（乱流モデルは Phase 5）。
@@ -115,7 +120,7 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 | `SOLVER`（`*DARCY`） | `METHOD` `TOL` `MAX_ITER` | `DIRECT`（既定）, `BICGSTAB`, `AMG` | `DarcyFlowInput.linear_solver` 等 |
 | | `MAX_OUTER` `MAX_INNER` `MAX_PRESSURE_ITER` | 整数 | `max_simple_iter` 等 |
 | | `TOL` `TOL_INNER` | 実数 | `tol_simple`, `tol_inner` |
-| | `METHOD`（`*HEAT TRANSFER`） | `JACOBI`, `DIRECT`, `BICGSTAB`（既定）, `AMG`, `NUMBA` | `HeatTransferFDMProcess(method=)` |
+| | `METHOD`（`*HEAT TRANSFER`） | `JACOBI`, `DIRECT`, `BICGSTAB`（既定）, `AMG`, `NUMBA`（非構造経路は `DIRECT` / `BICGSTAB` / `AMG` のみ） | `HeatTransferFDMProcess(method=)` / `HeatTransferFVMInput.linear_solver` |
 | | `MAX_ITER` `TOL`（`*HEAT TRANSFER`） | | `max_iter`, `tol` |
 | `TIME INCREMENTATION` | `OUTPUT_INTERVAL` | 整数 | `output_interval`（既定は `*OUTPUT, FREQUENCY=`） |
 
@@ -178,13 +183,14 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 |---|---|---|
 | [`cavity-nc-1.inp`](../../examples/inp/cavity-nc-1.inp) | `*GRID` + `*PARAMETER` で Ra=1000 差分加熱キャビティ（12×12×3、z 対称面、α_u/α_p/α_T = 0.2/0.05/0.5） | 226 反復で収束、Nu = 1.169（de Vahl Davis 1.118、+4.6%） |
 | [`plate-ht-1.inp`](../../examples/inp/plate-ht-1.inp) + [`plate-mesh.inp`](../../examples/inp/plate-mesh.inp) | `*NODE/*ELEMENT` を `*INCLUDE`、`*SURFACE`（S2/S4/S6）、`*SFILM`、`*DFLUX` S/BF、自由度番号形式の `*BOUNDARY` | 直接法で 1 回、T ∈ [355.6, 373.3] K |
-| [`darcy-1.inp`](../../examples/inp/darcy-1.inp) + [`darcy-mesh.inp`](../../examples/inp/darcy-mesh.inp) | `*DARCY`: せん断で歪んだ 12×6×2 六面体メッシュ（箱格子ではないので `InpMeshProcess` 経由）、低透過率ブロック `CLAY`（`*SOLID SECTION` + `*PERMEABILITY`）、`*SURFACE` の INLET/OUTLET に圧力 1 kPa / 0 | 直接法で 1 回、流入 = 流出 2.564e-6 m³/s（相対差 2e-13）、p ∈ [18.7, 981.3] Pa、質量不整合 9e-21 |
+| [`plate-ht-2.inp`](../../examples/inp/plate-ht-2.inp) + [`plate-skew-mesh.inp`](../../examples/inp/plate-skew-mesh.inp) | plate-ht-1 と同じ物理を、せん断 0.3 の 8×4×1 六面体メッシュ（最大非直交角 16.7°、箱格子ではないので `InpMeshProcess` + `HeatTransferFVMProcess`）で解く | 直接法 + 非直交補正で収束、T ∈ [350.7, 359.1] K（コミット 04b0e70 で実行） |
+| [`darcy-1.inp`](../../examples/inp/darcy-1.inp) + [`darcy-mesh.inp`](../../examples/inp/darcy-mesh.inp) | `*DARCY`: せん断で歪んだ 12×6×2 六面体メッシュ（箱格子ではないので `InpMeshProcess` 経由）、低透過率ブロック `CLAY`（`*SOLID SECTION` + `*PERMEABILITY`）、`*SURFACE` の INLET/OUTLET に圧力 1 kPa / 0 | 直接法 + 非直交補正で収束、流入 = 流出 2.518e-6 m³/s（相対差 3e-11）、p ∈ [18.7, 981.3] Pa、質量不整合 2e-17（補正前は 2.564e-6 m³/s） |
 
 ## 制限（現状）と次の段階
 
-- `*NAVIER STOKES` / `*HEAT TRANSFER` は構造格子のみ（`StructuredGridRecoveryProcess` が非箱格子を拒否）。
-  `*DARCY` は `InpMeshProcess` の面ベース非構造メッシュで解く（任意の六面体 / 四辺形、部分面の `*SURFACE` 可）。
-  内部面の `*SURFACE` は未対応
+- `*NAVIER STOKES` は構造格子のみ（`StructuredGridRecoveryProcess` が非箱格子を拒否）。
+  `*HEAT TRANSFER` / `*DARCY` は `InpMeshProcess` の面ベース非構造メッシュで解ける
+  （任意の六面体 / 四辺形、部分面の `*SURFACE` 可、非直交補正あり）。内部面の `*SURFACE` は未対応
 - `*DARCY` は定常のみ（Forchheimer / Brinkman 項なし）
 - `*NAVIER STOKES, HEAT TRANSFER=NONE` はエネルギー方程式を **スキップせず** 温度一様で解いている
   （`NaturalConvectionInput` に `solve_energy` フラグを足せば計算量を減らせる）
@@ -192,8 +198,8 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 - `*NODE OUTPUT` は `*ELEMENT OUTPUT` と同じ扱い（節点補間はしない）
 - 複数 `*STEP` は独立に実行される（前ステップの場を引き継がない）。出力名は `<job>_<k>`
 - 格子の次段は「非構造格子（面ベース FVM）」に決めた。`CaseDefinition` はそのままで、
-  `InpMeshProcess`（`StructuredGridRecoveryProcess` の代替）と `InpToDarcyProcess` を足した。
-  既存の NS / 伝熱ソルバーも同じ層に載せ替えていく（[fvm-layer.md](fvm-layer.md) の移行順）
+  `InpMeshProcess`（`StructuredGridRecoveryProcess` の代替）と `InpToDarcyProcess` / `InpToHeatTransferFVMProcess`
+  を足した。NS ソルバーも同じ層に載せ替えていく（[fvm-layer.md](fvm-layer.md) の移行順）
 
 ## テスト
 
@@ -205,7 +211,8 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 | `tests/test_inp_mapping.py::TestInpToNaturalConvectionAPI` | 全フィールドの対応、非定常、等温、2D 既定対称面、未対応 8 種、不等間隔拒否、セクション未割当 |
 | `tests/test_inp_mapping.py::TestInpToHeatTransferAPI` | k/C/q/T0（節点平均）、Dirichlet/Neumann/Robin、不等間隔、非定常の必須物性、未対応 4 種 |
 | `tests/test_inp_mesh.py::TestInpMeshAPI` / `TestInpMeshPhysics` | `InpMeshProcess`: 箱格子で `StructuredMeshProcess` と体積・面積・隣接・パッチが一致、せん断メッシュ、2D 押し出し、`*SURFACE`（plate-mesh.inp）、内部面拒否 |
+| `tests/test_inp_mapping.py::TestInpToHeatTransferFVMAPI` | 非構造経路の k/C/q/T0、パッチ境界条件（Dirichlet/Neumann/Robin）、SOLVER、未対応 5 種、非定常の必須物性 |
 | `tests/test_inp_mapping.py::TestInpToDarcyAPI` | 透過率のセクション割当、PRESSURE / VELOCITY（ベクトル → 内向き法線成分）/ SYMMETRY、初期圧力、SOLVER、未対応 6 種 |
 | `tests/test_inp_runner.py::TestInpOutputWriterAPI` | NPZ/YAML/VTK、変数選択・別名、YAML 往復 |
-| `tests/test_inp_runner.py::TestInpCaseRunnerAPI` | 伝熱例題の収束、NS パイプライン、`--check`、`*DARCY` パイプライン（非構造 NPZ / VTK、`view --cut`）、パラメータ上書き |
+| `tests/test_inp_runner.py::TestInpCaseRunnerAPI` | 伝熱例題の収束、`--mesh=unstructured` で箱格子の伝熱が FDM と一致、plate-ht-2（せん断）の auto 経路と structured 拒否、NS の非構造拒否、NS パイプライン、`--check`、`*DARCY` パイプライン（非構造 NPZ / VTK、`view --cut`）、パラメータ上書き |
 | `tests/test_inp_runner.py::TestYkepCli` / `TestInpPhysics` | 引数解釈・終了コード・ログファイル、1D 熱伝導の線形分布、darcy-1.inp の質量保存と低透過率ブロック |

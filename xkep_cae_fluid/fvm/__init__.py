@@ -4,7 +4,7 @@
 
 - 境界パッチ条件の解決（:mod:`boundary`）
 - 面補間・面物性・勾配などの幾何演算（:mod:`geometry`）
-- 拡散・対流・時間項・ソース項の係数行列組み立て（:mod:`assembly`）
+- 拡散・対流・時間項・ソース項の係数行列組み立てと非直交補正（:mod:`assembly`）
 - 線形ソルバー Strategy（:mod:`linear`）
 
 を提供する。各方程式ファミリー（スカラー輸送、Darcy、伝熱 …）の SolverProcess は
@@ -16,15 +16,24 @@ from xkep_cae_fluid.fvm.assembly import (
     assemble_convection,
     assemble_diffusion,
     assemble_scalar_transport,
+    boundary_tangent,
+    diffusive_face_flux,
+    nonorthogonal_correction,
+    solve_corrected,
 )
 from xkep_cae_fluid.fvm.boundary import BCKind, BoundaryFaces, PatchBC, resolve_boundary
 from xkep_cae_fluid.fvm.geometry import (
     boundary_face_values,
     cell_gradient,
+    cell_gradient_lsq,
+    face_decomposition,
     face_diffusivity,
+    face_gradient,
     face_interpolation_weights,
     face_mass_flux,
     internal_face_values,
+    is_orthogonal,
+    max_nonorthogonality_deg,
 )
 from xkep_cae_fluid.fvm.linear import (
     AMGSolver,
@@ -45,9 +54,18 @@ __all__ = [
     "internal_face_values",
     "boundary_face_values",
     "cell_gradient",
+    "cell_gradient_lsq",
+    "face_gradient",
+    "face_decomposition",
+    "is_orthogonal",
+    "max_nonorthogonality_deg",
     "assemble_diffusion",
     "assemble_convection",
     "assemble_scalar_transport",
+    "nonorthogonal_correction",
+    "boundary_tangent",
+    "diffusive_face_flux",
+    "solve_corrected",
     "DirectSolver",
     "BiCGSTABSolver",
     "AMGSolver",

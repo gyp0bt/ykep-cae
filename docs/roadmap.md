@@ -224,11 +224,12 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] `InpMeshProcess`（`.inp` → 面ベース非構造メッシュ、`*SURFACE` → パッチ）
 - [x] `DarcyFlowProcess` + `*DARCY`（`InpToDarcyProcess`、非構造 NPZ / VTK / HTML 出力、例題 darcy-1）
 - [x] `NaturalConvectionFDMProcess` の過渡 dt 差し替えで `internal_face_bcs` が落ちる回帰を修正
-- [ ] `HeatTransferFDMProcess` を面カーネル版へ（境界条件式・調和平均の 5 重複製を吸収）
+- [x] `HeatTransferFVMProcess`（面カーネル版、FDM と 1e-8 一致）+ `*HEAT TRANSFER` の非構造経路（`--mesh=auto|structured|unstructured`、例題 plate-ht-2）— Phase 11
+- [x] 非直交補正（over-relaxed 分解 + 傾いた境界面の接線補正 + `solve_corrected`）を fvm 層に追加し Darcy / スカラー輸送 / 伝熱に接続 — Phase 11
 - [x] `nsb/{data,assembly}.py` をコミット 1647839 時点のスナップショットとして切り離し（同期スクリプト・乖離テスト削除）— Phase 11
 - [ ] `BrinkmanFlowFVMProcess` の演算子合成を owner/neighbour で組み直す（非構造 NS ファミリーへ統合）
 - [ ] `NaturalConvectionFDMProcess`（SIMPLE、Rhie–Chow）を面リストで
-- [ ] 非直交補正（`CorrectedDiffusionScheme`）を fvm 層に接続、四面体・楔の `InpMeshProcess` 対応
+- [ ] 四面体・楔の `InpMeshProcess` 対応、`core/strategies/CorrectedDiffusionScheme` の整理（fvm 層に統合済みの機能と重複）
 - [ ] 内部面の `*SURFACE`（`InternalFaceBC` 相当）、Darcy の Forchheimer / Brinkman 項、非定常
 - [ ] `core/data.BoundaryData` / `SolverInputData` 等の死んだスキーマの整理
 

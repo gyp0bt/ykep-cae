@@ -267,6 +267,63 @@ class TestInpCaseRunnerAPI:
         T = np.load(tmp_path / "plate-ht-1.npz")["T"]
         assert T.shape == (4, 2, 2) and T.min() > 350.0
 
+    def test_heat_transfer_unstructured_matches_structured(self, tmp_path: Path):
+        """箱格子の plate-ht-1 を mesh_mode=unstructured で解くと FDM 版と同じ温度場（非構造出力）."""
+        ref = InpCaseRunnerProcess().execute(
+            InpJobInput(path=str(EXAMPLES / "plate-ht-1.inp"), output_dir=str(tmp_path / "s"))
+        )
+        res = InpCaseRunnerProcess().execute(
+            InpJobInput(
+                path=str(EXAMPLES / "plate-ht-1.inp"),
+                output_dir=str(tmp_path / "u"),
+                mesh_mode="unstructured",
+            )
+        )
+        assert res.grid is None and res.mesh is not None and res.converged
+        step = res.steps[0]
+        assert step.summary["solver"]["process"] == "HeatTransferFVMProcess"
+        assert step.summary["mesh"]["max_nonorthogonality_deg"] == pytest.approx(0.0, abs=1e-9)
+        # セル順は要素順（plate-mesh.inp は i 最速）なので、構造格子の (i, j, k) に戻して比較
+        T_u = step.result.T
+        T_s = ref.steps[0].result.T
+        lookup = {int(e): idx for idx, e in enumerate(ref.grid.element_ids.tolist())}
+        ijk = ref.grid.element_ijk[[lookup[int(e)] for e in res.mesh.element_ids.tolist()]]
+        assert np.allclose(T_u, T_s[ijk[:, 0], ijk[:, 1], ijk[:, 2]], rtol=1e-8)
+        with np.load(tmp_path / "u" / "plate-ht-1.npz") as data:
+            assert data["T"].shape == (16,) and data["connectivity"].shape == (16, 8)
+        assert "DATASET UNSTRUCTURED_GRID" in (tmp_path / "u" / "plate-ht-1.vtk").read_text()
+
+    def test_heat_transfer_sheared_example_auto_falls_back(self, tmp_path: Path):
+        """plate-ht-2（せん断メッシュ）は auto で非構造経路に落ち、structured 強制なら拒否."""
+        res = InpCaseRunnerProcess().execute(
+            InpJobInput(path=str(EXAMPLES / "plate-ht-2.inp"), output_dir=str(tmp_path))
+        )
+        assert res.grid is None and res.mesh is not None and res.mesh.n_cells == 32
+        step = res.steps[0]
+        assert res.converged and step.summary["solver"]["process"] == "HeatTransferFVMProcess"
+        assert step.summary["mesh"]["max_nonorthogonality_deg"] == pytest.approx(
+            np.degrees(np.arctan(0.3)), abs=1e-6
+        )
+        assert step.summary["temperature_range"][0] > 350.0
+        with pytest.raises(ValueError, match="箱格子"):
+            InpCaseRunnerProcess().execute(
+                InpJobInput(
+                    path=str(EXAMPLES / "plate-ht-2.inp"),
+                    output_dir=str(tmp_path),
+                    mesh_mode="structured",
+                )
+            )
+
+    def test_navier_stokes_rejected_on_unstructured(self, tmp_path: Path):
+        inp = tmp_path / "ns.inp"
+        inp.write_text(TINY_NS, encoding="utf-8")
+        with pytest.raises(ValueError, match="NAVIER STOKES"):
+            InpCaseRunnerProcess().execute(
+                InpJobInput(path=str(inp), mesh_mode="unstructured", check_only=True)
+            )
+        with pytest.raises(ValueError, match="mesh_mode"):
+            InpCaseRunnerProcess().execute(InpJobInput(path=str(inp), mesh_mode="polyhedral"))
+
     def test_navier_stokes_pipeline(self, tmp_path: Path):
         inp = tmp_path / "tiny.inp"
         inp.write_text(TINY_NS, encoding="utf-8")
@@ -361,6 +418,10 @@ class TestYkepCli:
         assert job.output_dir == str(tmp_path / "o")
         args2 = parse_args([f"job={inp}", "--check"])
         assert args2.job.check_only and not args2.interactive
+        assert args2.job.mesh_mode == "auto"
+        assert parse_args([f"-j={inp}", "--mesh=Unstructured"]).job.mesh_mode == "unstructured"
+        with pytest.raises(SystemExit):
+            parse_args([f"-j={inp}", "--mesh=polyhedral"])
         assert parse_args(["--help"]) is None
 
     def test_main_check_and_errors(self, tmp_path: Path, capsys):
@@ -449,7 +510,8 @@ class TestInpPhysics:
         s = res.steps[0].summary
         assert res.converged and s["inflow_m3s"] == pytest.approx(s["outflow_m3s"], rel=1e-9)
         assert 0.0 < s["pressure_range"][0] < s["pressure_range"][1] < 1000.0
-        assert s["max_mass_residual"] < 1e-12 * s["inflow_m3s"]
+        # 非直交補正は遅延補正なので質量不整合は tol（1e-10）× 流量のオーダー
+        assert s["max_mass_residual"] < 1e-9 * s["inflow_m3s"]
         # 低透過率ブロック内の速度は砂の部分より遥かに小さい
         d = res.steps[0].result
         clay = res.mesh.mask_for_elements(res.case.elsets["CLAY"].ids)

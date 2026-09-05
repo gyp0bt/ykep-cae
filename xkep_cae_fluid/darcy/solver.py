@@ -20,10 +20,10 @@ from xkep_cae_fluid.fvm import (
     BoundaryFaces,
     PatchBC,
     assemble_scalar_transport,
-    face_diffusivity,
+    diffusive_face_flux,
     make_linear_solver,
-    relative_residual,
     resolve_boundary,
+    solve_corrected,
 )
 
 
@@ -48,26 +48,11 @@ def _to_patch_bcs(bcs: dict[str, DarcyPatchBC] | object) -> dict[str, PatchBC]:
 def face_volume_flux(
     mesh: MeshData, p: np.ndarray, gamma: np.ndarray, bfaces: BoundaryFaces
 ) -> np.ndarray:
-    """面の体積流量 q_f = −Γ_f A_f ∂p/∂n（内部面は owner → neighbour、境界面は外向き）."""
-    n_int = mesh.n_internal_faces
-    owner = mesh.face_owner[:n_int]
-    nb = mesh.face_neighbour
-    gamma_f = face_diffusivity(mesh, gamma)
-    d = np.linalg.norm(mesh.cell_centers[nb] - mesh.cell_centers[owner], axis=1)
-    q = np.zeros(mesh.n_faces)
-    q[:n_int] = -gamma_f * mesh.face_areas[:n_int] * (p[nb] - p[owner]) / d
+    """面の体積流量 q_f = −Γ_f ∇p_f·S_f（内部面は owner → neighbour、境界面は外向き）.
 
-    g_p = gamma[bfaces.owner]
-    q_b = np.zeros(bfaces.n)
-    dir_ = bfaces.is_dirichlet
-    safe_d = np.where(bfaces.distance > 0, bfaces.distance, 1.0)
-    q_b[dir_] = (
-        -g_p[dir_] * bfaces.area[dir_] * (bfaces.value[dir_] - p[bfaces.owner[dir_]]) / safe_d[dir_]
-    )
-    neu = bfaces.is_neumann
-    q_b[neu] = -bfaces.flux[neu] * bfaces.area[neu]  # 流入（正）→ 外向きでは負
-    q[bfaces.faces] = q_b
-    return q
+    :func:`~xkep_cae_fluid.fvm.diffusive_face_flux` そのもの（非直交補正込み）。
+    """
+    return diffusive_face_flux(mesh, p, gamma, bfaces)
 
 
 def cell_velocity_from_face_flux(mesh: MeshData, q: np.ndarray) -> np.ndarray:
@@ -126,8 +111,6 @@ class DarcyFlowProcess(SolverProcess["DarcyFlowInput", "DarcyFlowResult"]):
         source = None if inp.source is None else np.asarray(inp.source, dtype=np.float64)
         if source is not None and source.shape != (n,):
             raise ValueError(f"source は長さ n_cells={n} が必要: {source.shape}")
-        A, b = assemble_scalar_transport(mesh, gamma=gamma, bfaces=bfaces, source=source)
-
         solver = make_linear_solver(
             inp.linear_solver,
             **(
@@ -136,9 +119,16 @@ class DarcyFlowProcess(SolverProcess["DarcyFlowInput", "DarcyFlowResult"]):
                 else {"tol": inp.tol, "maxiter": inp.max_iter}
             ),
         )
-        x0 = None if inp.p0 is None else np.asarray(inp.p0, dtype=np.float64).reshape(-1)
-        p = solver.solve(A, b, x0=x0)
-        resid = relative_residual(A, p, b)
+        x0 = np.zeros(n) if inp.p0 is None else np.asarray(inp.p0, dtype=np.float64).reshape(-1)
+
+        def build(p_corr: np.ndarray | None):
+            return assemble_scalar_transport(
+                mesh, gamma=gamma, bfaces=bfaces, source=source, phi_correction=p_corr
+            )
+
+        p, resid, n_corr = solve_corrected(
+            mesh, build, solver, x0, max_iter=inp.max_nonorthogonal_iter, tol=inp.tol
+        )
 
         q = face_volume_flux(mesh, p, gamma, bfaces)
         n_int = mesh.n_internal_faces
@@ -162,4 +152,5 @@ class DarcyFlowProcess(SolverProcess["DarcyFlowInput", "DarcyFlowResult"]):
             elapsed_seconds=time.perf_counter() - t0,
             inflow=inflow,
             outflow=outflow,
+            n_nonorthogonal_iter=n_corr,
         )

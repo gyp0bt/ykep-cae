@@ -74,6 +74,8 @@ class DarcyFlowInput:
     linear_solver : str
         ``direct`` / ``bicgstab`` / ``amg``
     tol, max_iter : 反復解法の設定
+    max_nonorthogonal_iter : int
+        非直交メッシュでの遅延補正の最大反復回数（直交メッシュでは 1 回で終わる）
     """
 
     mesh: MeshData
@@ -86,6 +88,7 @@ class DarcyFlowInput:
     linear_solver: str = "direct"
     tol: float = 1e-10
     max_iter: int = 1000
+    max_nonorthogonal_iter: int = 20
 
 
 @dataclass(frozen=True)
@@ -119,3 +122,4 @@ class DarcyFlowResult:
     elapsed_seconds: float = 0.0
     inflow: float = 0.0
     outflow: float = 0.0
+    n_nonorthogonal_iter: int = 1  # 非直交補正の反復回数（直交メッシュは 1）

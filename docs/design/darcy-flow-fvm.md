@@ -72,4 +72,4 @@ OpenFOAM polyMesh（`PolyMeshReaderProcess`）のどの `MeshData` でも同じ�
 
 - 定常のみ（圧縮性・貯留項なし）。Forchheimer 慣性補正、Brinkman 粘性項は未実装
   （`experiments/coldplate/darcy.py` の Picard 実装を参照）
-- 非直交補正なし（歪んだ要素では一次精度に落ちる）
+- ~~非直交補正なし~~ → over-relaxed 分解の遅延補正を `solve_corrected` で反復（[fvm-layer.md](fvm-layer.md)）。`DarcyFlowInput.max_nonorthogonal_iter`、`DarcyFlowResult.n_nonorthogonal_iter`。質量不整合は tol × 流量のオーダー

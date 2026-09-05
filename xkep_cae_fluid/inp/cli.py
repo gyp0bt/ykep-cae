@@ -3,6 +3,7 @@
 書式::
 
     ykep -j=<job>[.inp] [int|interactive] [-o=<dir>] [-p name=value ...] [--check]
+                       [--mesh=auto|structured|unstructured]
     ykep job=<job> interactive
     ykep -j=<job> view [-o=<dir>] [--slice=<axis>=<pos> ...] [--no-slices] [--no-vectors] [--collapse-panel]
                        [--cut=<axis>=<pos> | --cut=<nx>,<ny>,<nz>,<d>]
@@ -12,6 +13,8 @@
 - ``-o=`` / ``out=``: 出力ディレクトリ（既定は .inp と同じ場所）
 - ``-p name=value``: ``*PARAMETER`` の初期値を与える（.inp 内の定義が優先）
 - ``--check``: 解析を実行せず読込・格子復元・マッピングのみ検証
+- ``--mesh=``: メッシュ経路。``auto``（既定: 箱格子なら構造格子、そうでなければ非構造）、
+  ``structured``（箱格子を強制）、``unstructured``（面ベース非構造を強制。``*HEAT TRANSFER`` / ``*DARCY``）
 - ``view``: 解析を実行せず、既にある ``<out>/<job>.npz`` から messi mirador の
   3D ビューア ``<out>/<job>.html`` を書く（``--slice=x=0.05`` で断面スラブ、複数可。
   ``--cut=z=0.5`` / ``--cut=1,1,0,0.3`` で任意平面の断面（view cut）を有効にして開く。
@@ -38,7 +41,8 @@ from xkep_cae_fluid.post.mirador import (
 )
 
 USAGE = (
-    "usage: ykep -j=<job>[.inp] [int] [-o=<dir>] [-p name=value ...] [--check]\n"
+    "usage: ykep -j=<job>[.inp] [int] [-o=<dir>] [-p name=value ...] [--check]"
+    " [--mesh=auto|structured|unstructured]\n"
     "       ykep -j=<job> view [-o=<dir>] [--slice=<axis>=<pos> ...] [--no-slices] [--no-vectors]"
     " [--collapse-panel] [--cut=<axis>=<pos> | --cut=<nx>,<ny>,<nz>,<d>]"
 )
@@ -129,6 +133,7 @@ def parse_args(argv: list[str]) -> CliArgs | None:
     view = False
     out: str | None = None
     check = False
+    mesh_mode = "auto"
     no_slices = False
     no_vectors = False
     collapse_panel = False
@@ -182,6 +187,10 @@ def parse_args(argv: list[str]) -> CliArgs | None:
             cut = _parse_cut(argv[i])
         elif low == "--check":
             check = True
+        elif low.startswith("--mesh="):
+            mesh_mode = arg.split("=", 1)[1].strip().lower()
+            if mesh_mode not in ("auto", "structured", "unstructured"):
+                raise CliError(f"--mesh は auto / structured / unstructured: {arg!r}")
         else:
             raise CliError(f"不明な引数: {arg!r}\n{USAGE}")
         i += 1
@@ -193,7 +202,9 @@ def parse_args(argv: list[str]) -> CliArgs | None:
     if not path.is_file():
         raise CliError(f"入力ファイルが見つかりません: {path}")
     return CliArgs(
-        job=InpJobInput(path=str(path), output_dir=out, parameters=params, check_only=check),
+        job=InpJobInput(
+            path=str(path), output_dir=out, parameters=params, check_only=check, mesh_mode=mesh_mode
+        ),
         interactive=interactive,
         view=view,
         slices=tuple(slices),

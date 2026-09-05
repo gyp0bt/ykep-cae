@@ -65,6 +65,9 @@ Process クラスを定義している実験モジュールはゼロ。
 2. [x] `ScalarTransportFVMProcess`（構造格子 FDM と定常・非定常で 1e-8 一致）
 3. [x] `*DARCY`（新ファミリー、最初の非構造ケース。例題 `examples/inp/darcy-1.inp`）
 4. [ ] `HeatTransfer` → `Brinkman` → `NaturalConvection` の順に載せ替え
+   - [x] `HeatTransferFVMProcess`（FDM と 1e-8 一致、`*HEAT TRANSFER` の非箱格子 / `--mesh=unstructured` 経路、例題 plate-ht-2）
+   - [x] 非直交補正（over-relaxed 分解 + 境界接線補正 + `solve_corrected`）を fvm 層に追加、Darcy / スカラー輸送 / 伝熱に接続
+   - [ ] 非構造 NS（SIMPLE + Rhie–Chow を面リストで、Brinkman 抵抗・Boussinesq・エネルギーを 1 ファミリーに）
 5. [x] 出力層: 非構造 NPZ / VTK `UNSTRUCTURED_GRID` / mirador の `mesh=` 入力
 6. [x] `internal_face_bcs` 欠落バグの修正（分離とは独立）
 
@@ -91,3 +94,13 @@ Process クラスを定義している実験モジュールはゼロ。
   master でも赤（status-34 の TODO、PR #32 にコメント済み）。`AMGSolver` のテストは `importorskip` にした
 - 既存 `ScalarTransportProcess`（FDM）は境界面の対流項を持たない。FVM 版はセル速度入力なら境界流出入も
   入るので、回帰は「内部面はセル平均・境界面ゼロ」の面質量流束を明示して取った
+- `nsb/{data,assembly}.py` はコミット 1647839 時点のスナップショットとして切り離した（2026-09-05）。同期スクリプトと
+  乖離テストを削除。`tests/test_nsb_standalone.py` の subprocess テストは pypardiso が無いと skip
+- 非直交補正: 当初「内部面の over-relaxed 分解」だけ入れたら、せん断メッシュで全面 Dirichlet の線形場が
+  0.1% ずれた。原因は傾いた境界面で法線勾配を (φ_b − φ_P)/d_b と評価していたこと（評価点が法線の足から
+  接線方向にずれる）。境界にも接線補正 −c_b ∇φ_P·t_b を足して厳密になった（`tests/test_fvm_layer.py`）
+- 一様せん断メッシュ + 全面 Dirichlet では補正なしでも線形場が厳密に出る（内部面と境界面の誤差が
+  行内で打ち消す偶然）。「補正の効果」のテストは Dirichlet 面が傾き、側面が断熱のケースで取ること
+- 遅延補正なので、収束解から `diffusive_face_flux` で作る面流量の発散（Darcy の質量不整合）は
+  tol × 流量のオーダー（darcy-1: 2e-17 vs 流量 2.5e-6、tol 1e-10）。機械精度ではない
+- darcy-1 例題の流量は補正で 2.564e-6 → 2.518e-6 m³/s に変わった（せん断 14°）。結果ファイルを再生成

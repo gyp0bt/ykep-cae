@@ -1,10 +1,15 @@
-"""3次元非定常伝熱解析モジュール (FDM)."""
+"""3次元非定常伝熱解析モジュール (FDM / 面ベース FVM)."""
 
 from xkep_cae_fluid.heat_transfer.data import (
     BoundaryCondition,
     BoundarySpec,
     HeatTransferInput,
     HeatTransferResult,
+)
+from xkep_cae_fluid.heat_transfer.fvm import (
+    HeatTransferFVMInput,
+    HeatTransferFVMProcess,
+    HeatTransferFVMResult,
 )
 from xkep_cae_fluid.heat_transfer.multilayer import (
     LayerSpec,
@@ -24,6 +29,9 @@ __all__ = [
     "BoundaryCondition",
     "BoundarySpec",
     "HeatTransferFDMProcess",
+    "HeatTransferFVMInput",
+    "HeatTransferFVMProcess",
+    "HeatTransferFVMResult",
     "HeatTransferInput",
     "HeatTransferResult",
     "LayerSpec",

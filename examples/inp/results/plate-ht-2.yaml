@@ -1,0 +1,49 @@
+job: plate-ht-2
+inp: examples/inp/plate-ht-2.inp
+step: Steady
+procedure: HEAT TRANSFER
+steady: true
+turbulence: LAMINAR
+commit: 04b0e70
+parameters:
+  T_left: 350.0
+  q_in: 2000.0
+  q_vol: 500000.0
+  h_film: 25.0
+  T_amb: 300.0
+mesh:
+  n_cells: 32
+  n_faces: 140
+  n_boundary_faces: 88
+  patches:
+    - LEFT
+    - RIGHT
+    - TOP
+    - XM
+    - XP
+    - YM
+    - YP
+    - ZM
+    - ZP
+  max_nonorthogonality_deg: 16.699244233993703
+solver:
+  process: HeatTransferFVMProcess
+  linear_solver: direct
+  dt: 0.0
+  t_end: 0.0
+  max_iter: 500
+  tol: 1e-08
+converged: true
+n_timesteps: 0
+final_residual: 6.306717577767214e-16
+elapsed_seconds: 0.019108726002741605
+temperature_range:
+  - 350.6562862525105
+  - 359.05538632055726
+wall_seconds: 0.028263560998311732
+output_files:
+  - plate-ht-2.npz
+  - plate-ht-2.vtk
+  - plate-ht-2.yaml
+variables:
+  - T

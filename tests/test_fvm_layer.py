@@ -20,10 +20,15 @@ from xkep_cae_fluid.fvm import (
     assemble_diffusion,
     assemble_scalar_transport,
     cell_gradient,
+    diffusive_face_flux,
+    face_decomposition,
     face_mass_flux,
+    is_orthogonal,
     make_linear_solver,
+    max_nonorthogonality_deg,
     relative_residual,
     resolve_boundary,
+    solve_corrected,
 )
 
 
@@ -236,3 +241,94 @@ class TestLinearSolvers:
         assert isinstance(make_linear_solver("BiCGSTAB", tol=1e-6), BiCGSTABSolver)
         with pytest.raises(ValueError, match="未知"):
             make_linear_solver("gmres")
+
+
+def _sheared_box(nx: int, ny: int, nz: int, shear: float):
+    """構造格子の節点を x += shear·y でせん断した非直交メッシュ（面リストは組み直す）."""
+    from dataclasses import replace
+
+    from xkep_cae_fluid.inp.builder import build_case
+    from xkep_cae_fluid.inp.mesh import build_inp_mesh
+    from xkep_cae_fluid.inp.parser import parse_inp_text
+
+    def nid(i, j, k):
+        return 1 + i + (nx + 1) * (j + (ny + 1) * k)
+
+    lines = ["*NODE"]
+    for k in range(nz + 1):
+        for j in range(ny + 1):
+            for i in range(nx + 1):
+                lines.append(f" {nid(i, j, k)}, {i / nx}, {j / ny}, {k / nz}")
+    lines.append("*ELEMENT, TYPE=C3D8, ELSET=ALL")
+    e = 0
+    for k in range(nz):
+        for j in range(ny):
+            for i in range(nx):
+                e += 1
+                c = [
+                    nid(i, j, k),
+                    nid(i + 1, j, k),
+                    nid(i + 1, j + 1, k),
+                    nid(i, j + 1, k),
+                    nid(i, j, k + 1),
+                    nid(i + 1, j, k + 1),
+                    nid(i + 1, j + 1, k + 1),
+                    nid(i, j + 1, k + 1),
+                ]
+                lines.append(f" {e}, " + ", ".join(str(n) for n in c))
+    case = build_case(parse_inp_text("\n".join(lines) + "\n"))
+    coords = case.nodes.coords.copy()
+    coords[:, 0] += shear * coords[:, 1]
+    case = replace(case, nodes=replace(case.nodes, coords=coords))
+    return build_inp_mesh(case).mesh
+
+
+class TestNonorthogonalPhysics:
+    def test_decomposition_reduces_to_area_on_orthogonal_mesh(self):
+        mesh = _box(4, 3, 2)
+        e_mag, t_vec, _d = face_decomposition(mesh)
+        np.testing.assert_allclose(e_mag, mesh.face_areas[: mesh.n_internal_faces], rtol=1e-12)
+        np.testing.assert_allclose(t_vec, 0.0, atol=1e-14)
+        assert is_orthogonal(mesh) and max_nonorthogonality_deg(mesh) < 1e-9
+
+    def test_sheared_mesh_has_nonorthogonality(self):
+        mesh = _sheared_box(4, 3, 2, 0.3)
+        assert not is_orthogonal(mesh)
+        # 面法線 (±1, 0, 0) と e = (0.3, 1, 0)/|..| の間の y 面: atan(0.3) ≈ 16.7°
+        assert max_nonorthogonality_deg(mesh) == pytest.approx(np.degrees(np.arctan(0.3)), abs=1e-6)
+
+    def test_linear_field_exact_with_correction(self):
+        """全面 Dirichlet の線形場は、補正の反復で厳密に再現され、面フラックスも厳密."""
+        mesh = _sheared_box(5, 4, 2, 0.3)
+        g = np.array([1.5, -0.7, 0.4])
+        exact = mesh.cell_centers @ g + 2.0
+        bf = resolve_boundary(
+            mesh,
+            {
+                n: PatchBC.dirichlet(mesh.face_centers[idx] @ g + 2.0)
+                for n, idx in mesh.boundary_patches.items()
+            },
+        )
+        gamma = 3.0
+
+        def build(phi_corr):
+            return assemble_scalar_transport(mesh, gamma=gamma, bfaces=bf, phi_correction=phi_corr)
+
+        phi, resid, n_iter = solve_corrected(
+            mesh, build, DirectSolver(), np.zeros(mesh.n_cells), max_iter=50, tol=1e-13
+        )
+        assert n_iter > 1 and resid < 1e-10
+        np.testing.assert_allclose(phi, exact, rtol=1e-9)
+        flux = diffusive_face_flux(mesh, phi, gamma, bf)
+        s_f = mesh.face_normals * mesh.face_areas[:, None]
+        np.testing.assert_allclose(flux, -gamma * (s_f @ g), atol=1e-9)
+
+    def test_uncorrected_flux_conserves_but_is_biased(self):
+        mesh = _sheared_box(5, 4, 2, 0.3)
+        g = np.array([1.0, 0.0, 0.0])
+        phi = mesh.cell_centers @ g
+        bf = resolve_boundary(mesh, {})
+        full = diffusive_face_flux(mesh, phi, 1.0, bf, corrected=True)
+        part = diffusive_face_flux(mesh, phi, 1.0, bf, corrected=False)
+        n_int = mesh.n_internal_faces
+        assert np.abs(full[:n_int] - part[:n_int]).max() > 1e-6
