@@ -187,10 +187,16 @@ def resolve_boundary(
 
     if default is None:
         default = PatchBC()
-    covered = np.zeros(n_b, dtype=bool)
-    for name, idx in patches.items():
-        bc = bcs.get(name, default)
-        local = np.asarray(idx, dtype=np.int64) - n_int
+    # まず全境界面を default にし、指定されたパッチだけ上書きする（パッチ同士が重なる場合、
+    # 例えば *SURFACE 名と予約面名 XM が同じ面を指すときは、指定されたものが勝つ。
+    # 指定パッチ同士の重なりは bcs の後のものが優先）
+    kind[:] = _KIND_CODE[default.kind]
+    value[:] = _broadcast(default.value, n_b, "<default>", "value")
+    flux[:] = _broadcast(default.flux, n_b, "<default>", "flux")
+    h[:] = float(default.h)
+    phi_inf[:] = float(default.phi_inf)
+    for name, bc in bcs.items():
+        local = np.asarray(patches[name], dtype=np.int64) - n_int
         if local.size and (local.min() < 0 or local.max() >= n_b):
             raise ValueError(f"パッチ {name!r} の面インデックスが境界面の範囲外です")
         m = local.size
@@ -199,15 +205,6 @@ def resolve_boundary(
         flux[local] = _broadcast(bc.flux, m, name, "flux")
         h[local] = float(bc.h)
         phi_inf[local] = float(bc.phi_inf)
-        covered[local] = True
-    # パッチに属さない境界面は default
-    if not np.all(covered):
-        rest = ~covered
-        kind[rest] = _KIND_CODE[default.kind]
-        value[rest] = _broadcast(default.value, int(rest.sum()), "<default>", "value")
-        flux[rest] = _broadcast(default.flux, int(rest.sum()), "<default>", "flux")
-        h[rest] = float(default.h)
-        phi_inf[rest] = float(default.phi_inf)
 
     owner = mesh.face_owner[faces]
     normals = mesh.face_normals[faces]

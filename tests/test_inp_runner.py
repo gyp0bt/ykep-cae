@@ -12,7 +12,6 @@ from xkep_cae_fluid.inp.builder import build_case
 from xkep_cae_fluid.inp.case import EquationFamily, OutputFormat, OutputRequest
 from xkep_cae_fluid.inp.cli import main, parse_args
 from xkep_cae_fluid.inp.grid import recover_structured_grid
-from xkep_cae_fluid.inp.mapping import UnsupportedFeatureError
 from xkep_cae_fluid.inp.output import FieldOutputInput, InpOutputWriterProcess, dump_yaml
 from xkep_cae_fluid.inp.parser import parse_inp_text
 from xkep_cae_fluid.inp.runner import InpCaseRunnerProcess, InpJobInput
@@ -80,6 +79,38 @@ class TestInpOutputWriterAPI:
         assert loaded["converged"] is True and loaded["n"] == 3 and loaded["name"] == "a: b"
         assert loaded["hist"] == [1.0, 2.0] and loaded["nested"] == {"x": None}
         assert loaded["variables"] == ["T", "P"]
+
+    def test_unstructured_npz_vtk(self, tmp_path: Path):
+        from xkep_cae_fluid.core.mesh import StructuredMeshInput, StructuredMeshProcess
+
+        mesh = (
+            StructuredMeshProcess()
+            .execute(StructuredMeshInput(Lx=1.0, Ly=1.0, Lz=1.0, nx=2, ny=1, nz=1))
+            .mesh
+        )
+        res = InpOutputWriterProcess().execute(
+            FieldOutputInput(
+                job_name="u",
+                output_dir=str(tmp_path),
+                grid=None,
+                mesh=mesh,
+                fields={"P": np.array([1.0, 2.0]), "U": np.zeros((2, 3))},
+                requests=(
+                    OutputRequest(
+                        formats=(OutputFormat.NPZ, OutputFormat.VTK), formats_explicit=True
+                    ),
+                ),
+            )
+        )
+        assert sorted(Path(p).name for p in res.paths) == ["u.npz", "u.vtk", "u.yaml"]
+        with np.load(tmp_path / "u.npz") as data:
+            assert data["connectivity"].shape == (2, 8) and data["cell_types"].tolist() == [12, 12]
+        text = (tmp_path / "u.vtk").read_text()
+        assert "POINTS 12 double" in text and "CELLS 2 18" in text and "CELL_DATA 2" in text
+        with pytest.raises(ValueError, match="grid か mesh"):
+            InpOutputWriterProcess().execute(
+                FieldOutputInput(job_name="x", output_dir=str(tmp_path), grid=None, fields={})
+            )
 
     def test_default_all_variables_and_unknown_variable(self, tmp_path: Path):
         grid = _grid()
@@ -194,6 +225,30 @@ TINY_NS = """\
 """
 
 
+TINY_DARCY = """\
+*HEADING
+ tiny darcy for pipeline test
+*GRID, NX=4, NY=2, NZ=2, LX=0.4, LY=0.2, LZ=0.2
+*MATERIAL, NAME=SAND
+*DENSITY
+ 1000.
+*VISCOSITY
+ 1e-3
+*PERMEABILITY
+ 1e-10
+*FLUID SECTION, ELSET=ALL, MATERIAL=SAND
+*STEP, NAME=S1
+*DARCY, STEADY STATE
+*BOUNDARY, TYPE=PRESSURE
+ XM, 100.
+ XP, 0.
+*CONTROLS, PARAMETERS=SOLVER
+ METHOD=DIRECT
+*OUTPUT, FIELD, FORMAT=VTK
+*END STEP
+"""
+
+
 @binds_to(InpCaseRunnerProcess)
 class TestInpCaseRunnerAPI:
     def test_heat_transfer_example_runs_and_converges(self, tmp_path: Path):
@@ -234,6 +289,7 @@ class TestInpCaseRunnerAPI:
             res.steps[0].output_paths == ()
             and res.steps[0].summary["solver"]["coupling"] == "simple"
         )
+        # *DARCY は *PERMEABILITY が無いとマッピングで拒否される
         darcy = tmp_path / "darcy.inp"
         darcy.write_text(
             TINY_NS.replace(
@@ -241,8 +297,48 @@ class TestInpCaseRunnerAPI:
             ),
             encoding="utf-8",
         )
-        with pytest.raises(UnsupportedFeatureError, match="DARCY"):
+        with pytest.raises(ValueError, match="permeability"):
             InpCaseRunnerProcess().execute(InpJobInput(path=str(darcy)))
+
+    def test_darcy_pipeline_unstructured_output(self, tmp_path: Path):
+        """*DARCY: 非構造メッシュ経由で解き、NPZ（node_coords/connectivity）と VTK UNSTRUCTURED_GRID を書く."""
+        inp = tmp_path / "d.inp"
+        inp.write_text(TINY_DARCY, encoding="utf-8")
+        res = InpCaseRunnerProcess().execute(InpJobInput(path=str(inp), output_dir=str(tmp_path)))
+        assert res.grid is None and res.mesh is not None and res.mesh.n_cells == 16
+        step = res.steps[0]
+        assert step.family == EquationFamily.DARCY and step.converged
+        assert step.summary["mesh"]["n_cells"] == 16 and step.summary["solver"]["process"] == (
+            "DarcyFlowProcess"
+        )
+        names = sorted(Path(p).name for p in step.output_paths)
+        assert names[:3] == ["d.npz", "d.vtk", "d.yaml"] or names == [
+            "d.html",
+            "d.npz",
+            "d.vtk",
+            "d.yaml",
+        ]
+        with np.load(tmp_path / "d.npz") as data:
+            assert data["connectivity"].shape == (16, 8) and data["node_coords"].shape == (45, 3)
+            assert data["P"].shape == (16,) and data["U"].shape == (16, 3)
+            p = data["P"]
+        vtk = (tmp_path / "d.vtk").read_text()
+        assert "DATASET UNSTRUCTURED_GRID" in vtk and "CELL_TYPES 16" in vtk
+        assert "VECTORS U double" in vtk and "SCALARS P double 1" in vtk
+        # 1D 圧力差 100 → 0 で線形（x 方向 4 セル）
+        assert p.max() == pytest.approx(87.5) and p.min() == pytest.approx(12.5)
+        u_exact = 1e-10 * 100.0 / (1e-3 * 0.4)
+        assert step.summary["max_abs_velocity"] == pytest.approx(u_exact, rel=1e-8)
+        assert step.summary["inflow_m3s"] == pytest.approx(step.summary["outflow_m3s"], rel=1e-8)
+        # 後追いの view（非構造 NPZ → HTML）は messi があるときだけ
+        if _HAS_MESSI:
+            html = tmp_path / "d.html"
+            html.unlink(missing_ok=True)
+            code = main(["-j", str(inp), "view", f"-o={tmp_path}", "--cut=x=0.2"])
+            assert code == 0 and html.exists()
+            assert (
+                main(["-j", str(inp), "view", f"-o={tmp_path}", "--slice=x=0.2"]) == 2
+            )  # 非構造では --slice 不可
 
     def test_parameter_override(self, tmp_path: Path):
         inp = tmp_path / "p.inp"
@@ -343,6 +439,22 @@ class TestYkepCli:
 
 class TestInpPhysics:
     """物理テスト: .inp 経由でも 1D 定常熱伝導が線形分布になること."""
+
+    def test_darcy_example_mass_balance(self, tmp_path: Path):
+        """darcy-1.inp（せん断メッシュ + 低透過率ブロック）: 流入 = 流出、圧力は境界値の範囲内."""
+        res = InpCaseRunnerProcess().execute(
+            InpJobInput(path=str(EXAMPLES / "darcy-1.inp"), output_dir=str(tmp_path))
+        )
+        assert res.grid is None and res.mesh is not None and res.mesh.n_cells == 144
+        s = res.steps[0].summary
+        assert res.converged and s["inflow_m3s"] == pytest.approx(s["outflow_m3s"], rel=1e-9)
+        assert 0.0 < s["pressure_range"][0] < s["pressure_range"][1] < 1000.0
+        assert s["max_mass_residual"] < 1e-12 * s["inflow_m3s"]
+        # 低透過率ブロック内の速度は砂の部分より遥かに小さい
+        d = res.steps[0].result
+        clay = res.mesh.mask_for_elements(res.case.elsets["CLAY"].ids)
+        speed = np.linalg.norm(d.velocity, axis=1)
+        assert speed[clay].max() < 0.05 * speed[~clay].mean()
 
     def test_linear_conduction_profile(self, tmp_path: Path):
         text = (

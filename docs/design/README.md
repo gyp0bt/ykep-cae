@@ -16,7 +16,8 @@
 
 | 文書 | 配置先 | 内容 | 状態 |
 |------|--------|------|------|
-| [inp-format.md](inp-format.md) | `docs/design/` | ykep .inp 入力フォーマット（Abaqus 風キーワード構文、`ykep -j=<job>.inp int`、`*PARAMETER`、`*CONTROLS`） | 完了（NS / 伝熱。Darcy は書式のみ） |
+| [inp-format.md](inp-format.md) | `docs/design/` | ykep .inp 入力フォーマット（Abaqus 風キーワード構文、`ykep -j=<job>.inp int`、`*PARAMETER`、`*CONTROLS`） | 完了（NS / 伝熱 / Darcy） |
+| [unstructured-inp-mesh.md](unstructured-inp-mesh.md) | `docs/design/` | InpMeshProcess（`*NODE/*ELEMENT` → 面ベース非構造 MeshData、`*SURFACE` → 境界パッチ） | 完了（experimental） |
 
 ## 伝熱モジュール設計文書
 
@@ -33,6 +34,7 @@
 |------|--------|------|------|
 | [structured-mesh.md](structured-mesh.md) | `docs/design/` | StructuredMeshProcess（不等間隔直交格子） | 完了 |
 | [polymesh-reader.md](polymesh-reader.md) | `docs/design/` | PolyMeshReaderProcess（OpenFOAM互換） | 完了 |
+| [fvm-layer.md](fvm-layer.md) | `docs/design/` | 面ベース FVM 共通低レイヤー `xkep_cae_fluid.fvm`（境界パッチ条件・面演算・係数組み立て・線形ソルバー Strategy）と 3 層分離の方針 | 完了（experimental） |
 
 ## 流体モジュール設計文書
 
@@ -40,6 +42,7 @@
 |------|--------|------|------|
 | [natural-convection-fdm.md](natural-convection-fdm.md) | `docs/design/` | 3D自然対流ソルバー (SIMPLE法+Boussinesq+練成) | 完了 |
 | [scalar-transport-fdm.md](scalar-transport-fdm.md) | `docs/design/` | 汎用スカラー輸送ソルバー (Phase 6.1a 水槽 CAE 基盤) | 完了 |
+| [darcy-flow-fvm.md](darcy-flow-fvm.md) | `docs/design/` | DarcyFlowProcess（`*DARCY`、面ベース FVM、非構造六面体メッシュ可） | 完了（experimental） |
 | [brinkman-flow-fvm.md](brinkman-flow-fvm.md) | `docs/design/` | 2D Brinkman 補正 NS (FVM, Newton–Krylov) と U ターン収束性再現実験 | 実験中 |
 | (未作成) | - | 乱流モデル Strategy 設計 | 予定 |
 

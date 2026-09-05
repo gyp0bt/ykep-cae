@@ -34,6 +34,7 @@ from xkep_cae_fluid.post.mirador import (
     MiradorExportProcess,
     SlicePlane,
     load_npz_fields,
+    load_npz_mesh,
 )
 
 USAGE = (
@@ -213,7 +214,10 @@ def run_view(parsed: CliArgs) -> Path:
             f"{npz} がありません。先に `ykep -j={path} int` で解析して NPZ を作ってください"
         )
     x, y, z, fields = load_npz_fields(npz)
+    mesh = load_npz_mesh(npz) if x is None else None
     html = out_dir / f"{path.stem}.html"
+    if mesh is not None and parsed.slices:
+        raise CliError("非構造格子の結果では --slice は使えません（--cut を使ってください）")
     MiradorExportProcess().execute(
         MiradorExportInput(
             x_lines=x,
@@ -224,10 +228,11 @@ def run_view(parsed: CliArgs) -> Path:
             title=path.stem,
             slices=parsed.slices,
             # --cut（任意平面の断面）を使うときは中央スラブの自動挿入はしない。
-            auto_slices=not parsed.no_slices and parsed.cut is None,
+            auto_slices=mesh is None and not parsed.no_slices and parsed.cut is None,
             vector_field="" if parsed.no_vectors else None,
             panel_collapsed=parsed.collapse_panel,
             cut_plane=parsed.cut,
+            mesh=mesh,
         )
     )
     return html

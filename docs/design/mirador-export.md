@@ -50,7 +50,7 @@ ykep の `FORMAT=VTK` 出力は `messi mirador -i <job>.vtk` でもそのまま�
 
 | パラメータ | 型 | 説明 |
 |-----------|-----|------|
-| x_lines, y_lines, z_lines | np.ndarray | 格子線（昇順、長さ n+1）。z が 1 点の 2D 結果は面内セル幅の平均で 1 層押し出し |
+| x_lines, y_lines, z_lines | np.ndarray \| None | 格子線（昇順、長さ n+1）。z が 1 点の 2D 結果は面内セル幅の平均で 1 層押し出し。`mesh` 入力のときは None |
 | fields | Mapping[str, np.ndarray] | スカラー `(nx,ny,nz)`、ベクトル `(nx,ny,nz,3)`。2D の `(nx,ny)` / `(nx,ny,2)` も可 |
 | output_path | str | 出力 HTML |
 | title | str | ページタイトル |
@@ -64,6 +64,7 @@ ykep の `FORMAT=VTK` 出力は `messi mirador -i <job>.vtk` でもそのまま�
 | domain_name | str | 外皮 elset 名（既定 `domain`） |
 | panel_collapsed | bool | 操作パネルを畳んだ状態で開く（`ykep view --collapse-panel`） |
 | cut_plane | tuple[tuple[float,float,float], float] \| None | 開いた時点で有効にする任意平面の断面（view cut）`((nx,ny,nz), d)`。`n·x ≤ d` 側を残し切り口をセル値で着色。指定時は外皮を隠さない（`ykep view --cut=z=0.5` / `--cut=1,1,0,0.3`。`--cut` 時は中央スラブの自動挿入なし） |
+| mesh | MeshData \| None | **非構造格子**入力。六面体（`connectivity (n_cells, 8)`）をそのまま描く。場は `(n_cells,)` / `(n_cells, 3)`、`mask` は `(n_cells,)`。断面スラブは不可、`cut_plane` は可。`*DARCY` の出力と `ykep view`（NPZ に `node_coords` / `connectivity` があるとき）はこの経路 |
 
 ## 出力
 
@@ -149,5 +150,5 @@ ykep -j=examples/inp/cavity-nc-1.inp view -o=examples/inp/results --slice=x=0.05
 - three.js は CDN（unpkg）から読むためオフラインでは表示できない（messi 側の仕様）
 - 断面スラブ（elset）は軸に垂直な 1 セル厚のみ。任意平面は view cut（`cut_plane` / `--cut`）で対応したが、
   スラブと違い断面の場は elset として残らないので、複数断面を同時に見るときはスラブを使う
-- 非構造格子（polyMesh 読込結果）は未対応。`MeshData` の connectivity から Mesher を組めば同じ経路で載る
+- 非構造格子は `mesh=` 入力（六面体のみ）で載る（`build_hex_mesh_from_meshdata`）。四面体・楔・多面体は未対応（messi 側は C3D4/C3D6 も描けるので、`cell_types` で振り分ければ拡張できる）
 - 時系列（`T_history`）はスナップショット 1 枚のみ。フレーム切替は messi 側の拡張が必要

@@ -6,15 +6,19 @@ import numpy as np
 import pytest
 
 from xkep_cae_fluid.core.testing import binds_to
+from xkep_cae_fluid.darcy.data import DarcyBCKind
 from xkep_cae_fluid.heat_transfer.data import BoundaryCondition as HTBC
 from xkep_cae_fluid.inp.builder import build_case
 from xkep_cae_fluid.inp.grid import recover_structured_grid
 from xkep_cae_fluid.inp.mapping import (
     InpMappingInput,
+    InpMeshMappingInput,
+    InpToDarcyProcess,
     InpToHeatTransferProcess,
     InpToNaturalConvectionProcess,
     UnsupportedFeatureError,
 )
+from xkep_cae_fluid.inp.mesh import InpMeshInput, InpMeshProcess
 from xkep_cae_fluid.inp.parser import parse_inp_text
 from xkep_cae_fluid.natural_convection.data import FluidBoundaryCondition, ThermalBoundaryCondition
 
@@ -311,3 +315,86 @@ class TestInpToHeatTransferAPI:
     def test_unsupported(self, old: str, new: str, match: str):
         with pytest.raises(UnsupportedFeatureError, match=match):
             InpToHeatTransferProcess().execute(_mapping_input(HT_TEXT.replace(old, new)))
+
+
+# ---------------------------------------------------------------------------
+# Darcy
+# ---------------------------------------------------------------------------
+
+DARCY_TEXT = """\
+*GRID, NX=4, NY=2, NZ=2, LX=0.4, LY=0.2, LZ=0.2
+*ELSET, ELSET=TIGHT
+ 1, 2
+*ELSET, ELSET=LOOSE, GENERATE
+ 3, 16
+*MATERIAL, NAME=WATER_SAND
+*DENSITY
+ 998.
+*VISCOSITY
+ 1e-3
+*PERMEABILITY
+ 1e-10
+*MATERIAL, NAME=CLAY
+*PERMEABILITY
+ 1e-13
+*FLUID SECTION, ELSET=LOOSE, MATERIAL=WATER_SAND
+*SOLID SECTION, ELSET=TIGHT, MATERIAL=CLAY
+*INITIAL CONDITIONS, TYPE=PRESSURE
+ ALL, 50.
+*STEP
+*DARCY, STEADY STATE
+*BOUNDARY, TYPE=PRESSURE
+ XM, 100.
+*BOUNDARY, TYPE=VELOCITY
+ XP, -2e-4, 0, 0
+*BOUNDARY, TYPE=VELOCITY
+ YM, 3e-5
+*BOUNDARY, TYPE=SYMMETRY
+ ZM
+*CONTROLS, PARAMETERS=SOLVER
+ METHOD=BICGSTAB, TOL=1e-9, MAX_ITER=50
+*END STEP
+"""
+
+
+def _darcy_input(text: str) -> InpMeshMappingInput:
+    case = build_case(parse_inp_text(text))
+    return InpMeshMappingInput(case=case, mesh=InpMeshProcess().execute(InpMeshInput(case=case)))
+
+
+@binds_to(InpToDarcyProcess)
+class TestInpToDarcyAPI:
+    def test_full_mapping(self):
+        inp = InpToDarcyProcess().execute(_darcy_input(DARCY_TEXT))
+        assert inp.mesh.n_cells == 16 and inp.viscosity == 1e-3 and inp.density == 998.0
+        # 要素 1, 2 が CLAY
+        k = np.asarray(inp.permeability)
+        assert np.sum(k == 1e-13) == 2 and np.sum(k == 1e-10) == 14
+        assert np.all(inp.p0 == 50.0)
+        assert inp.bcs["XM"].kind == DarcyBCKind.PRESSURE and inp.bcs["XM"].pressure == 100.0
+        # XP の外向き法線は +x。速度 (-2e-4, 0, 0) は領域へ向かう → 内向き法線成分 +2e-4（流入）
+        assert inp.bcs["XP"].kind == DarcyBCKind.VELOCITY
+        assert inp.bcs["XP"].velocity == pytest.approx(2e-4)
+        assert inp.bcs["YM"].velocity == pytest.approx(3e-5)
+        assert inp.bcs["ZM"].kind == DarcyBCKind.WALL
+        assert (inp.linear_solver, inp.tol, inp.max_iter) == ("bicgstab", 1e-9, 50)
+
+    @pytest.mark.parametrize(
+        "old,new,match",
+        [
+            ("*DARCY, STEADY STATE", "*DARCY\n 0.1, 1.0", "定常"),
+            ("*BOUNDARY, TYPE=SYMMETRY\n ZM", "*BOUNDARY, TYPE=TEMPERATURE\n ZM, 300.", "DARCY"),
+            ("*BOUNDARY, TYPE=SYMMETRY\n ZM", "*BOUNDARY, TYPE=SYMMETRY\n LID", "予約面名"),
+            ("*PERMEABILITY\n 1e-13", "*CONDUCTIVITY\n 1.", "permeability"),
+            ("METHOD=BICGSTAB", "METHOD=NUMBA", "METHOD"),
+            (
+                "*CONTROLS, PARAMETERS=SOLVER",
+                "*CONTROLS, PARAMETERS=RELAXATION\n VELOCITY=0.5\n*CONTROLS, PARAMETERS=SOLVER",
+                "RELAXATION",
+            ),
+        ],
+    )
+    def test_unsupported(self, old: str, new: str, match: str):
+        assert old in DARCY_TEXT
+        with pytest.raises((UnsupportedFeatureError, ValueError), match=match):
+            InpToDarcyProcess().execute(_darcy_input(DARCY_TEXT.replace(old, new)))

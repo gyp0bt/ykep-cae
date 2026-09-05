@@ -4,6 +4,8 @@
   → :class:`~xkep_cae_fluid.natural_convection.data.NaturalConvectionInput`
 - :class:`InpToHeatTransferProcess`: ``*HEAT TRANSFER``
   → :class:`~xkep_cae_fluid.heat_transfer.data.HeatTransferInput`
+- :class:`InpToDarcyProcess`: ``*DARCY``（非構造 :class:`~xkep_cae_fluid.inp.mesh.InpMeshResult` 経由）
+  → :class:`~xkep_cae_fluid.darcy.data.DarcyFlowInput`
 
 ykep が解釈できない指定（乱流モデル、部分面、未対応スキーム等）は
 :class:`UnsupportedFeatureError` で明示的に拒否する（黙って無視しない）。
@@ -19,6 +21,7 @@ import numpy as np
 
 from xkep_cae_fluid.core.base import AbstractProcess, ProcessMeta
 from xkep_cae_fluid.core.categories import PreProcess
+from xkep_cae_fluid.darcy.data import DarcyFlowInput, DarcyPatchBC
 from xkep_cae_fluid.heat_transfer.data import (
     BoundaryCondition as HTBoundaryCondition,
 )
@@ -43,6 +46,7 @@ from xkep_cae_fluid.inp.case import (
     StepDefinition,
 )
 from xkep_cae_fluid.inp.grid import FACE_NAMES, StructuredGridMap
+from xkep_cae_fluid.inp.mesh import InpMeshResult
 from xkep_cae_fluid.natural_convection.data import (
     FluidBoundaryCondition,
     FluidBoundarySpec,
@@ -63,6 +67,23 @@ class InpMappingInput:
 
     case: CaseDefinition
     grid: StructuredGridMap
+    step_index: int = 0
+
+    @property
+    def step(self) -> StepDefinition:
+        if not self.case.steps:
+            raise UnsupportedFeatureError("*STEP がありません")
+        if not 0 <= self.step_index < len(self.case.steps):
+            raise IndexError(f"step_index {self.step_index} が範囲外")
+        return self.case.steps[self.step_index]
+
+
+@dataclass(frozen=True)
+class InpMeshMappingInput:
+    """非構造メッシュ（:class:`InpMeshResult`）経由のマッピング入力（``*DARCY``）."""
+
+    case: CaseDefinition
+    mesh: InpMeshResult
     step_index: int = 0
 
     @property
@@ -683,3 +704,171 @@ class InpToHeatTransferProcess(PreProcess["InpMappingInput", "HeatTransferMappin
 
     def process(self, input_data: InpMappingInput) -> HeatTransferMappingResult:
         return map_heat_transfer(input_data.case, input_data.grid, input_data.step)
+
+
+# ---------------------------------------------------------------------------
+# Darcy（DarcyFlowProcess、非構造メッシュ経由）
+# ---------------------------------------------------------------------------
+
+_LINEAR_SOLVERS = {"DIRECT": "direct", "BICGSTAB": "bicgstab", "AMG": "amg"}
+
+
+def _mesh_section_coverage(
+    case: CaseDefinition, mesh: InpMeshResult
+) -> list[tuple[np.ndarray, MaterialDefinition, SectionKind]]:
+    covered = np.zeros(mesh.n_cells, dtype=bool)
+    out: list[tuple[np.ndarray, MaterialDefinition, SectionKind]] = []
+    for sec in case.sections:
+        mask = mesh.mask_for_elements(case.element_ids_of(sec.elset))
+        if np.any(covered & mask):
+            raise UnsupportedFeatureError(f"セクションが重複しています（ELSET={sec.elset}）")
+        covered |= mask
+        out.append((mask, case.material_of_section(sec), sec.kind))
+    if not np.all(covered):
+        raise UnsupportedFeatureError(
+            f"セクション未割当のセルが {int((~covered).sum())} 個あります"
+        )
+    return out
+
+
+def _initial_cell_field_unstructured(
+    case: CaseDefinition, mesh: InpMeshResult, kind: InitialConditionKind, default: float
+) -> np.ndarray:
+    """``*INITIAL CONDITIONS`` を非構造メッシュのセル値に展開する（構造格子版と同じ規則）."""
+    node_lookup = {int(n): True for n in case.nodes.ids.tolist()}
+    node_val = np.full(case.nodes.n_nodes, np.nan)
+    node_index = {int(n): i for i, n in enumerate(case.nodes.ids.tolist())}
+    cell_override = np.full(mesh.n_cells, np.nan)
+    for ic in case.initial_conditions:
+        if ic.kind != kind:
+            continue
+        if not ic.values:
+            raise UnsupportedFeatureError(f"*INITIAL CONDITIONS, TYPE={kind.name} に値がありません")
+        value = float(ic.values[0])
+        key = ic.target
+        if key == "ALL":
+            node_val[:] = value
+            cell_override[:] = np.nan
+        elif key in case.nsets:
+            node_val[[node_index[int(n)] for n in case.nsets[key].ids.tolist()]] = value
+        elif key in case.elsets:
+            cell_override[mesh.mask_for_elements(case.elsets[key].ids)] = value
+        elif key.isdigit() and int(key) in node_lookup:
+            node_val[node_index[int(key)]] = value
+        elif key.isdigit():
+            cell_override[mesh.mask_for_elements(np.array([int(key)]))] = value
+        else:
+            raise UnsupportedFeatureError(f"*INITIAL CONDITIONS の target {ic.target!r} が未定義")
+    defined = ~np.isnan(node_val)
+    cell = np.full(mesh.n_cells, np.nan)
+    if np.any(defined):
+        cell = mesh.node_values_to_cells(case.nodes.ids[defined], node_val[defined])
+    cell = np.where(np.isnan(cell_override), cell, cell_override)
+    return np.where(np.isnan(cell), default, cell)
+
+
+def _darcy_patch_bcs(
+    case: CaseDefinition, step: StepDefinition, mesh: InpMeshResult
+) -> dict[str, DarcyPatchBC]:
+    md = mesh.mesh
+    patches = md.boundary_patches or {}
+    out: dict[str, DarcyPatchBC] = {}
+    for bc in case.boundaries + step.boundaries:
+        name = bc.target.strip().upper()
+        if name not in patches:
+            raise UnsupportedFeatureError(
+                f"境界 target {bc.target!r} は *SURFACE でも予約面名（{', '.join(FACE_NAMES)}）"
+                f"でもありません（定義済み: {sorted(patches)}）"
+            )
+        if bc.kind == BoundaryKind.PRESSURE:
+            if not bc.values:
+                raise UnsupportedFeatureError(f"面 {name} の TYPE=PRESSURE に値がありません")
+            out[name] = DarcyPatchBC.pressure_bc(float(bc.values[0]))
+        elif bc.kind == BoundaryKind.VELOCITY:
+            if not bc.values:
+                raise UnsupportedFeatureError(f"面 {name} の TYPE=VELOCITY に値がありません")
+            if len(bc.values) == 1:
+                u_n = float(bc.values[0])
+            else:
+                vel = np.array(list(bc.values) + [0.0] * (3 - len(bc.values)), dtype=float)[:3]
+                faces = md.patch_faces(name)
+                n_out = md.face_normals[faces].mean(axis=0)
+                norm = float(np.linalg.norm(n_out))
+                if norm == 0.0:
+                    raise UnsupportedFeatureError(
+                        f"面 {name} の法線が定まらないため TYPE=VELOCITY のベクトル指定を"
+                        "法線速度に変換できません（1 成分で流入速度を指定してください）"
+                    )
+                u_n = float(-np.dot(vel, n_out / norm))  # 内向き法線成分（正 = 流入）
+            out[name] = DarcyPatchBC.velocity_bc(u_n)
+        elif bc.kind in (BoundaryKind.WALL, BoundaryKind.SLIP, BoundaryKind.SYMMETRY):
+            out[name] = DarcyPatchBC.wall()
+        else:
+            raise UnsupportedFeatureError(
+                f"面 {name} の {bc.kind.name} 境界は *DARCY では使えません"
+                "（PRESSURE / VELOCITY / WALL / SYMMETRY のみ）"
+            )
+    return out
+
+
+def map_darcy(case: CaseDefinition, mesh: InpMeshResult, step: StepDefinition) -> DarcyFlowInput:
+    """``*DARCY`` ステップを :class:`DarcyFlowInput` に変換する."""
+    _check_procedure_common(step, EquationFamily.DARCY)
+    if not step.procedure.steady:
+        raise UnsupportedFeatureError("*DARCY は定常（STEADY STATE）のみ対応")
+    fluid = _fluid_material(case)
+    mu = fluid.require("viscosity")
+    rho = fluid.density if fluid.density is not None else 1000.0
+    permeability = np.zeros(mesh.n_cells)
+    for mask, mat, _kind in _mesh_section_coverage(case, mesh):
+        permeability[mask] = mat.require("permeability")
+    if case.films + step.films or case.fluxes + step.fluxes or case.loads + step.loads:
+        raise UnsupportedFeatureError("*SFILM / *DFLUX / *DLOAD は *DARCY では未対応")
+    bcs = _darcy_patch_bcs(case, step, mesh)
+    p0 = _initial_cell_field_unstructured(case, mesh, InitialConditionKind.PRESSURE, 0.0)
+
+    for cat in (
+        ControlCategory.DISCRETIZATION,
+        ControlCategory.RELAXATION,
+        ControlCategory.TIME_INCREMENTATION,
+    ):
+        if step.control_values(cat):
+            raise UnsupportedFeatureError(f"*CONTROLS, PARAMETERS={cat.value} は *DARCY では未対応")
+    solver = step.control_values(ControlCategory.SOLVER)
+    _check_keys(solver, _HT_SOLVER_KEYS, "SOLVER")
+    method = "direct"
+    if "METHOD" in solver:
+        key = _norm_value(solver["METHOD"])
+        if key not in _LINEAR_SOLVERS:
+            raise UnsupportedFeatureError(
+                f"SOLVER METHOD={solver['METHOD']} は未対応（{sorted(_LINEAR_SOLVERS)}）"
+            )
+        method = _LINEAR_SOLVERS[key]
+    max_iter = _as_int(solver.get("MAX_ITER", "1000"), "MAX_ITER")
+    tol = _as_float(solver.get("TOL", "1e-10"), "TOL")
+    return DarcyFlowInput(
+        mesh=mesh.mesh,
+        permeability=permeability,
+        viscosity=mu,
+        density=rho,
+        bcs=bcs,
+        p0=p0,
+        linear_solver=method,
+        tol=tol,
+        max_iter=max_iter,
+    )
+
+
+class InpToDarcyProcess(PreProcess["InpMeshMappingInput", "DarcyFlowInput"]):
+    """``*DARCY`` ステップを :class:`DarcyFlowInput` に変換する PreProcess（非構造メッシュ経由）."""
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="InpToDarcy",
+        module="pre",
+        version="0.1.0",
+        document_path="../../docs/design/inp-format.md",
+    )
+    uses: ClassVar[list[type[AbstractProcess]]] = []
+
+    def process(self, input_data: InpMeshMappingInput) -> DarcyFlowInput:
+        return map_darcy(input_data.case, input_data.mesh, input_data.step)

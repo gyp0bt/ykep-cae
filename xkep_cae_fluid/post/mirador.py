@@ -24,6 +24,7 @@ import numpy as np
 
 from xkep_cae_fluid.core.base import AbstractProcess, ProcessMeta
 from xkep_cae_fluid.core.categories import PostProcess
+from xkep_cae_fluid.core.data import MeshData
 
 if TYPE_CHECKING:
     from xkep_cae_fluid.core.mesh import StructuredMeshResult
@@ -70,9 +71,9 @@ class MiradorExportInput:
 
     Parameters
     ----------
-    x_lines, y_lines, z_lines : np.ndarray
+    x_lines, y_lines, z_lines : np.ndarray | None
         格子線座標（昇順、長さ n+1）。``z_lines`` が 1 点だけの 2D 結果は
-        面内セル幅の平均で 1 層に押し出す
+        面内セル幅の平均で 1 層に押し出す。``mesh`` を使うときは ``None``
     fields : Mapping[str, np.ndarray]
         名前 → セル値。スカラー ``(nx, ny, nz)``、ベクトル ``(nx, ny, nz, 3)``。
         2D の ``(nx, ny)`` / ``(nx, ny, 2)`` も可（z 方向 1 層、w=0 として扱う）
@@ -105,11 +106,16 @@ class MiradorExportInput:
         指定時は外皮を隠さない（``hide_domain`` は無視。切った立体として見せる）
     verbose : bool
         messi の概要表示
+    mesh : MeshData | None
+        **非構造格子**の入力。六面体（8 節点、``connectivity`` に -1 なし）の ``MeshData``
+        を与えると格子線（``x_lines`` 等は ``None`` で可）の代わりにその要素をそのまま描く。
+        場は ``(n_cells,)`` / ``(n_cells, 3)``、``mask`` は ``(n_cells,)``。断面スラブ
+        （``slices`` / ``auto_slices``）は使えない（``cut_plane`` は使える）
     """
 
-    x_lines: np.ndarray
-    y_lines: np.ndarray
-    z_lines: np.ndarray
+    x_lines: np.ndarray | None
+    y_lines: np.ndarray | None
+    z_lines: np.ndarray | None
     fields: Mapping[str, np.ndarray]
     output_path: str
     title: str = "ykep result"
@@ -124,6 +130,7 @@ class MiradorExportInput:
     panel_collapsed: bool = False
     cut_plane: tuple[tuple[float, float, float], float] | None = None
     verbose: bool = False
+    mesh: MeshData | None = None
 
 
 @dataclass(frozen=True)
@@ -152,7 +159,7 @@ class StructuredHexMesh:
     elements : np.ndarray
         ``(n_cells, 9)``: ラベル + 8 節点（Abaqus C3D8 順 = VTK_HEXAHEDRON 順）
     cell_labels : np.ndarray
-        ``(nx, ny, nz)`` のセルラベル（mask で除いたセルは 0）
+        ``(nx, ny, nz)`` のセルラベル（mask で除いたセルは 0）。非構造入力では ``(n_cells,)``
     elsets : Mapping[str, np.ndarray]
         elset 名 → 要素ラベル配列（``domain`` + 断面スラブ）
     """
@@ -319,6 +326,50 @@ def build_structured_hex_mesh(
     )
 
 
+def build_hex_mesh_from_meshdata(
+    mesh: MeshData, mask: np.ndarray | None = None, domain_name: str = "domain"
+) -> StructuredHexMesh:
+    """非構造 ``MeshData``（六面体）→ messi 用六面体メッシュ（ラベルはセル順 1..n）."""
+    conn = np.asarray(mesh.connectivity)
+    if conn.ndim != 2 or conn.shape[1] != 8 or np.any(conn < 0):
+        raise ValueError(
+            "mesh 入力は 8 節点六面体（connectivity (n_cells, 8)、-1 なし）のみ対応です"
+        )
+    coords = np.asarray(mesh.node_coords, dtype=float)
+    if coords.shape[1] == 2:
+        coords = np.hstack([coords, np.zeros((coords.shape[0], 1))])
+    n_nodes = coords.shape[0]
+    n_cells = conn.shape[0]
+    nodes = np.column_stack([np.arange(1, n_nodes + 1, dtype=float), coords])
+    labels = np.arange(1, n_cells + 1, dtype=np.int64)
+    elements = np.column_stack([labels, conn.astype(np.int64) + 1])
+    keep = np.ones(n_cells, dtype=bool)
+    if mask is not None:
+        m = np.asarray(mask, dtype=bool).reshape(-1)
+        if m.shape != (n_cells,):
+            raise ValueError(f"mask の長さ {m.shape} がセル数 {n_cells} と一致しません")
+        keep = m
+    cell_labels = np.where(keep, labels, 0)
+    return StructuredHexMesh(
+        nodes=nodes,
+        elements=elements[keep],
+        cell_labels=cell_labels,
+        elsets={domain_name: labels[keep]},
+    )
+
+
+def _normalize_cell_field(name: str, arr: np.ndarray, n_cells: int) -> np.ndarray:
+    """非構造入力の場を ``(n_cells,)`` か ``(n_cells, 3)`` に揃える."""
+    a = np.asarray(arr, dtype=float)
+    if a.ndim == 1 and a.shape[0] == n_cells:
+        return a
+    if a.ndim == 2 and a.shape[0] == n_cells and a.shape[1] in (2, 3):
+        if a.shape[1] == 2:
+            a = np.hstack([a, np.zeros((n_cells, 1))])
+        return a
+    raise ValueError(f"場 {name!r} の形状 {a.shape} はセル数 {n_cells} と一致しません")
+
+
 # ---------------------------------------------------------------------------
 # 入力アダプタ（ソルバー結果 / メッシュ / NPZ → 格子線と場）
 # ---------------------------------------------------------------------------
@@ -359,17 +410,49 @@ def lines_from_structured_mesh(
     return x, y, z
 
 
+_MESH_KEYS = ("node_coords", "connectivity", "cell_types")
+
+
 def load_npz_fields(
     path: str | Path,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, np.ndarray]]:
-    """``ykep`` が書いた ``<job>.npz`` を読み ``(x_lines, y_lines, z_lines, fields)`` を返す."""
+) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None, dict[str, np.ndarray]]:
+    """``ykep`` が書いた ``<job>.npz`` を読み ``(x_lines, y_lines, z_lines, fields)`` を返す.
+
+    非構造格子の NPZ（``node_coords`` / ``connectivity``）では格子線は ``None``
+    （メッシュは :func:`load_npz_mesh` で読む）。
+    """
     with np.load(path) as data:
+        if "node_coords" in data.files:
+            fields = {
+                k: np.asarray(data[k])
+                for k in data.files
+                if k not in _MESH_KEYS and not k.endswith("_lines")
+            }
+            return None, None, None, fields
         try:
             x, y, z = data["x_lines"], data["y_lines"], data["z_lines"]
         except KeyError as exc:
-            raise ValueError(f"{path}: x_lines / y_lines / z_lines がありません") from exc
+            raise ValueError(
+                f"{path}: x_lines / y_lines / z_lines（または node_coords / connectivity）がありません"
+            ) from exc
         fields = {k: np.asarray(data[k]) for k in data.files if not k.endswith("_lines")}
     return x, y, z, fields
+
+
+def load_npz_mesh(path: str | Path) -> MeshData | None:
+    """非構造 NPZ の ``node_coords`` / ``connectivity`` を描画用の ``MeshData`` にする（無ければ None）."""
+    with np.load(path) as data:
+        if "node_coords" not in data.files or "connectivity" not in data.files:
+            return None
+        coords = np.asarray(data["node_coords"], dtype=float)
+        conn = np.asarray(data["connectivity"], dtype=np.int64)
+        types = np.asarray(data["cell_types"]) if "cell_types" in data.files else None
+    return MeshData(
+        node_coords=coords,
+        connectivity=conn,
+        cell_volumes=np.zeros(conn.shape[0]),
+        cell_types=types,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -426,39 +509,62 @@ def export_mirador(inp: MiradorExportInput) -> MiradorExportResult:
     """:class:`MiradorExportProcess` の本体（messi の Mesher を組んで ``export_html``）."""
     # 入力検証と六面体メッシュ構築は messi 非依存なので先に済ませる（messi 未導入でも
     # 形状不一致などは ValueError で返す。MiradorUnavailableError は HTML を書く段階だけ）。
-    x, y, z = _normalize_lines(inp.x_lines, inp.y_lines, inp.z_lines)
-    dims = (len(x) - 1, len(y) - 1, len(z) - 1)
-    fields = {str(k): _normalize_field(str(k), v, dims) for k, v in inp.fields.items()}
-    if not fields:
-        raise ValueError("fields が空です（少なくとも 1 つの場が必要）")
-    scalar_names = [k for k, v in fields.items() if v.ndim == 3]
-    vector_names = [k for k, v in fields.items() if v.ndim == 4]
-
     cut_plane = _normalize_cut_plane(inp.cut_plane)
-    slices = resolve_slices(inp.slices, (x, y, z), inp.auto_slices)
-    hexmesh = build_structured_hex_mesh(
-        x, y, z, mask=inp.mask, slices=slices, domain_name=inp.domain_name
-    )
+    slices: list[tuple[str, int, int]]
+    flat_fields: dict[str, np.ndarray]
+    if inp.mesh is not None:
+        # 非構造格子: MeshData の六面体をそのまま描く（断面スラブは無し）
+        if inp.slices:
+            raise ValueError("mesh 入力では slices（断面スラブ）は使えません（cut_plane を使う）")
+        n_cells_in = inp.mesh.n_cells
+        cell_fields = {
+            str(k): _normalize_cell_field(str(k), v, n_cells_in) for k, v in inp.fields.items()
+        }
+        if not cell_fields:
+            raise ValueError("fields が空です（少なくとも 1 つの場が必要）")
+        scalar_names = [k for k, v in cell_fields.items() if v.ndim == 1]
+        vector_names = [k for k, v in cell_fields.items() if v.ndim == 2]
+        slices = []
+        hexmesh = build_hex_mesh_from_meshdata(inp.mesh, mask=inp.mask, domain_name=inp.domain_name)
+        keep = hexmesh.cell_labels > 0
+        labels = hexmesh.cell_labels[keep]
+        flat_fields = {k: v[keep] for k, v in cell_fields.items()}
+    else:
+        if inp.x_lines is None or inp.y_lines is None or inp.z_lines is None:
+            raise ValueError("x_lines / y_lines / z_lines か mesh のどちらかが必要です")
+        x, y, z = _normalize_lines(inp.x_lines, inp.y_lines, inp.z_lines)
+        dims = (len(x) - 1, len(y) - 1, len(z) - 1)
+        fields = {str(k): _normalize_field(str(k), v, dims) for k, v in inp.fields.items()}
+        if not fields:
+            raise ValueError("fields が空です（少なくとも 1 つの場が必要）")
+        scalar_names = [k for k, v in fields.items() if v.ndim == 3]
+        vector_names = [k for k, v in fields.items() if v.ndim == 4]
+        slices = resolve_slices(inp.slices, (x, y, z), inp.auto_slices)
+        hexmesh = build_structured_hex_mesh(
+            x, y, z, mask=inp.mask, slices=slices, domain_name=inp.domain_name
+        )
+        keep = hexmesh.cell_labels.ravel(order="F") > 0
+        labels = hexmesh.cell_labels.ravel(order="F")[keep]
+        flat_fields = {
+            k: (v.ravel(order="F")[keep] if v.ndim == 3 else v.reshape(-1, 3, order="F")[keep])
+            for k, v in fields.items()
+        }
     if hexmesh.elements.shape[0] == 0:
         raise ValueError("描画するセルがありません（mask で全て除外されています）")
 
     messi = _import_messi()
     mesh = messi.Mesher.load(verbose=False)
     mesh.add_nodes(name="global", arr=hexmesh.nodes)
-    for name, labels in hexmesh.elsets.items():
-        if labels.size == 0:
+    for name, elset_labels in hexmesh.elsets.items():
+        if elset_labels.size == 0:
             continue
-        rows = hexmesh.elements[np.isin(hexmesh.elements[:, 0], labels)]
+        rows = hexmesh.elements[np.isin(hexmesh.elements[:, 0], elset_labels)]
         mesh.add_elements(name=name, type="C3D8", arr=rows)
 
-    keep = hexmesh.cell_labels.ravel(order="F") > 0
-    labels = hexmesh.cell_labels.ravel(order="F")[keep]
-    for name, arr in fields.items():
-        if arr.ndim == 3:
-            vals = arr.ravel(order="F")[keep]
+    for name, vals in flat_fields.items():
+        if vals.ndim == 1:
             mesh.set_element_field(name, dict(zip(labels.tolist(), vals.tolist(), strict=True)))
         else:
-            vals = arr.reshape(-1, 3, order="F")[keep]
             mesh.set_element_field(
                 name, {int(lab): row.copy() for lab, row in zip(labels, vals, strict=True)}
             )

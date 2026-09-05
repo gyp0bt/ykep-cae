@@ -158,6 +158,71 @@ class TestMiradorExportAPI:
         assert np.allclose(d["vectors"]["origins"][:3], [1 / 6, 0.25, 0.5])
         assert d["panelCollapsed"] is False  # 既定は操作パネルを開いた状態
 
+    def test_mesh_input_builds_hex_mesh(self):
+        from xkep_cae_fluid.core.mesh import StructuredMeshInput, StructuredMeshProcess
+        from xkep_cae_fluid.post.mirador import build_hex_mesh_from_meshdata
+
+        mesh = (
+            StructuredMeshProcess()
+            .execute(StructuredMeshInput(Lx=1.0, Ly=1.0, Lz=1.0, nx=2, ny=2, nz=1))
+            .mesh
+        )
+        hm = build_hex_mesh_from_meshdata(mesh, mask=np.array([True, False, True, True]))
+        assert hm.nodes.shape == (18, 4) and hm.elements.shape == (3, 9)
+        assert hm.elements[:, 0].tolist() == [1, 3, 4]
+        assert hm.elsets["domain"].tolist() == [1, 3, 4]
+        with pytest.raises(ValueError, match="mask"):
+            build_hex_mesh_from_meshdata(mesh, mask=np.ones(3, dtype=bool))
+        # slices は mesh 入力では不可（messi 非依存の検証）
+        with pytest.raises(ValueError, match="slices"):
+            MiradorExportProcess().execute(
+                MiradorExportInput(
+                    None,
+                    None,
+                    None,
+                    {"P": np.zeros(4)},
+                    "/dev/null/x.html",
+                    slices=(SlicePlane(axis="x"),),
+                    mesh=mesh,
+                )
+            )
+        with pytest.raises(ValueError, match="x_lines"):
+            MiradorExportProcess().execute(
+                MiradorExportInput(None, None, None, {"P": np.zeros(4)}, "/dev/null/x.html")
+            )
+
+    @needs_messi
+    def test_mesh_input_export(self, tmp_path: Path):
+        """非構造 MeshData 入力: セル値がそのまま要素場になり、view cut も使える."""
+        from xkep_cae_fluid.core.mesh import StructuredMeshInput, StructuredMeshProcess
+
+        mesh = (
+            StructuredMeshProcess()
+            .execute(StructuredMeshInput(Lx=3.0, Ly=2.0, Lz=1.0, nx=3, ny=2, nz=1))
+            .mesh
+        )
+        P = np.arange(mesh.n_cells, dtype=float)
+        U = np.zeros((mesh.n_cells, 3))
+        U[:, 0] = 1.0
+        out = tmp_path / "m.html"
+        res = MiradorExportProcess().execute(
+            MiradorExportInput(
+                None,
+                None,
+                None,
+                {"P": P, "U": U},
+                str(out),
+                mesh=mesh,
+                cut_plane=((1.0, 0.0, 0.0), 1.5),
+            )
+        )
+        assert res.n_cells == 6 and res.n_nodes == 24 and res.n_triangles == 44
+        assert res.field_names == ("P", "|U|", "U_x", "U_y", "U_z") and res.init_mode == "P"
+        d = _embedded(out)
+        for t, owner in enumerate(d["triElement"]):
+            assert d["metrics"]["P"][t] == P[owner - 1]
+        assert d["cut"] is not None and res.n_section_cells == 6
+
     @needs_messi
     def test_panel_collapsed_is_passed_to_messi(self, tmp_path: Path):
         x, y, z = _lines(2, 2, 1)

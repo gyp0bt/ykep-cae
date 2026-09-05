@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -46,6 +48,19 @@ class TestBoundaryResolution:
         assert bf.is_dirichlet.sum() == 4
         assert (bf.kind == 0).sum() == bf.n - 4
         np.testing.assert_allclose(bf.distance[bf.is_dirichlet], 0.125)
+
+    def test_specified_patch_wins_over_overlapping_default(self):
+        """*SURFACE 名と予約面名が同じ面を指すとき、指定した方が default に上書きされない."""
+        mesh = _box(3, 2, 2)
+        patches = dict(mesh.boundary_patches)
+        patches["INLET"] = patches["XM"].copy()  # 予約面 XM と同じ面
+        mesh2 = replace(mesh, boundary_patches=patches)
+        bf = resolve_boundary(mesh2, {"INLET": PatchBC.dirichlet(5.0)})
+        assert bf.is_dirichlet.sum() == 4
+        np.testing.assert_allclose(bf.value[bf.is_dirichlet], 5.0)
+        # 指定パッチ同士の重なりは後のものが優先
+        bf2 = resolve_boundary(mesh2, {"INLET": PatchBC.dirichlet(5.0), "XM": PatchBC.neumann(1.0)})
+        assert bf2.is_dirichlet.sum() == 0 and bf2.is_neumann.sum() == 4
 
     def test_per_face_dirichlet_array(self):
         mesh = _box(2, 3, 1)

@@ -1,0 +1,35 @@
+** =====================================================================
+**  多孔質媒体の Darcy 流れ（*DARCY、面ベース FVM、非構造六面体メッシュ）
+**  せん断で歪んだメッシュ（darcy-mesh.inp）に低透過率ブロック（CLAY）を置き、
+**  左面 INLET に圧力 1 kPa、右面 OUTLET に 0 Pa。他は不透過壁（既定）。
+**  実行: ykep -j=examples/inp/darcy-1.inp int -o=examples/inp/results
+** =====================================================================
+*HEADING
+ Darcy flow through a sheared block with a low-permeability inclusion
+*PARAMETER
+ p_in   = 1000.0
+ mu     = 1.0e-3
+ K_sand = 1.0e-10
+ K_clay = 1.0e-13
+*INCLUDE, INPUT=darcy-mesh.inp
+*MATERIAL, NAME=SAND
+*DENSITY
+ 1000.0
+*VISCOSITY
+ <mu>
+*PERMEABILITY
+ <K_sand>
+*MATERIAL, NAME=CLAY
+*PERMEABILITY
+ <K_clay>
+*FLUID SECTION, ELSET=SAND, MATERIAL=SAND
+*SOLID SECTION, ELSET=CLAY, MATERIAL=CLAY
+*STEP, NAME=Steady
+*DARCY, STEADY STATE
+*BOUNDARY, TYPE=PRESSURE
+ INLET, <p_in>
+ OUTLET, 0.0
+*CONTROLS, PARAMETERS=SOLVER
+ METHOD=DIRECT
+*OUTPUT, FIELD, FORMAT=VTK+HTML
+*END STEP
