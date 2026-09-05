@@ -1,5 +1,8 @@
 """2D Brinkman 補正 Navier-Stokes の同位置格子 FVM 離散化.
 
+【スナップショット】`xkep_cae_fluid/brinkman_flow/assembly.py` のコミット 1647839 時点の複製（import 行のみ書き換え）。
+2026-09-05 に本体側と切り離した。本体側は面ベース FVM 層へ移行するため、以後は同期しない。
+
 残差（1 次風上 / 2 次風上 + Venkatakrishnan リミター）を配列演算で評価し、
 1 次風上ヤコビアンを疎行列オペレータの合成として解析的に組み立てる。
 

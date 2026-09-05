@@ -1,5 +1,8 @@
 """2D Brinkman 補正 Navier-Stokes (FVM) データスキーマ.
 
+【スナップショット】`xkep_cae_fluid/brinkman_flow/data.py` のコミット 1647839 時点の複製（import 行のみ書き換え）。
+2026-09-05 に本体側と切り離した。本体側は面ベース FVM 層へ移行するため、以後は同期しない。
+
 薄流路を深さ平均した 2 次元場で、Brinkman 貫通項 -(12 mu_b / h^2) u を持つ
 非圧縮 Navier-Stokes を定常解として解くソルバーの入出力契約を定義する。
 """

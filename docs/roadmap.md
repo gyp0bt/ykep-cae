@@ -225,7 +225,8 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] `DarcyFlowProcess` + `*DARCY`（`InpToDarcyProcess`、非構造 NPZ / VTK / HTML 出力、例題 darcy-1）
 - [x] `NaturalConvectionFDMProcess` の過渡 dt 差し替えで `internal_face_bcs` が落ちる回帰を修正
 - [ ] `HeatTransferFDMProcess` を面カーネル版へ（境界条件式・調和平均の 5 重複製を吸収）
-- [ ] `BrinkmanFlowFVMProcess` の演算子合成を owner/neighbour で組み直す（nsb との同期方針を決める）
+- [x] `nsb/{data,assembly}.py` をコミット 1647839 時点のスナップショットとして切り離し（同期スクリプト・乖離テスト削除）— Phase 11
+- [ ] `BrinkmanFlowFVMProcess` の演算子合成を owner/neighbour で組み直す（非構造 NS ファミリーへ統合）
 - [ ] `NaturalConvectionFDMProcess`（SIMPLE、Rhie–Chow）を面リストで
 - [ ] 非直交補正（`CorrectedDiffusionScheme`）を fvm 層に接続、四面体・楔の `InpMeshProcess` 対応
 - [ ] 内部面の `*SURFACE`（`InternalFaceBC` 相当）、Darcy の Forchheimer / Brinkman 項、非定常

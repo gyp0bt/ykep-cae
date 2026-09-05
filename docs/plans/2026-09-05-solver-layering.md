@@ -38,7 +38,7 @@ AMG キャッシュ 2 か所、spilu+bicgstab ラッパ 2 か所、van Leer/Supe
 
 | モジュール | 物理 / 手法 | 本体依存 | 備考 |
 |---|---|---|---|
-| `nsb/` | Brinkman-NS、Newton+擬似時間、PARDISO | なし（コピー方式） | `data.py`/`assembly.py` は `brinkman_flow` と import 行以外同一。`solver.py` は遅延前処理・棄却・Stokes 初期場で分岐済み |
+| `nsb/` | Brinkman-NS、Newton+擬似時間、PARDISO | なし（スナップショット） | `data.py`/`assembly.py` は `brinkman_flow` のコミット 1647839 時点の複製（切り離し済み）。`solver.py` は遅延前処理・棄却・Stokes 初期場で分岐済み |
 | `experiments/coldplate/darcy.py` | Darcy + Forchheimer + 2 層エネルギー、FVM、離散随伴 | なし（torch） | `(fi, fj)` 面リストで既に非構造。`DarcyFlowProcess` の原型 |
 | `experiments/coldplate/coldplate.py` | 配管ネットワーク、SIMP | なし（torch） | グラフ生来、密行列 |
 | `experiments/brinkman_uturn`, `scripts/{convergence_evaluation,...}` | 本体ソルバーの診断スクリプト | あり | 本体の入力型が変わったら追随が必要 |
@@ -54,8 +54,9 @@ Process クラスを定義している実験モジュールはゼロ。
 | FVM 低レイヤー | 面リストの上の境界条件・面演算・係数組み立て・線形ソルバー Strategy | `xkep_cae_fluid.fvm`（[設計](../design/fvm-layer.md)） |
 | 方程式ファミリー（SolverProcess） | 低レイヤーを組み合わせる薄い層 | `ScalarTransportFVMProcess`（パイロット）、`DarcyFlowProcess`（`*DARCY`） |
 
-実験側は据え置き。`nsb/` のコピー同期は `brinkman_flow/assembly.py` を新層に載せ替えた時点で成り立たなくなるので、
-そのときに「旧離散化のスナップショット」と位置付け直すか同期対象を変えるかを決める。
+実験側は据え置き。`nsb/{data,assembly}.py` は **コミット 1647839 時点のスナップショット**として本体側から切り離した
+（2026-09-05 決定。同期スクリプト `scripts/sync_nsb_from_xkep.py` と乖離テストは削除、`nsb/README.md` に明記）。
+本体側の `brinkman_flow` はここから非構造格子（面ベース FVM 層）へ移行する。
 
 ## 3. 進め方と現在地
 
