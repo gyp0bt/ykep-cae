@@ -15,7 +15,7 @@ FDM（差分法）・FVM（有限体積法）による流体ソルバー基盤�
 
 ## 現在の状態
 
-**531 テスト** -- 2026-09-04 nsb を xkep_cae_fluid から切り離し（[`data`/`assembly` のコピー方式 + 同期スクリプト](nsb/README.md)、numpy/scipy/pypardiso だけで単体持ち出し可）+ 高速化見積り実測（LU 分解が 70〜81%、for ループ削減は 0%、JAX は autodiff 目的のみ）+ 疎 LU を PARDISO 前提に + 前処理 LU の遅延更新（144×96 で 40 s → 17 s、MKL スレッド分割が鍵 / [status-32](docs/status/status-32.md)）。前: Brinkman 流路の[座標マスク境界条件 + 質量流入 + 領域内マニホールド + 随伴設計感度](docs/design/brinkman-flow-fvm.md)（4 辺任意配置、流量固定で inlet 探索、紙面垂直方向のヘッダ、位置・径の勾配を陰関数定理で、冷却流路設計の前段 / [status-31](docs/status/status-31.md)）。前: 収束破綻の再現と機構切り分け（[status-30](docs/status/status-30.md)、[nsb/](nsb/README.md)） | 契約違反 **0件**（19プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**598 テスト** -- 2026-09-05 ykep .inp 入力フォーマット（[Abaqus 風キーワード構文](docs/design/inp-format.md)、`*PARAMETER`/`*CONTROLS`/`*GRID`、中立表現 `CaseDefinition`、`ykep -j=<job>.inp int` コマンド、`*NAVIER STOKES` → NaturalConvectionFDM / `*HEAT TRANSFER` → HeatTransferFDM、NPZ/YAML/VTK 出力。例題 Ra=1000 キャビティは 226 反復で収束し Nu=1.169 / [status-33](docs/status/status-33.md)）。前: nsb を xkep_cae_fluid から切り離し（[`data`/`assembly` のコピー方式 + 同期スクリプト](nsb/README.md)、numpy/scipy/pypardiso だけで単体持ち出し可）+ 高速化見積り実測（LU 分解が 70〜81%、for ループ削減は 0%、JAX は autodiff 目的のみ）+ 疎 LU を PARDISO 前提に + 前処理 LU の遅延更新（144×96 で 40 s → 17 s、MKL スレッド分割が鍵 / [status-32](docs/status/status-32.md)）。前: Brinkman 流路の[座標マスク境界条件 + 質量流入 + 領域内マニホールド + 随伴設計感度](docs/design/brinkman-flow-fvm.md)（4 辺任意配置、流量固定で inlet 探索、紙面垂直方向のヘッダ、位置・径の勾配を陰関数定理で、冷却流路設計の前段 / [status-31](docs/status/status-31.md)）。前: 収束破綻の再現と機構切り分け（[status-30](docs/status/status-30.md)、[nsb/](nsb/README.md)） | 契約違反 **0件**（26プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 前: [単軸押出解析 Phase 1/1.5 + G5 文献照合](docs/design/single-screw-extruder.md)（展開チャネル 2.5D、ゲート G1〜G5 全通過、OpenFOAM 検算・Pinto–Tadmor RTD 照合済み / [status-29](docs/status/status-29.md) / [図解レポート](docs/reports/extruder/README.md)）
 
@@ -64,6 +64,16 @@ xkep_cae_fluid/
 |   +-- solver.py      # ExtruderFlowProcess（Picard 結合、Q_axial = Q + L_turn·Q_leak）
 |   +-- tracker.py     # ParticleTrackerProcess（ψ 双一次補間、RK4、ζ 座標）
 |   +-- rtd.py         # RTDProcess（流束重み付き RTD、パーセンタイル、累積せん断）
++-- inp/               # ykep .inp 入力フォーマット（Abaqus 風キーワード構文、status-33）
+|   +-- parameters.py  # *PARAMETER の安全な式評価 + <expr> 置換
+|   +-- parser.py      # InpKeywordParseProcess（*INCLUDE / コメント / 継続行 / KeywordBlock 列）
+|   +-- case.py        # CaseDefinition（ソルバー非依存の中立表現）
+|   +-- builder.py     # InpCaseBuildProcess（意味付け、*GRID 拡張）
+|   +-- grid.py        # StructuredGridRecoveryProcess（*NODE/*ELEMENT → 直交構造格子、*SURFACE → 領域面）
+|   +-- mapping.py     # InpToNaturalConvectionProcess / InpToHeatTransferProcess（*CONTROLS 含む）
+|   +-- output.py      # InpOutputWriterProcess（NPZ / YAML サマリ / VTK）
+|   +-- runner.py      # InpCaseRunnerProcess（方程式ファミリーで振り分け）
+|   +-- cli.py         # ykep コマンド（ykep -j=<job>.inp int）
 +-- heat_transfer/     # 3次元非定常伝熱解析 (FDM)
 |   +-- data.py        # HeatTransferInput / HeatTransferResult / BoundarySpec (Robin対応)
 |   +-- solver.py      # HeatTransferFDMProcess (ヤコビ/GS/疎行列/AMG/Numba)
@@ -78,6 +88,7 @@ xkep_cae_fluid/
 |   +-- benchmark_solver_methods.py      # ソルバー手法別ベンチマーク
 |   +-- aquarium_heater_natural_convection.py  # Geometry+Heater+NC 3 段（Phase 6.2b）
 |   +-- aquarium_filter_circulation.py         # Geometry+Heater+Filter+NC 4 段（Phase 6.3b）
+|   +-- inp/           # .inp 例題（cavity-nc-1: Ra=1000 キャビティ、plate-ht-1: *INCLUDE メッシュの平板伝熱）+ results/
 +-- experiments/brinkman_uturn/  # Brinkman U ターン収束性スイープ（sweep.py / diagnose_u2.py / diagnose_local_dtau.py / results / logs）
 +-- nsb/               # 手元構成ミラー（core / solver / utils / geo / adjoint + data / assembly のコピー。xkep_cae_fluid 非依存で単体持ち出し可）+ theory.md（数理ノート）+ ルート main.py
 +-- experiments/nsb/   # nsb パラメータスタディの results / logs
@@ -94,6 +105,7 @@ xkep_cae_fluid/
 | [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
 | [水槽設計ロードマップ](docs/roadmap-aquarium.md) | Phase 6 持続的水槽設計 CAE 詳細計画 |
 | [設計文書一覧](docs/design/README.md) | 設計仕様書リンク集（コロケーション方式） |
+| [.inp 入力フォーマット](docs/design/inp-format.md) | Abaqus 風キーワード構文と `ykep -j=<job>.inp int` コマンド |
 | [ステータス一覧](docs/status/status-index.md) | 全statusファイル + テスト数推移 |
 
 ## インストール
@@ -101,6 +113,16 @@ xkep_cae_fluid/
 ```bash
 pip install -e ".[dev]"
 ```
+
+## .inp で実行（ykep コマンド）
+
+```bash
+ykep -j=examples/inp/cavity-nc-1.inp int            # Abaqus 風: -j=<job>[.inp] と int（対話ログ）
+ykep -j=examples/inp/plate-ht-1 int -o=out          # 出力先指定（<job>.npz / .yaml / .vtk / .log）
+ykep -j=case.inp --check                            # 解析せず読込・格子復元・マッピングのみ検証
+```
+
+キーワード一覧は [設計文書](docs/design/inp-format.md) を参照。
 
 ## テスト実行
 

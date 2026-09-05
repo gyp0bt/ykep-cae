@@ -177,6 +177,24 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [ ] 熱ソルバー連携（流量場 → 熱伝達コンダクタンス → 上下プレート温度）
 - [ ] 非定常（時間精度）モードで定常解の存在を確認
 
+## Phase 9: ykep .inp 入力フォーマット（Abaqus 風キーワード構文）（着手、status-33）
+
+解くべき問題を 1 ファイルで完全記述し `ykep -j=<job>.inp int` で実行する。中立表現 `CaseDefinition` を挟み、
+将来 OpenFOAM / Fluent へ同じ .inp から書き出す。詳細は [設計文書](design/inp-format.md)。
+
+- [x] キーワードトークナイザ（`*INCLUDE`、`*PARAMETER` の安全評価と `<expr>` 置換、継続行）— status-33
+- [x] `CaseDefinition`（節点・要素・集合・面・材料・セクション・初期条件・ステップ・`*CONTROLS`・`*OUTPUT`）— status-33
+- [x] `*NODE/*ELEMENT`（C3D8 / CPS4 系）と `*GRID` からの直交構造格子復元、`*SURFACE` → 領域 6 面 — status-33
+- [x] `*NAVIER STOKES`（層流、定常/非定常、等温/伝熱連成）→ NaturalConvectionFDM、`*HEAT TRANSFER` → HeatTransferFDM — status-33
+- [x] `ykep` CLI（`-j=`, `int`, `-o=`, `-p name=value`, `--check`）+ NPZ/YAML/VTK 出力 — status-33
+- [x] 例題: Ra=1000 キャビティ（Nu=1.169）、`*INCLUDE` メッシュの平板伝熱 — status-33
+- [ ] `*DARCY` の実行対応（DarcyFlowProcess 新設 or 2D Brinkman 割当）— status-33 TODO
+- [ ] `HEAT TRANSFER=NONE` でエネルギー方程式をスキップ（`solve_energy`）— status-33 TODO
+- [ ] SYMMETRY / SLIP 面の既定緩和での発散の切り分け — status-33 TODO
+- [ ] 部分面境界・`InternalFaceBC` の .inp 表現 — status-33 TODO
+- [ ] 格子の次段（直交格子 + 幾何解像用局所格子 / 非構造格子）の方針決定 — status-33 TODO
+- [ ] OpenFOAM / Fluent 書き出し Process
+
 ## 将来構想
 
 - LES / DES

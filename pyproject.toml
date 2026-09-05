@@ -14,6 +14,9 @@ dependencies = [
     "scipy>=1.10",
 ]
 
+[project.scripts]
+ykep = "xkep_cae_fluid.inp.cli:main"
+
 [project.optional-dependencies]
 amg = ["pyamg>=5.0"]
 fast = ["numba>=0.57"]
