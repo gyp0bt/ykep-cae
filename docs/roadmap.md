@@ -188,11 +188,11 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] `*NAVIER STOKES`（層流、定常/非定常、等温/伝熱連成）→ NaturalConvectionFDM、`*HEAT TRANSFER` → HeatTransferFDM — status-33
 - [x] `ykep` CLI（`-j=`, `int`, `-o=`, `-p name=value`, `--check`）+ NPZ/YAML/VTK 出力 — status-33
 - [x] 例題: Ra=1000 キャビティ（Nu=1.169）、`*INCLUDE` メッシュの平板伝熱 — status-33
-- [ ] `*DARCY` の実行対応（DarcyFlowProcess 新設 or 2D Brinkman 割当）— status-33 TODO
+- [x] `*DARCY` の実行対応（`DarcyFlowProcess` 新設、面ベース FVM、`InpMeshProcess` の非構造メッシュ経由）— Phase 11
 - [ ] `HEAT TRANSFER=NONE` でエネルギー方程式をスキップ（`solve_energy`）— status-33 TODO
 - [ ] SYMMETRY / SLIP 面の既定緩和での発散の切り分け — status-33 TODO
 - [ ] 部分面境界・`InternalFaceBC` の .inp 表現 — status-33 TODO
-- [ ] 格子の次段（直交格子 + 幾何解像用局所格子 / 非構造格子）の方針決定 — status-33 TODO
+- [x] 格子の次段の方針決定 → 非構造格子（面ベース FVM）。`InpMeshProcess` を追加 — Phase 11
 - [ ] OpenFOAM / Fluent 書き出し Process
 
 ## Phase 10: 3D レンダリング（messi mirador 連携）（status-34）
@@ -207,8 +207,29 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [ ] 残差マップの対数スケール表示、`ykep view --colormap/--init-mode`、過渡伝熱の `res_T`（status-34「次にやること」）
 - [x] 任意平面の断面（view cut）: messi mirador の「断面」（クリップ + 切り口をセル値で着色）、`cut_plane` / `ykep view --cut` — status-34 追記 6
 - [ ] view cut の節点補間・複数平面、時系列（`T_history`）のフレーム切替
-- [ ] 非構造格子（polyMesh 読込結果）を `MeshData.connectivity` から同じ経路で載せる
+- [x] 非構造格子を `MeshData.connectivity` から同じ経路で載せる（`MiradorExportInput.mesh`、`*DARCY` の出力と `ykep view`）— Phase 11
 - [ ] 水槽 CAE（Phase 6）の `AquariumGeometryProcess` マスクと連携した実例（水・ガラス・底床の elset 分け）
+
+## Phase 11: ソルバー層の分離（GeoProcess / FVM 低レイヤー / 方程式ファミリー）と非構造格子（着手）
+
+実験ソルバー群（`nsb/`、`experiments/coldplate`）は実験側に残し、本体を「幾何・境界パッチ（Geo 層）」
+「面ベース FVM 共通低レイヤー」「薄い方程式ファミリー」の 3 層に分ける。棚卸しと計画は
+[plans/2026-09-05-solver-layering.md](plans/2026-09-05-solver-layering.md)、層の設計は
+[design/fvm-layer.md](design/fvm-layer.md)。
+
+- [x] 棚卸し: 本体 4 ソルバー・実験群・幾何/BC 層の格子表現・境界条件・線形解法・複製箇所の一覧
+- [x] `MeshData` に境界面・パッチ・セル種別（構造格子 6 パッチ、polyMesh の節点順序付き接続）
+- [x] `xkep_cae_fluid.fvm`（PatchBC / resolve_boundary、面演算、拡散・風上・時間項・ソース、Direct / BiCGSTAB / AMG Strategy）
+- [x] `ScalarTransportFVMProcess`（パイロット。構造格子 FDM と 1e-8 で一致）
+- [x] `InpMeshProcess`（`.inp` → 面ベース非構造メッシュ、`*SURFACE` → パッチ）
+- [x] `DarcyFlowProcess` + `*DARCY`（`InpToDarcyProcess`、非構造 NPZ / VTK / HTML 出力、例題 darcy-1）
+- [x] `NaturalConvectionFDMProcess` の過渡 dt 差し替えで `internal_face_bcs` が落ちる回帰を修正
+- [ ] `HeatTransferFDMProcess` を面カーネル版へ（境界条件式・調和平均の 5 重複製を吸収）
+- [ ] `BrinkmanFlowFVMProcess` の演算子合成を owner/neighbour で組み直す（nsb との同期方針を決める）
+- [ ] `NaturalConvectionFDMProcess`（SIMPLE、Rhie–Chow）を面リストで
+- [ ] 非直交補正（`CorrectedDiffusionScheme`）を fvm 層に接続、四面体・楔の `InpMeshProcess` 対応
+- [ ] 内部面の `*SURFACE`（`InternalFaceBC` 相当）、Darcy の Forchheimer / Brinkman 項、非定常
+- [ ] `core/data.BoundaryData` / `SolverInputData` 等の死んだスキーマの整理
 
 ## 将来構想
 
