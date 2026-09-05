@@ -92,4 +92,10 @@ python -m pytest tests/ -q -m "not slow and not external" → 本文末尾の「
 
 ## 全体テスト
 
-（下記に実行結果を追記）
+```
+python -m pytest tests/ -q -m "not slow and not external"
+→ 570 passed / 9 failed / 18 deselected / 1 xfailed（717 s）
+```
+
+失敗 9 件はすべて `tests/test_heat_transfer_fdm.py` の `TestAMGSolverPhysics`（5）と `TestNumbaSolverPhysics`（4）で、
+本セッション環境に pyamg / numba が無いことによる ImportError（status-32 と同じ。.inp 実装とは無関係）。
