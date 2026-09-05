@@ -1,0 +1,61 @@
+** =====================================================================
+**  差分加熱キャビティ（3D、Boussinesq 自然対流、層流・定常）
+**  実行: ykep -j=examples/inp/cavity-nc-1.inp int
+**  *GRID は ykep 拡張（等間隔直交格子を生成し、面 XM/XP/YM/YP/ZM/ZP と
+**  要素集合 ALL を自動定義）。*NODE/*ELEMENT で書いても同じ。
+** =====================================================================
+*HEADING
+ Differentially heated cavity, Ra ~ 1e3 (de Vahl Davis)
+*PARAMETER
+ L      = 0.1
+ n      = 12
+ nz     = 3
+ T_hot  = 310.0
+ T_cold = 290.0
+ T_ref  = 0.5 * (T_hot + T_cold)
+ rho    = 1.0
+ mu     = 0.01
+ Cp     = 1000.0
+ k      = 1.0
+ g      = 9.81
+ Ra     = 1000.0
+ nu     = mu / rho
+ alpha  = k / (rho * Cp)
+ beta   = Ra * nu * alpha / (g * (T_hot - T_cold) * L**3)
+*GRID, NX=<n>, NY=<n>, NZ=<nz>, LX=<L>, LY=<L>, LZ=<L * nz / n>
+*MATERIAL, NAME=AIR
+*DENSITY
+ <rho>
+*VISCOSITY
+ <mu>
+*SPECIFIC HEAT
+ <Cp>
+*CONDUCTIVITY
+ <k>
+*EXPANSION, ZERO=<T_ref>
+ <beta>
+*FLUID SECTION, ELSET=ALL, MATERIAL=AIR
+*INITIAL CONDITIONS, TYPE=TEMPERATURE
+ ALL, <T_ref>
+** 側面は no-slip（既定）、奥行き方向 z の 2 面は対称面（準 2D）。
+** 温度は左右のみ固定、他は断熱（既定）
+*BOUNDARY, TYPE=SYMMETRY
+ ZM
+ ZP
+*BOUNDARY, TYPE=TEMPERATURE
+ XM, <T_hot>
+ XP, <T_cold>
+*STEP, NAME=Steady
+*NAVIER STOKES, TURBULENCE=LAMINAR, STEADY STATE, HEAT TRANSFER=COUPLED
+*DLOAD
+ ALL, GRAV, <g>, 0.0, -1.0, 0.0
+*CONTROLS, PARAMETERS=DISCRETIZATION
+ CONVECTION=UPWIND, PRESSURE_VELOCITY=SIMPLE
+*CONTROLS, PARAMETERS=RELAXATION
+ VELOCITY=0.2, PRESSURE=0.05, TEMPERATURE=0.5, ADAPTIVE=NO
+*CONTROLS, PARAMETERS=SOLVER
+ PRESSURE=BICGSTAB, MAX_OUTER=3000, TOL=1e-4
+*OUTPUT, FIELD, FORMAT=VTK
+*ELEMENT OUTPUT
+ U, P, T
+*END STEP

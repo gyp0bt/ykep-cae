@@ -1,0 +1,236 @@
+"""ykep .inp フォーマット: 出力（InpOutputWriterProcess）・ジョブ実行（InpCaseRunnerProcess）・CLI のテスト."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from xkep_cae_fluid.core.testing import binds_to
+from xkep_cae_fluid.inp.builder import build_case
+from xkep_cae_fluid.inp.case import EquationFamily, OutputFormat, OutputRequest
+from xkep_cae_fluid.inp.cli import main, parse_args
+from xkep_cae_fluid.inp.grid import recover_structured_grid
+from xkep_cae_fluid.inp.mapping import UnsupportedFeatureError
+from xkep_cae_fluid.inp.output import FieldOutputInput, InpOutputWriterProcess, dump_yaml
+from xkep_cae_fluid.inp.parser import parse_inp_text
+from xkep_cae_fluid.inp.runner import InpCaseRunnerProcess, InpJobInput
+
+EXAMPLES = Path(__file__).resolve().parent.parent / "examples" / "inp"
+
+
+def _grid(nx=2, ny=2, nz=1):
+    case = build_case(parse_inp_text(f"*GRID, NX={nx}, NY={ny}, NZ={nz}, LX=1, LY=1, LZ=0.5\n"))
+    return recover_structured_grid(case)
+
+
+@binds_to(InpOutputWriterProcess)
+class TestInpOutputWriterAPI:
+    def test_writes_npz_yaml_vtk(self, tmp_path: Path):
+        grid = _grid()
+        fields = {
+            "U": np.zeros((2, 2, 1, 3)),
+            "P": np.arange(4.0).reshape(2, 2, 1),
+            "T": np.full((2, 2, 1), 300.0),
+        }
+        res = InpOutputWriterProcess().execute(
+            FieldOutputInput(
+                job_name="j",
+                output_dir=str(tmp_path / "out"),
+                grid=grid,
+                fields=fields,
+                summary={
+                    "converged": True,
+                    "n": 3,
+                    "name": "a: b",
+                    "hist": [1.0, 2.0],
+                    "nested": {"x": None},
+                },
+                requests=(
+                    OutputRequest(
+                        variables=("NT11", "P"), formats=(OutputFormat.NPZ, OutputFormat.VTK)
+                    ),
+                ),
+            )
+        )
+        names = sorted(Path(p).name for p in res.paths)
+        assert names == ["j.npz", "j.vtk", "j.yaml"]
+        data = np.load(tmp_path / "out" / "j.npz")
+        assert set(data.files) == {
+            "x_lines",
+            "y_lines",
+            "z_lines",
+            "T",
+            "P",
+        }  # NT11 → T、U は未選択
+        vtk = (tmp_path / "out" / "j.vtk").read_text()
+        assert "RECTILINEAR_GRID" in vtk and "CELL_DATA 4" in vtk and "SCALARS P" in vtk
+        yaml = pytest.importorskip("yaml")
+        loaded = yaml.safe_load((tmp_path / "out" / "j.yaml").read_text())
+        assert loaded["converged"] is True and loaded["n"] == 3 and loaded["name"] == "a: b"
+        assert loaded["hist"] == [1.0, 2.0] and loaded["nested"] == {"x": None}
+        assert loaded["variables"] == ["T", "P"]
+
+    def test_default_all_variables_and_unknown_variable(self, tmp_path: Path):
+        grid = _grid()
+        fields = {"T": np.zeros((2, 2, 1))}
+        res = InpOutputWriterProcess().execute(
+            FieldOutputInput(job_name="k", output_dir=str(tmp_path), grid=grid, fields=fields)
+        )
+        assert [Path(p).name for p in res.paths] == ["k.npz", "k.yaml"]
+        with pytest.raises(ValueError, match="未対応"):
+            InpOutputWriterProcess().execute(
+                FieldOutputInput(
+                    job_name="k",
+                    output_dir=str(tmp_path),
+                    grid=grid,
+                    fields=fields,
+                    requests=(OutputRequest(variables=("VORTICITY",)),),
+                )
+            )
+
+    def test_dump_yaml_roundtrip(self):
+        yaml = pytest.importorskip("yaml")
+        data = {"a": 1, "b": [1, "x y", {"c": 2.5}], "d": {}, "e": [], "f": "plain", "g": False}
+        assert yaml.safe_load(dump_yaml(data)) == data
+
+
+TINY_NS = """\
+*HEADING
+ tiny cavity for pipeline test
+*GRID, NX=4, NY=4, NZ=2, LX=0.1, LY=0.1, LZ=0.05
+*MATERIAL, NAME=F
+*DENSITY
+ 1.0
+*VISCOSITY
+ 0.01
+*SPECIFIC HEAT
+ 1000.
+*CONDUCTIVITY
+ 1.
+*EXPANSION, ZERO=300.
+ 1e-3
+*FLUID SECTION, ELSET=ALL, MATERIAL=F
+*STEP, NAME=S1
+*NAVIER STOKES, STEADY STATE, HEAT TRANSFER=COUPLED
+*DLOAD
+ ALL, GRAV, 9.81, 0, -1, 0
+*BOUNDARY, TYPE=TEMPERATURE
+ XM, 310.
+ XP, 290.
+*CONTROLS, PARAMETERS=SOLVER
+ MAX_OUTER=3, TOL=1e-4
+*OUTPUT, FIELD, FORMAT=VTK
+*END STEP
+"""
+
+
+@binds_to(InpCaseRunnerProcess)
+class TestInpCaseRunnerAPI:
+    def test_heat_transfer_example_runs_and_converges(self, tmp_path: Path):
+        res = InpCaseRunnerProcess().execute(
+            InpJobInput(path=str(EXAMPLES / "plate-ht-1.inp"), output_dir=str(tmp_path))
+        )
+        assert res.job_name == "plate-ht-1" and res.converged
+        step = res.steps[0]
+        assert step.family == EquationFamily.HEAT_TRANSFER
+        assert sorted(Path(p).name for p in step.output_paths) == [
+            "plate-ht-1.npz",
+            "plate-ht-1.vtk",
+            "plate-ht-1.yaml",
+        ]
+        assert step.summary["parameters"]["T_left"] == 350.0
+        T = np.load(tmp_path / "plate-ht-1.npz")["T"]
+        assert T.shape == (4, 2, 2) and T.min() > 350.0
+
+    def test_navier_stokes_pipeline(self, tmp_path: Path):
+        inp = tmp_path / "tiny.inp"
+        inp.write_text(TINY_NS, encoding="utf-8")
+        res = InpCaseRunnerProcess().execute(InpJobInput(path=str(inp)))
+        step = res.steps[0]
+        assert step.family == EquationFamily.NAVIER_STOKES
+        assert step.n_iterations == 3  # MAX_OUTER=3 で打ち切り（収束は要求しない）
+        assert (tmp_path / "tiny.npz").exists() and (tmp_path / "tiny.vtk").exists()
+        U = np.load(tmp_path / "tiny.npz")["U"]
+        assert U.shape == (4, 4, 2, 3)
+        assert step.summary["solver"]["process"] == "NaturalConvectionFDMProcess"
+        assert "final_residuals" in step.summary
+
+    def test_check_only_and_darcy(self, tmp_path: Path):
+        inp = tmp_path / "chk.inp"
+        inp.write_text(TINY_NS, encoding="utf-8")
+        res = InpCaseRunnerProcess().execute(InpJobInput(path=str(inp), check_only=True))
+        assert (
+            res.steps[0].output_paths == ()
+            and res.steps[0].summary["solver"]["coupling"] == "simple"
+        )
+        darcy = tmp_path / "darcy.inp"
+        darcy.write_text(
+            TINY_NS.replace(
+                "*NAVIER STOKES, STEADY STATE, HEAT TRANSFER=COUPLED", "*DARCY, STEADY STATE"
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(UnsupportedFeatureError, match="DARCY"):
+            InpCaseRunnerProcess().execute(InpJobInput(path=str(darcy)))
+
+    def test_parameter_override(self, tmp_path: Path):
+        inp = tmp_path / "p.inp"
+        inp.write_text(TINY_NS.replace("MAX_OUTER=3", "MAX_OUTER=<iters>"), encoding="utf-8")
+        res = InpCaseRunnerProcess().execute(InpJobInput(path=str(inp), parameters={"iters": 2}))
+        assert res.steps[0].n_iterations == 2
+
+
+class TestYkepCli:
+    def test_parse_args_abaqus_style(self, tmp_path: Path):
+        inp = tmp_path / "nsb-1.inp"
+        inp.write_text(TINY_NS, encoding="utf-8")
+        args = parse_args(
+            [f"-j={inp.with_suffix('')}", "int", "-p", "iters=4", f"-o={tmp_path / 'o'}"]
+        )
+        assert args.interactive
+        job = args.job
+        assert job.path == str(inp)
+        assert job.parameters == {"iters": 4}
+        assert job.output_dir == str(tmp_path / "o")
+        args2 = parse_args([f"job={inp}", "--check"])
+        assert args2.job.check_only and not args2.interactive
+        assert parse_args(["--help"]) is None
+
+    def test_main_check_and_errors(self, tmp_path: Path, capsys):
+        inp = tmp_path / "c.inp"
+        inp.write_text(TINY_NS, encoding="utf-8")
+        assert main([f"-j={inp}", "--check"]) == 0
+        assert "CHECK OK" in capsys.readouterr().out
+        assert (tmp_path / "c.log").exists()
+        assert main(["-j=/nonexistent/x.inp"]) == 2
+        assert main([]) == 2
+        bad = tmp_path / "bad.inp"
+        bad.write_text("*GRID, NX=2, LX=1\n", encoding="utf-8")
+        assert main([f"-j={bad}"]) == 1
+        assert "ERROR" in capsys.readouterr().err
+
+    def test_main_runs_heat_transfer_example(self, tmp_path: Path, capsys):
+        code = main([f"-j={EXAMPLES / 'plate-ht-1'}", "int", f"-o={tmp_path}"])
+        assert code == 0
+        out = capsys.readouterr().out
+        assert "CONVERGED" in out and "plate-ht-1.yaml" in out
+
+
+class TestInpPhysics:
+    """物理テスト: .inp 経由でも 1D 定常熱伝導が線形分布になること."""
+
+    def test_linear_conduction_profile(self, tmp_path: Path):
+        text = (
+            "*GRID, NX=10, NY=1, NZ=1, LX=1.0, LY=0.1, LZ=0.1\n"
+            "*MATERIAL, NAME=M\n*CONDUCTIVITY\n 5.\n*SOLID SECTION, ELSET=ALL, MATERIAL=M\n"
+            "*STEP\n*HEAT TRANSFER, STEADY STATE\n*BOUNDARY, TYPE=TEMPERATURE\n XM, 400.\n XP, 300.\n"
+            "*CONTROLS, PARAMETERS=SOLVER\n METHOD=DIRECT\n*END STEP\n"
+        )
+        inp = tmp_path / "rod.inp"
+        inp.write_text(text, encoding="utf-8")
+        res = InpCaseRunnerProcess().execute(InpJobInput(path=str(inp)))
+        T = res.steps[0].result.T[:, 0, 0]
+        x = 0.5 * (res.grid.x_lines[:-1] + res.grid.x_lines[1:])
+        assert np.allclose(T, 400.0 - 100.0 * x, atol=1e-6)

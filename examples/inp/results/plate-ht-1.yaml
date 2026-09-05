@@ -1,0 +1,43 @@
+job: plate-ht-1
+inp: examples/inp/plate-ht-1.inp
+step: Steady
+procedure: HEAT TRANSFER
+steady: true
+turbulence: LAMINAR
+grid:
+  nx: 4
+  ny: 2
+  nz: 2
+lengths:
+  lx: 0.2
+  ly: 0.1
+  lz: 0.05
+commit: c3dd1f1
+parameters:
+  T_left: 350.0
+  q_in: 2000.0
+  q_vol: 500000.0
+  h_film: 25.0
+  T_amb: 300.0
+solver:
+  process: HeatTransferFDMProcess
+  method: direct
+  dt: 0.0
+  t_end: 0.0
+  max_iter: 10000
+  tol: 1e-06
+converged: true
+n_timesteps: 0
+iteration_counts:
+  - 1
+elapsed_seconds: 0.0010586220000732283
+temperature_range:
+  - 355.6239718121466
+  - 373.26547492688803
+wall_seconds: 0.00363661400001547
+output_files:
+  - plate-ht-1.npz
+  - plate-ht-1.vtk
+  - plate-ht-1.yaml
+variables:
+  - T

@@ -9,6 +9,7 @@
 | [ロードマップ](roadmap.md) | 全体計画・マイルストーン・TODO |
 | [水槽設計ロードマップ](roadmap-aquarium.md) | Phase 6 持続的水槽設計 CAE 詳細計画 |
 | [設計文書一覧](design/README.md) | 設計仕様書リンク集（コロケーション方式） |
+| [.inp 入力フォーマット](design/inp-format.md) | Abaqus 風キーワード構文の入力ファイルと `ykep -j=<job>.inp int` コマンド |
 | [ステータス一覧](status/status-index.md) | 全statusファイル + テスト数推移 |
 | [実装計画](plans/2026-09-02-single-screw-extruder-impl.md) | 単軸押出 2.5D の実装計画（Task 0-11、ゲート G1-G4） |
 | [押出 図解レポート](reports/extruder/README.md) | 公開 Artifact 2 本（押出機の中の8秒 / 押出断面のフィールド）と HTML 実体・再生成手順 |

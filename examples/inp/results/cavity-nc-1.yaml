@@ -1,0 +1,67 @@
+job: cavity-nc-1
+inp: examples/inp/cavity-nc-1.inp
+step: Steady
+procedure: NAVIER STOKES
+steady: true
+turbulence: LAMINAR
+grid:
+  nx: 12
+  ny: 12
+  nz: 3
+lengths:
+  lx: 0.1
+  ly: 0.1
+  lz: 0.025000000000000005
+commit: c3dd1f1
+parameters:
+  L: 0.1
+  n: 12
+  nz: 3
+  T_hot: 310.0
+  T_cold: 290.0
+  T_ref: 300.0
+  rho: 1.0
+  mu: 0.01
+  Cp: 1000.0
+  k: 1.0
+  g: 9.81
+  Ra: 1000.0
+  nu: 0.01
+  alpha: 0.001
+  beta: 0.050968399592252786
+solver:
+  process: NaturalConvectionFDMProcess
+  coupling: simple
+  convection: upwind
+  time_scheme: euler
+  pressure_solver: bicgstab
+  alpha_u: 0.2
+  alpha_p: 0.05
+  alpha_T: 0.5
+  heat_transfer: COUPLED
+  dt: 0.0
+  t_end: 0.0
+converged: true
+n_outer_iterations: 226
+n_timesteps: 0
+final_residuals:
+  u: 9.949912187752e-07
+  v: 9.794788192586098e-07
+  w: 9.779376502282225e-05
+  p: 9.59481765671586e-06
+  T: 7.817377799527687e-07
+  mass: 8.673060776850491e-06
+elapsed_seconds: 3.0073443499999257
+max_abs_velocity: 0.035667957409045874
+temperature_range:
+  - 290.6149714058406
+  - 309.38502502700453
+wall_seconds: 3.0096972290000394
+output_files:
+  - cavity-nc-1.npz
+  - cavity-nc-1.vtk
+  - cavity-nc-1.yaml
+variables:
+  - U
+  - P
+  - T

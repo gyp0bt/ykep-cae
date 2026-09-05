@@ -12,6 +12,12 @@
 | [benchmark_runner.md](../../xkep_cae_fluid/core/docs/benchmark_runner.md) | `xkep_cae_fluid/core/docs/` | BenchmarkRunner マニフェスト自動記録 | 完了 |
 | [process_diagnostics.md](../../xkep_cae_fluid/core/docs/process_diagnostics.md) | `xkep_cae_fluid/core/docs/` | Process 実行診断 | 完了 |
 
+## 入力フォーマット設計文書
+
+| 文書 | 配置先 | 内容 | 状態 |
+|------|--------|------|------|
+| [inp-format.md](inp-format.md) | `docs/design/` | ykep .inp 入力フォーマット（Abaqus 風キーワード構文、`ykep -j=<job>.inp int`、`*PARAMETER`、`*CONTROLS`） | 完了（NS / 伝熱。Darcy は書式のみ） |
+
 ## 伝熱モジュール設計文書
 
 | 文書 | 配置先 | 内容 | 状態 |

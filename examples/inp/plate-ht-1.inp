@@ -1,0 +1,37 @@
+** =====================================================================
+**  平板の定常伝熱（*NODE/*ELEMENT メッシュを *INCLUDE、*SURFACE 経由の境界）
+**  左端 温度固定、右端 熱流束、上面 対流熱伝達（*SFILM）、中央 2 列に体積発熱
+**  実行: ykep -j=examples/inp/plate-ht-1.inp int
+** =====================================================================
+*HEADING
+ Steady conduction in a plate with internal heating and film cooling
+*PARAMETER
+ T_left = 350.0
+ q_in   = 2000.0
+ q_vol  = 5.0e5
+ h_film = 25.0
+ T_amb  = 300.0
+*INCLUDE, INPUT=plate-mesh.inp
+*MATERIAL, NAME=ALUMINIUM
+*DENSITY
+ 2700.0
+*SPECIFIC HEAT
+ 900.0
+*CONDUCTIVITY
+ 200.0
+*SOLID SECTION, ELSET=PLATE, MATERIAL=ALUMINIUM
+*INITIAL CONDITIONS, TYPE=TEMPERATURE
+ NALL, 300.0
+*STEP, NAME=Steady
+*HEAT TRANSFER, STEADY STATE
+*BOUNDARY
+ LEFT, 11, 11, <T_left>
+*DFLUX
+ RIGHT, S, <q_in>
+ HEATER, BF, <q_vol>
+*SFILM
+ TOP, F, <T_amb>, <h_film>
+*CONTROLS, PARAMETERS=SOLVER
+ METHOD=DIRECT
+*OUTPUT, FIELD, VARIABLE=T, FORMAT=VTK
+*END STEP
