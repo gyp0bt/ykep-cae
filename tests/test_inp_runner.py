@@ -314,15 +314,48 @@ class TestInpCaseRunnerAPI:
                 )
             )
 
-    def test_navier_stokes_rejected_on_unstructured(self, tmp_path: Path):
+    def test_navier_stokes_unstructured_pipeline(self, tmp_path: Path):
+        """*NAVIER STOKES を mesh_mode=unstructured で NavierStokesFVMProcess に流す（非構造出力）."""
         inp = tmp_path / "ns.inp"
-        inp.write_text(TINY_NS, encoding="utf-8")
-        with pytest.raises(ValueError, match="NAVIER STOKES"):
-            InpCaseRunnerProcess().execute(
-                InpJobInput(path=str(inp), mesh_mode="unstructured", check_only=True)
+        inp.write_text(TINY_NS.replace("MAX_OUTER=3", "MAX_OUTER=400"), encoding="utf-8")
+        res = InpCaseRunnerProcess().execute(
+            InpJobInput(path=str(inp), output_dir=str(tmp_path), mesh_mode="unstructured")
+        )
+        assert res.grid is None and res.mesh is not None and res.mesh.n_cells == 32
+        step = res.steps[0]
+        assert step.summary["solver"]["process"] == "NavierStokesFVMProcess" and step.converged
+        assert step.summary["temperature_range"][0] >= 290.0 - 1e-9
+        assert step.summary["temperature_range"][1] <= 310.0 + 1e-9
+        with np.load(tmp_path / "ns.npz") as data:
+            assert (
+                data["U"].shape == (32, 3) and data["P"].shape == (32,) and data["T"].shape == (32,)
             )
+            assert data["res_mass"].shape == (32,)
+        assert "DATASET UNSTRUCTURED_GRID" in (tmp_path / "ns.vtk").read_text()
+        # 高温壁側で上昇流
+        x = res.mesh.mesh.cell_centers[:, 0]
+        v = step.result.velocity[:, 1]
+        assert v[x < 0.025].mean() > 0.0 > v[x > 0.075].mean()
+        chk = InpCaseRunnerProcess().execute(
+            InpJobInput(path=str(inp), mesh_mode="unstructured", check_only=True)
+        )
+        assert chk.steps[0].summary["solver"]["coupling"] == "simple"
         with pytest.raises(ValueError, match="mesh_mode"):
             InpCaseRunnerProcess().execute(InpJobInput(path=str(inp), mesh_mode="polyhedral"))
+
+    def test_navier_stokes_sheared_example(self, tmp_path: Path):
+        """cavity-nc-2（せん断メッシュ）は auto で非構造経路に落ちる."""
+        res = InpCaseRunnerProcess().execute(
+            InpJobInput(
+                path=str(EXAMPLES / "cavity-nc-2.inp"),
+                output_dir=str(tmp_path),
+                parameters={"max_outer": 5},
+                check_only=False,
+            )
+        )
+        assert res.grid is None and res.mesh is not None
+        assert res.steps[0].summary["solver"]["process"] == "NavierStokesFVMProcess"
+        assert res.steps[0].summary["mesh"]["max_nonorthogonality_deg"] > 10.0
 
     def test_navier_stokes_pipeline(self, tmp_path: Path):
         inp = tmp_path / "tiny.inp"

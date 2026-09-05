@@ -8,6 +8,8 @@
   → :class:`~xkep_cae_fluid.heat_transfer.fvm.HeatTransferFVMInput`
 - :class:`InpToDarcyProcess`: ``*DARCY``（非構造 :class:`~xkep_cae_fluid.inp.mesh.InpMeshResult` 経由）
   → :class:`~xkep_cae_fluid.darcy.data.DarcyFlowInput`
+- :class:`InpToNavierStokesFVMProcess`: ``*NAVIER STOKES``（非構造メッシュ経由）
+  → :class:`~xkep_cae_fluid.incompressible.data.NavierStokesFVMInput`
 
 ykep が解釈できない指定（乱流モデル、部分面、未対応スキーム等）は
 :class:`UnsupportedFeatureError` で明示的に拒否する（黙って無視しない）。
@@ -24,7 +26,7 @@ import numpy as np
 from xkep_cae_fluid.core.base import AbstractProcess, ProcessMeta
 from xkep_cae_fluid.core.categories import PreProcess
 from xkep_cae_fluid.darcy.data import DarcyFlowInput, DarcyPatchBC
-from xkep_cae_fluid.fvm import PatchBC
+from xkep_cae_fluid.fvm import BCKind, PatchBC
 from xkep_cae_fluid.heat_transfer.data import (
     BoundaryCondition as HTBoundaryCondition,
 )
@@ -35,6 +37,7 @@ from xkep_cae_fluid.heat_transfer.data import (
     HeatTransferInput,
 )
 from xkep_cae_fluid.heat_transfer.fvm import HeatTransferFVMInput
+from xkep_cae_fluid.incompressible.data import FlowPatchBC, NavierStokesFVMInput
 from xkep_cae_fluid.inp.case import (
     BoundaryCondition,
     BoundaryKind,
@@ -84,7 +87,7 @@ class InpMappingInput:
 
 @dataclass(frozen=True)
 class InpMeshMappingInput:
-    """非構造メッシュ（:class:`InpMeshResult`）経由のマッピング入力（``*DARCY`` / ``*HEAT TRANSFER``）."""
+    """非構造メッシュ（:class:`InpMeshResult`）経由のマッピング入力（``*DARCY`` / ``*HEAT TRANSFER`` / ``*NAVIER STOKES``）."""
 
     case: CaseDefinition
     mesh: InpMeshResult
@@ -854,6 +857,254 @@ class InpToHeatTransferFVMProcess(PreProcess["InpMeshMappingInput", "HeatTransfe
 
     def process(self, input_data: InpMeshMappingInput) -> HeatTransferFVMInput:
         return map_heat_transfer_fvm(input_data.case, input_data.mesh, input_data.step)
+
+
+# ---------------------------------------------------------------------------
+# Navier–Stokes（NavierStokesFVMProcess、非構造メッシュ経由）
+# ---------------------------------------------------------------------------
+
+_COUPLING_FVM: dict[str, str] = {"SIMPLE": "simple", "SIMPLEC": "simplec"}
+_NS_FVM_SOLVER_KEYS = _NC_SOLVER_KEYS | {"MOMENTUM"}
+
+
+def _ns_fvm_patch_bc(
+    name: str,
+    bcs: list[BoundaryCondition],
+    heat_flux: float | None,
+    film: FilmCondition | None,
+    coupled: bool,
+    default: FlowPatchBC,
+) -> FlowPatchBC:
+    from xkep_cae_fluid.fvm.momentum import VelocityPatchBC
+
+    velocity = default.velocity
+    thermal: PatchBC | None = default.thermal
+    for bc in bcs:
+        if bc.kind == BoundaryKind.WALL:
+            velocity = VelocityPatchBC.wall()
+        elif bc.kind in (BoundaryKind.SLIP, BoundaryKind.SYMMETRY):
+            velocity = VelocityPatchBC.slip()
+        elif bc.kind == BoundaryKind.VELOCITY:
+            vel = list(bc.values) + [0.0] * (3 - len(bc.values))
+            v3 = (float(vel[0]), float(vel[1]), float(vel[2]))
+            velocity = (
+                VelocityPatchBC.wall() if all(v == 0.0 for v in v3) else VelocityPatchBC.inlet(v3)
+            )
+        elif bc.kind == BoundaryKind.PRESSURE:
+            velocity = VelocityPatchBC.outlet(float(bc.values[0]) if bc.values else 0.0)
+        elif bc.kind == BoundaryKind.OUTLET:
+            raise UnsupportedFeatureError(
+                f"面 {name} の TYPE=OUTLET（対流流出）は非構造 NS では未対応（TYPE=PRESSURE を使う）"
+            )
+        elif bc.kind == BoundaryKind.TEMPERATURE:
+            if not coupled:
+                logger.warning("面 %s の温度境界は HEAT TRANSFER=NONE のため無視します", name)
+                continue
+            if not bc.values:
+                raise UnsupportedFeatureError(f"面 {name} の TYPE=TEMPERATURE に値がありません")
+            thermal = PatchBC.dirichlet(float(bc.values[0]))
+    if heat_flux is not None:
+        if not coupled:
+            logger.warning("面 %s の *DFLUX は HEAT TRANSFER=NONE のため無視します", name)
+        elif thermal is not None and thermal.kind == BCKind.DIRICHLET:
+            raise UnsupportedFeatureError(f"面 {name} に温度固定と熱流束が同時に指定されています")
+        else:
+            thermal = PatchBC.neumann(heat_flux)
+    if film is not None:
+        if not coupled:
+            logger.warning("面 %s の *SFILM は HEAT TRANSFER=NONE のため無視します", name)
+        elif thermal is not None:
+            raise UnsupportedFeatureError(
+                f"面 {name} に *SFILM と他の熱境界が同時に指定されています"
+            )
+        else:
+            thermal = PatchBC.robin(film.h, film.t_inf)
+    return FlowPatchBC(velocity=velocity, thermal=thermal)
+
+
+def map_navier_stokes_fvm(
+    case: CaseDefinition, mesh: InpMeshResult, step: StepDefinition
+) -> NavierStokesFVMInput:
+    """``*NAVIER STOKES`` ステップを非構造メッシュの :class:`NavierStokesFVMInput` に変換する."""
+    _check_procedure_common(step, EquationFamily.NAVIER_STOKES)
+    proc = step.procedure
+    coupled = proc.heat_transfer == "COUPLED"
+    if proc.heat_transfer not in ("NONE", "COUPLED"):
+        raise UnsupportedFeatureError(f"HEAT TRANSFER={proc.heat_transfer} は NONE / COUPLED のみ")
+    fluid = _fluid_material(case)
+    rho = fluid.require("density")
+    mu = fluid.require("viscosity")
+    md = mesh.mesh
+    n = mesh.n_cells
+
+    solid_mask = np.zeros(n, dtype=bool)
+    k_solid = np.zeros(n)
+    has_solid = False
+    for mask, mat, kind in _mesh_section_coverage(case, mesh):
+        if kind == SectionKind.SOLID:
+            has_solid = True
+            solid_mask |= mask
+            k_solid[mask] = mat.require("conductivity")
+    gravity = _gravity_vector(case, step)
+    if coupled:
+        Cp = fluid.require("specific_heat")
+        k_fluid = fluid.require("conductivity")
+        beta = fluid.expansion if fluid.expansion is not None else 0.0
+        if beta == 0.0 and any(g != 0.0 for g in gravity):
+            logger.warning("重力があるのに *EXPANSION が 0（浮力なし）です")
+    else:
+        Cp = fluid.specific_heat if fluid.specific_heat is not None else 1000.0
+        k_fluid = fluid.conductivity if fluid.conductivity is not None else 1.0
+        beta = 0.0
+    t_default = fluid.reference_temperature if fluid.reference_temperature is not None else 300.0
+    T0 = _initial_cell_field_unstructured(case, mesh, InitialConditionKind.TEMPERATURE, t_default)
+    if not coupled:
+        T0 = np.full(n, float(np.mean(T0)))
+    T_ref = (
+        fluid.reference_temperature
+        if fluid.reference_temperature is not None
+        else float(np.mean(T0))
+    )
+    heat_source = _body_flux_unstructured(case, step, mesh) if coupled else None
+    p0 = _initial_cell_field_unstructured(case, mesh, InitialConditionKind.PRESSURE, 0.0)
+
+    # 境界: パッチごとに集約（未指定は静止壁、2D 要素の ZM/ZP は対称面）
+    bcs_by: dict[str, list[BoundaryCondition]] = {}
+    for bc in case.boundaries + step.boundaries:
+        bcs_by.setdefault(_resolve_patch_name(bc.target, mesh), []).append(bc)
+    flux: dict[str, float] = {}
+    for fl in case.fluxes + step.fluxes:
+        if fl.label != FluxLabel.SURFACE:
+            continue
+        nm = _resolve_patch_name(fl.target, mesh)
+        flux[nm] = flux.get(nm, 0.0) + fl.magnitude
+    films: dict[str, FilmCondition] = {}
+    for film in case.films + step.films:
+        nm = _resolve_patch_name(film.target, mesh)
+        if nm in films:
+            raise UnsupportedFeatureError(f"面 {nm} に *SFILM が重複しています")
+        films[nm] = film
+    names = set(bcs_by) | set(flux) | set(films)
+    if mesh.ndim == 2:
+        names |= {"ZM", "ZP"}
+    bcs: dict[str, FlowPatchBC] = {}
+    for nm in sorted(names):
+        default = (
+            FlowPatchBC.symmetry()
+            if (mesh.ndim == 2 and nm in ("ZM", "ZP"))
+            else FlowPatchBC.wall()
+        )
+        bcs[nm] = _ns_fvm_patch_bc(
+            nm, bcs_by.get(nm, []), flux.get(nm), films.get(nm), coupled, default
+        )
+
+    # --- *CONTROLS ---
+    disc = step.control_values(ControlCategory.DISCRETIZATION)
+    _check_keys(disc, _NC_DISCRETIZATION_KEYS, "DISCRETIZATION")
+    if "CONVECTION" in disc and _norm_value(disc["CONVECTION"]) not in (
+        "UPWIND",
+        "FIRST_ORDER_UPWIND",
+    ):
+        raise UnsupportedFeatureError(
+            f"CONVECTION={disc['CONVECTION']} は非構造 NS では未対応（1 次風上のみ）"
+        )
+    if "TIME" in disc and _norm_value(disc["TIME"]) not in ("EULER", "BACKWARD_EULER"):
+        raise UnsupportedFeatureError(f"TIME={disc['TIME']} は非構造 NS では未対応（EULER のみ）")
+    if "LIMITER" in disc or "PISO_CORRECTORS" in disc:
+        raise UnsupportedFeatureError("LIMITER= / PISO_CORRECTORS= は非構造 NS では未対応")
+    coupling = "simple"
+    if "PRESSURE_VELOCITY" in disc:
+        key = _norm_value(disc["PRESSURE_VELOCITY"])
+        if key not in _COUPLING_FVM:
+            raise UnsupportedFeatureError(
+                f"PRESSURE_VELOCITY={disc['PRESSURE_VELOCITY']} は非構造 NS では SIMPLE / SIMPLEC のみ"
+            )
+        coupling = _COUPLING_FVM[key]
+    relax = step.control_values(ControlCategory.RELAXATION)
+    _check_keys(relax, _NC_RELAXATION_KEYS, "RELAXATION")
+    alpha_u = _as_float(relax.get("VELOCITY", "0.7"), "VELOCITY")
+    alpha_p = _as_float(relax.get("PRESSURE", "0.3"), "PRESSURE")
+    alpha_T = _as_float(relax.get("TEMPERATURE", "0.9"), "TEMPERATURE")
+    if _as_bool(relax.get("ADAPTIVE", "NO"), "ADAPTIVE"):
+        raise UnsupportedFeatureError("RELAXATION ADAPTIVE=YES は非構造 NS では未対応")
+    solver = step.control_values(ControlCategory.SOLVER)
+    _check_keys(solver, _NS_FVM_SOLVER_KEYS, "SOLVER")
+    pressure_solver = "bicgstab"
+    if "PRESSURE" in solver:
+        key = _norm_value(solver["PRESSURE"])
+        if key not in _LINEAR_SOLVERS:
+            raise UnsupportedFeatureError(
+                f"SOLVER PRESSURE={solver['PRESSURE']} は未対応（{sorted(_LINEAR_SOLVERS)}）"
+            )
+        pressure_solver = _LINEAR_SOLVERS[key]
+    momentum_solver = "bicgstab"
+    if "MOMENTUM" in solver:
+        key = _norm_value(solver["MOMENTUM"])
+        if key not in _LINEAR_SOLVERS:
+            raise UnsupportedFeatureError(
+                f"SOLVER MOMENTUM={solver['MOMENTUM']} は未対応（{sorted(_LINEAR_SOLVERS)}）"
+            )
+        momentum_solver = _LINEAR_SOLVERS[key]
+    max_outer = _as_int(solver.get("MAX_OUTER", "500"), "MAX_OUTER")
+    if step.max_increments > 0 and "MAX_OUTER" not in solver:
+        max_outer = step.max_increments
+    max_inner = _as_int(solver.get("MAX_INNER", "200"), "MAX_INNER")
+    max_p = _as_int(solver.get("MAX_PRESSURE_ITER", "0"), "MAX_PRESSURE_ITER")
+    if max_p > 0:
+        max_inner = max(max_inner, max_p)
+    tol = _as_float(solver.get("TOL", "1e-5"), "TOL")
+    tol_inner = _as_float(solver.get("TOL_INNER", "1e-8"), "TOL_INNER")
+    tinc = step.control_values(ControlCategory.TIME_INCREMENTATION)
+    _check_keys(tinc, _TIME_INC_KEYS, "TIME INCREMENTATION")
+    output_interval = _as_int(tinc.get("OUTPUT_INTERVAL", "0"), "OUTPUT_INTERVAL")
+    if output_interval <= 0:
+        output_interval = max((o.frequency for o in step.outputs), default=1)
+
+    return NavierStokesFVMInput(
+        mesh=md,
+        rho=rho,
+        mu=mu,
+        bcs=bcs,
+        solve_energy=coupled,
+        Cp=Cp,
+        k_fluid=k_fluid,
+        beta=beta,
+        T_ref=T_ref,
+        gravity=gravity,
+        T0=T0,
+        p0=p0,
+        solid_mask=solid_mask if has_solid else None,
+        k_solid=np.where(solid_mask, k_solid, k_fluid) if has_solid else None,
+        heat_source=heat_source,
+        dt=proc.dt,
+        t_end=proc.time_period,
+        max_outer_iter=max_outer,
+        tol=tol,
+        alpha_u=alpha_u,
+        alpha_p=alpha_p,
+        alpha_T=alpha_T,
+        coupling=coupling,
+        linear_solver=momentum_solver,
+        pressure_solver=pressure_solver,
+        tol_inner=tol_inner,
+        max_inner_iter=max_inner,
+        output_interval=output_interval,
+    )
+
+
+class InpToNavierStokesFVMProcess(PreProcess["InpMeshMappingInput", "NavierStokesFVMInput"]):
+    """``*NAVIER STOKES`` を非構造メッシュの :class:`NavierStokesFVMInput` に変換する PreProcess."""
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="InpToNavierStokesFVM",
+        module="pre",
+        version="0.1.0",
+        document_path="../../docs/design/inp-format.md",
+    )
+    uses: ClassVar[list[type[AbstractProcess]]] = []
+
+    def process(self, input_data: InpMeshMappingInput) -> NavierStokesFVMInput:
+        return map_navier_stokes_fvm(input_data.case, input_data.mesh, input_data.step)
 
 
 # ---------------------------------------------------------------------------

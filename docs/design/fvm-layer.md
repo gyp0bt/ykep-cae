@@ -74,6 +74,14 @@ ykep のソルバーを 3 層に分ける。
 面フラックスも厳密（`tests/test_fvm_layer.py::TestNonorthogonalPhysics`）。
 補正は遅延評価なので、収束解の質量不整合（Darcy）は tol × 流量のオーダーになる。
 
+### `fvm/momentum.py` — 運動量・圧力連成カーネル
+
+`VelocityPatchBC`（WALL / INLET / OUTLET / SLIP）→ `resolve_velocity_boundary`、成分ごとの運動量行列
+`assemble_momentum`（対流・拡散 + 非直交補正・時間項・圧力勾配・抵抗・陰的緩和）、Rhie–Chow 面質量流束
+`rhie_chow_mass_flux`、圧力補正 `pressure_correction_coefficients` / `assemble_pressure_correction` /
+`correct_mass_flux`。圧力勾配には最小二乗勾配 `geometry.cell_gradient_lsq`（境界セルでも線形場で厳密）を使う。
+詳細は [navier-stokes-fvm.md](navier-stokes-fvm.md)。
+
 ### `fvm/linear.py` — 線形ソルバー Strategy
 
 `LinearSolverStrategy` Protocol（`solve(A, b)`）の具象:
@@ -115,8 +123,10 @@ FVM 側（境界流出入を含む）とは一致しない。
 2. `DarcyFlowProcess`（[darcy-flow-fvm.md](darcy-flow-fvm.md)、新ファミリー、最初の非構造ケース）
 3. `HeatTransferFVMProcess`（[heat-transfer-fvm.md](heat-transfer-fvm.md)、構造格子 FDM と 1e-8 で一致、
    `*HEAT TRANSFER` の非箱格子 / `--mesh=unstructured` 経路）— 済
-4. `BrinkmanFlowFVMProcess`（演算子合成 `Dx@diag(f)@W` を owner/neighbour で組み直す）
-5. `NaturalConvectionFDMProcess`（SIMPLE、Rhie–Chow を面リストで）
+4. `NavierStokesFVMProcess`（[navier-stokes-fvm.md](navier-stokes-fvm.md)）— `BrinkmanFlowFVMProcess` の
+   Brinkman 抵抗と `NaturalConvectionFDMProcess` の SIMPLE + Rhie–Chow + Boussinesq + 固体マスクを
+   1 ファミリーに。運動量・圧力連成カーネルは `fvm/momentum.py` — 済（1 次風上、SIMPLE/SIMPLEC）
+5. 構造格子版に残る機能（TVD 遅延補正、BDF2、PISO、`InternalFaceBC`、追加スカラー）の移植
 
 ## テスト
 
@@ -126,3 +136,5 @@ FVM 側（境界流出入を含む）とは一致しない。
   せん断メッシュの線形場と面フラックスの厳密性
 - `tests/test_scalar_transport_fvm.py`: `ScalarTransportFVMProcess` の API と構造格子 FDM との回帰
 - `tests/test_heat_transfer_fvm.py`: `HeatTransferFVMProcess` の API、FDM との回帰、せん断メッシュの線形場・熱収支
+- `tests/test_navier_stokes_fvm.py`: `NavierStokesFVMProcess` の API、Poiseuille（箱 / せん断）、Brinkman 流路、
+  蓋駆動キャビティ Re=100、差分加熱キャビティ Ra=10³

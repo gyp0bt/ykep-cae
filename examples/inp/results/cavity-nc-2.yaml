@@ -1,0 +1,76 @@
+job: cavity-nc-2
+inp: examples/inp/cavity-nc-2.inp
+step: Steady
+procedure: NAVIER STOKES
+steady: true
+turbulence: LAMINAR
+commit: fcf973a
+parameters:
+  L: 0.1
+  T_hot: 310.0
+  T_cold: 290.0
+  T_ref: 300.0
+  rho: 1.0
+  mu: 0.01
+  Cp: 1000.0
+  k: 1.0
+  g: 9.81
+  Ra: 1000.0
+  nu: 0.01
+  alpha: 0.001
+  beta: 0.050968399592252786
+  max_outer: 3000
+mesh:
+  n_cells: 144
+  n_faces: 600
+  n_boundary_faces: 336
+  patches:
+    - XM
+    - XP
+    - YM
+    - YP
+    - ZM
+    - ZP
+  max_nonorthogonality_deg: 14.040611362745558
+solver:
+  process: NavierStokesFVMProcess
+  coupling: simple
+  convection: upwind
+  time_scheme: euler
+  pressure_solver: direct
+  momentum_solver: direct
+  alpha_u: 0.5
+  alpha_p: 0.2
+  alpha_T: 0.7
+  heat_transfer: COUPLED
+  dt: 0.0
+  t_end: 0.0
+converged: true
+n_outer_iterations: 165
+n_timesteps: 0
+final_residuals:
+  u: 9.652541977435171e-05
+  v: 9.739732410937378e-05
+  w: 0.0
+  T: 1.2992301338098353e-09
+  mass: 1.2156769564263273e-05
+elapsed_seconds: 2.4478700410036254
+max_abs_velocity: 0.037689617500343255
+temperature_range:
+  - 290.51731192208274
+  - 309.4826853806037
+wall_seconds: 2.4566223159999936
+output_files:
+  - cavity-nc-2.npz
+  - cavity-nc-2.vtk
+  - cavity-nc-2.html
+  - cavity-nc-2.yaml
+variables:
+  - U
+  - P
+  - T
+  - res_u
+  - res_v
+  - res_w
+  - res_mass
+  - res_T

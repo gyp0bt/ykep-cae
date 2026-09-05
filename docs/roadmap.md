@@ -227,8 +227,8 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] `HeatTransferFVMProcess`（面カーネル版、FDM と 1e-8 一致）+ `*HEAT TRANSFER` の非構造経路（`--mesh=auto|structured|unstructured`、例題 plate-ht-2）— Phase 11
 - [x] 非直交補正（over-relaxed 分解 + 傾いた境界面の接線補正 + `solve_corrected`）を fvm 層に追加し Darcy / スカラー輸送 / 伝熱に接続 — Phase 11
 - [x] `nsb/{data,assembly}.py` をコミット 1647839 時点のスナップショットとして切り離し（同期スクリプト・乖離テスト削除）— Phase 11
-- [ ] `BrinkmanFlowFVMProcess` の演算子合成を owner/neighbour で組み直す（非構造 NS ファミリーへ統合）
-- [ ] `NaturalConvectionFDMProcess`（SIMPLE、Rhie–Chow）を面リストで
+- [x] `NavierStokesFVMProcess`（面リストの SIMPLE/SIMPLEC + Rhie–Chow、Boussinesq、Brinkman 抵抗、固体マスク、エネルギー）: `BrinkmanFlowFVMProcess` と `NaturalConvectionFDMProcess` を 1 ファミリーに。`*NAVIER STOKES` の非構造経路、例題 cavity-nc-2 — Phase 11
+- [ ] 構造格子版に残る機能を非構造 NS へ（TVD 遅延補正、BDF2、PISO、`InternalFaceBC`、追加スカラー、対流流出）
 - [ ] 四面体・楔の `InpMeshProcess` 対応、`core/strategies/CorrectedDiffusionScheme` の整理（fvm 層に統合済みの機能と重複）
 - [ ] 内部面の `*SURFACE`（`InternalFaceBC` 相当）、Darcy の Forchheimer / Brinkman 項、非定常
 - [ ] `core/data.BoundaryData` / `SolverInputData` 等の死んだスキーマの整理

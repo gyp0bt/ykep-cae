@@ -44,6 +44,7 @@ xkep_cae_fluid/
 |   +-- assembly.py    # 拡散・1 次風上対流・時間項・ソース項の係数行列（体積積分形）
 |   +-- linear.py      # DirectSolver / BiCGSTABSolver / AMGSolver（LinearSolverStrategy 実装）
 +-- darcy/             # Darcy 流れ（*DARCY 方程式ファミリー、面ベース FVM、非構造六面体メッシュ可）
++-- incompressible/    # 非圧縮 NS（面ベース FVM、SIMPLE/SIMPLEC + Rhie–Chow、Boussinesq、Brinkman、非構造メッシュ可、Phase 11）
 |   +-- data.py        # DarcyFlowInput / Result / DarcyPatchBC（PRESSURE / VELOCITY / WALL）
 |   +-- solver.py      # DarcyFlowProcess（圧力ポアソン + 面流束からのセル速度再構成）
 +-- natural_convection/ # 3次元自然対流解析 (FDM + SIMPLE法)

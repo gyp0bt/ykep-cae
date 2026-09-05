@@ -18,6 +18,7 @@ from xkep_cae_fluid.inp.mapping import (
     InpToHeatTransferFVMProcess,
     InpToHeatTransferProcess,
     InpToNaturalConvectionProcess,
+    InpToNavierStokesFVMProcess,
     UnsupportedFeatureError,
 )
 from xkep_cae_fluid.inp.mesh import InpMeshInput, InpMeshProcess
@@ -480,3 +481,120 @@ class TestInpToHeatTransferFVMAPI:
             InpToHeatTransferFVMProcess().execute(
                 _darcy_input(text.replace("*DENSITY\n 1000.\n", ""))
             )
+
+
+NS_FVM_TEXT = """\
+*HEADING
+ navier stokes on the unstructured path
+*GRID, NX=4, NY=2, NZ=1, LX=0.4, LY=0.2, LZ=0.1
+*MATERIAL, NAME=F
+*DENSITY
+ 1.
+*VISCOSITY
+ 0.01
+*SPECIFIC HEAT
+ 1000.
+*CONDUCTIVITY
+ 1.
+*EXPANSION, ZERO=300.
+ 1e-3
+*MATERIAL, NAME=S
+*CONDUCTIVITY
+ 50.
+*ELSET, ELSET=BLOCK
+ 1
+*ELSET, ELSET=FLUID
+ 2, 3, 4, 5, 6, 7, 8
+*FLUID SECTION, ELSET=FLUID, MATERIAL=F
+*SOLID SECTION, ELSET=BLOCK, MATERIAL=S
+*INITIAL CONDITIONS, TYPE=TEMPERATURE
+ ALL, 305.
+*STEP, NAME=S1
+*NAVIER STOKES, STEADY STATE, HEAT TRANSFER=COUPLED
+*DLOAD
+ FLUID, GRAV, 9.81, 0, -1, 0
+*BOUNDARY, TYPE=VELOCITY
+ XM, 0.02, 0., 0.
+*BOUNDARY, TYPE=PRESSURE
+ XP, 5.
+*BOUNDARY, TYPE=SYMMETRY
+ YP
+*BOUNDARY, TYPE=TEMPERATURE
+ XM, 310.
+*DFLUX
+ YM, S, 100.
+ FLUID, BF, 20.
+*SFILM
+ YP, F, 295., 8.
+*CONTROLS, PARAMETERS=DISCRETIZATION
+ CONVECTION=UPWIND, PRESSURE_VELOCITY=SIMPLEC
+*CONTROLS, PARAMETERS=RELAXATION
+ VELOCITY=0.6, PRESSURE=0.2, TEMPERATURE=0.8
+*CONTROLS, PARAMETERS=SOLVER
+ PRESSURE=DIRECT, MOMENTUM=DIRECT, MAX_OUTER=40, TOL=1e-6, TOL_INNER=1e-9
+*END STEP
+"""
+
+
+@binds_to(InpToNavierStokesFVMProcess)
+class TestInpToNavierStokesFVMAPI:
+    def test_full_mapping(self):
+        from xkep_cae_fluid.fvm.momentum import VelocityBCKind
+
+        inp = InpToNavierStokesFVMProcess().execute(_darcy_input(NS_FVM_TEXT))
+        assert inp.mesh.n_cells == 8 and inp.rho == 1.0 and inp.mu == 0.01
+        assert inp.solve_energy and inp.Cp == 1000.0 and inp.k_fluid == 1.0
+        assert inp.beta == 1e-3 and inp.T_ref == 300.0 and inp.gravity == (0.0, -9.81, 0.0)
+        assert np.all(inp.T0 == 305.0)
+        assert inp.solid_mask.sum() == 1 and inp.k_solid[inp.solid_mask][0] == 50.0
+        assert (
+            np.count_nonzero(inp.heat_source == 20.0) == 7
+            and inp.heat_source[inp.solid_mask][0] == 0.0
+        )
+        assert inp.bcs["XM"].velocity.kind == VelocityBCKind.INLET
+        assert inp.bcs["XM"].velocity.velocity == (0.02, 0.0, 0.0)
+        assert inp.bcs["XM"].thermal.kind == BCKind.DIRICHLET
+        assert (
+            inp.bcs["XP"].velocity.kind == VelocityBCKind.OUTLET
+            and inp.bcs["XP"].velocity.pressure == 5.0
+        )
+        assert (
+            inp.bcs["YM"].velocity.kind == VelocityBCKind.WALL
+            and inp.bcs["YM"].thermal.flux == 100.0
+        )
+        assert (
+            inp.bcs["YP"].velocity.kind == VelocityBCKind.SLIP
+            and inp.bcs["YP"].thermal.kind == BCKind.ROBIN
+        )
+        # *GRID は 3D 要素（NZ=1 でも C3D8）なので ZM/ZP は自動では対称面にならない（既定の壁）
+        assert "ZM" not in inp.bcs and "ZP" not in inp.bcs
+        assert (inp.coupling, inp.alpha_u, inp.alpha_p, inp.alpha_T) == ("simplec", 0.6, 0.2, 0.8)
+        assert (inp.pressure_solver, inp.linear_solver, inp.max_outer_iter) == (
+            "direct",
+            "direct",
+            40,
+        )
+        assert (inp.tol, inp.tol_inner) == (1e-6, 1e-9)
+
+    def test_isothermal_ignores_thermal(self):
+        text = NS_FVM_TEXT.replace("HEAT TRANSFER=COUPLED", "HEAT TRANSFER=NONE")
+        inp = InpToNavierStokesFVMProcess().execute(_darcy_input(text))
+        assert not inp.solve_energy and inp.beta == 0.0 and inp.heat_source is None
+        assert all(bc.thermal is None for bc in inp.bcs.values())
+
+    @pytest.mark.parametrize(
+        "old,new,match",
+        [
+            ("*BOUNDARY, TYPE=SYMMETRY\n YP", "*BOUNDARY, TYPE=OUTLET\n YP", "OUTLET"),
+            ("CONVECTION=UPWIND", "CONVECTION=VAN LEER", "CONVECTION"),
+            ("PRESSURE_VELOCITY=SIMPLEC", "PRESSURE_VELOCITY=PISO", "PISO"),
+            ("TEMPERATURE=0.8", "TEMPERATURE=0.8, ADAPTIVE=YES", "ADAPTIVE"),
+            ("PRESSURE=DIRECT", "PRESSURE=JACOBI", "PRESSURE"),
+            ("*BOUNDARY, TYPE=SYMMETRY\n YP", "*BOUNDARY, TYPE=SYMMETRY\n LID", "予約面名"),
+            (" YM, S, 100.", " XM, S, 100.", "同時"),
+        ],
+    )
+    def test_unsupported(self, old: str, new: str, match: str):
+        assert old in NS_FVM_TEXT
+        with pytest.raises(UnsupportedFeatureError, match=match):
+            InpToNavierStokesFVMProcess().execute(_darcy_input(NS_FVM_TEXT.replace(old, new)))

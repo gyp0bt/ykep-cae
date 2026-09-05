@@ -67,7 +67,9 @@ Process クラスを定義している実験モジュールはゼロ。
 4. [ ] `HeatTransfer` → `Brinkman` → `NaturalConvection` の順に載せ替え
    - [x] `HeatTransferFVMProcess`（FDM と 1e-8 一致、`*HEAT TRANSFER` の非箱格子 / `--mesh=unstructured` 経路、例題 plate-ht-2）
    - [x] 非直交補正（over-relaxed 分解 + 境界接線補正 + `solve_corrected`）を fvm 層に追加、Darcy / スカラー輸送 / 伝熱に接続
-   - [ ] 非構造 NS（SIMPLE + Rhie–Chow を面リストで、Brinkman 抵抗・Boussinesq・エネルギーを 1 ファミリーに）
+   - [x] 非構造 NS `NavierStokesFVMProcess`（SIMPLE/SIMPLEC + Rhie–Chow を面リストで、Brinkman 抵抗・Boussinesq・
+     エネルギー・固体マスクを 1 ファミリーに。`*NAVIER STOKES` の非箱格子 / `--mesh=unstructured` 経路、例題 cavity-nc-2）
+   - [ ] 構造格子版に残る機能の移植（TVD 遅延補正、BDF2、PISO、`InternalFaceBC`、追加スカラー）
 5. [x] 出力層: 非構造 NPZ / VTK `UNSTRUCTURED_GRID` / mirador の `mesh=` 入力
 6. [x] `internal_face_bcs` 欠落バグの修正（分離とは独立）
 
@@ -104,3 +106,15 @@ Process クラスを定義している実験モジュールはゼロ。
 - 遅延補正なので、収束解から `diffusive_face_flux` で作る面流量の発散（Darcy の質量不整合）は
   tol × 流量のオーダー（darcy-1: 2e-17 vs 流量 2.5e-6、tol 1e-10）。機械精度ではない
 - darcy-1 例題の流量は補正で 2.564e-6 → 2.518e-6 m³/s に変わった（せん断 14°）。結果ファイルを再生成
+- 非構造 NS の圧力勾配を Green–Gauss（非 Dirichlet 境界は φ_b = φ_P + 接線外挿）で取ると、流入面や壁に接する
+  セルで法線方向の勾配が半分になり、Brinkman 流路の入口セル速度が U/2 になった。圧力・圧力補正の勾配は
+  最小二乗 `cell_gradient_lsq`（内部隣接 + Dirichlet 境界面、擬似逆行列）に変更して線形場で厳密に
+- 運動量残差を ‖b − A u‖/‖b‖ で正規化すると、恒等的にゼロの成分（2D 流路の v）で b が丸め誤差だけになり
+  残差が 1 に張り付いて「未収束」になった。max(‖b‖, ‖A u‖, ‖a_P‖ U_ref) で正規化
+- SIMPLE の 1 反復目は初期場（静止・一様温度）の残差がゼロになり得るので、収束判定は 2 反復目から。
+  エネルギー連成では T の残差も判定に含める（構造格子版は除外していたが、正規化が正しければ問題なかった）
+- せん断メッシュの Poiseuille 流路で出口面に一様圧力を課すと出口近傍の流れが横方向に歪む。境界条件の
+  帰結（傾いた面に等圧を強制している）でソルバーの誤差ではないので、検証は流路中央で行う
+- cavity-nc-1（箱格子）を `--mesh=unstructured` で解くと 333 反復・max|U| 0.0379（FDM 版 226 反復・0.0357）。
+  壁セルの圧力勾配や境界フラックスの評価が違うため 6% ほど差がある。粗い 12×12 での差で、
+  Nu はどちらも de Vahl Davis の 20% 以内

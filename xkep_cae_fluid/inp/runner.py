@@ -2,7 +2,8 @@
 
 方程式ファミリーで振り分ける:
 
-- ``*NAVIER STOKES`` → :class:`NaturalConvectionFDMProcess`（構造格子）
+- ``*NAVIER STOKES`` → :class:`NaturalConvectionFDMProcess`（構造格子）/
+  :class:`NavierStokesFVMProcess`（非構造メッシュ）
 - ``*HEAT TRANSFER`` → :class:`HeatTransferFDMProcess`（構造格子）/
   :class:`HeatTransferFVMProcess`（非構造メッシュ）
 - ``*DARCY`` → :class:`DarcyFlowProcess`（:class:`InpMeshProcess` の非構造メッシュ経由）
@@ -11,7 +12,7 @@
 
 - ``auto``（既定）: 軸平行の箱格子なら構造格子（従来どおり）、そうでなければ非構造
 - ``structured``: 構造格子を強制（箱格子でなければエラー）
-- ``unstructured``: 非構造を強制（``*NAVIER STOKES`` は非構造未対応なのでエラー）
+- ``unstructured``: 面ベース非構造を強制（箱格子でも FVM 版ソルバーで解く）
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from xkep_cae_fluid.darcy.solver import DarcyFlowProcess
 from xkep_cae_fluid.fvm import max_nonorthogonality_deg
 from xkep_cae_fluid.heat_transfer.fvm import HeatTransferFVMProcess
 from xkep_cae_fluid.heat_transfer.solver import HeatTransferFDMProcess
+from xkep_cae_fluid.incompressible.solver import NavierStokesFVMProcess
 from xkep_cae_fluid.inp.builder import InpCaseBuildProcess
 from xkep_cae_fluid.inp.case import CaseDefinition, EquationFamily, StepDefinition
 from xkep_cae_fluid.inp.grid import (
@@ -46,6 +48,7 @@ from xkep_cae_fluid.inp.mapping import (
     InpToHeatTransferFVMProcess,
     InpToHeatTransferProcess,
     InpToNaturalConvectionProcess,
+    InpToNavierStokesFVMProcess,
     UnsupportedFeatureError,
 )
 from xkep_cae_fluid.inp.mesh import InpMeshInput, InpMeshProcess, InpMeshResult
@@ -135,10 +138,12 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
         StructuredGridRecoveryProcess,
         InpMeshProcess,
         InpToNaturalConvectionProcess,
+        InpToNavierStokesFVMProcess,
         InpToHeatTransferProcess,
         InpToHeatTransferFVMProcess,
         InpToDarcyProcess,
         NaturalConvectionFDMProcess,
+        NavierStokesFVMProcess,
         HeatTransferFDMProcess,
         HeatTransferFVMProcess,
         DarcyFlowProcess,
@@ -174,15 +179,7 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
             except UnsupportedMeshError as exc:
                 if mode == "structured":
                     raise
-                if EquationFamily.NAVIER_STOKES in families:
-                    raise UnsupportedFeatureError(
-                        "*NAVIER STOKES は構造格子（軸平行の箱格子）のみ対応です: " + str(exc)
-                    ) from exc
                 logger.info("箱格子として復元できないため非構造メッシュで解きます: %s", exc)
-        elif wants_grid and EquationFamily.NAVIER_STOKES in families:
-            raise UnsupportedFeatureError(
-                "*NAVIER STOKES は非構造メッシュ未対応です（mesh_mode=unstructured）"
-            )
         if grid is not None:
             nx, ny, nz = grid.dimensions
             logger.info(
@@ -196,9 +193,7 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
                 len(case.steps),
             )
         mesh: InpMeshResult | None = None
-        wants_mesh = EquationFamily.DARCY in families or (
-            EquationFamily.HEAT_TRANSFER in families and grid is None
-        )
+        wants_mesh = EquationFamily.DARCY in families or (wants_grid and grid is None)
         if wants_mesh:
             mesh = InpMeshProcess().execute(InpMeshInput(case=case))
             logger.info(
@@ -246,9 +241,7 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
             "commit": git_commit_hash(),
             "parameters": {k: v for k, v in case.parameters.items()},
         }
-        unstructured = family == EquationFamily.DARCY or (
-            family == EquationFamily.HEAT_TRANSFER and grid is None
-        )
+        unstructured = family == EquationFamily.DARCY or grid is None
         if unstructured:
             assert mesh is not None
             base_summary["mesh"] = {
@@ -273,7 +266,45 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
         mapping_input = InpMappingInput(case=case, grid=grid, step_index=idx) if grid else None
         t0 = time.perf_counter()
 
-        if family == EquationFamily.NAVIER_STOKES:
+        if family == EquationFamily.NAVIER_STOKES and grid is None:
+            assert mesh is not None
+            ns_input = InpToNavierStokesFVMProcess().execute(
+                InpMeshMappingInput(case=case, mesh=mesh, step_index=idx)
+            )
+            base_summary["solver"] = {
+                "process": "NavierStokesFVMProcess",
+                "coupling": ns_input.coupling,
+                "convection": "upwind",
+                "time_scheme": "euler",
+                "pressure_solver": ns_input.pressure_solver,
+                "momentum_solver": ns_input.linear_solver,
+                "alpha_u": ns_input.alpha_u,
+                "alpha_p": ns_input.alpha_p,
+                "alpha_T": ns_input.alpha_T,
+                "heat_transfer": step.procedure.heat_transfer,
+                "dt": ns_input.dt,
+                "t_end": ns_input.t_end,
+            }
+            if job.check_only:
+                return InpStepResult(step.name, family, True, 0, 0.0, (), base_summary, None)
+            logger.info("ステップ %s: *NAVIER STOKES → NavierStokesFVMProcess（非構造）", step.name)
+            res_ns = NavierStokesFVMProcess().execute(ns_input)
+            fields = {"U": res_ns.velocity, "P": res_ns.p, "T": res_ns.T, **res_ns.residual_fields}
+            last = {k: (v[-1] if v else None) for k, v in res_ns.residual_history.items()}
+            summary = {
+                **base_summary,
+                "converged": bool(res_ns.converged),
+                "n_outer_iterations": int(res_ns.n_outer_iterations),
+                "n_timesteps": int(res_ns.n_timesteps),
+                "final_residuals": last,
+                "elapsed_seconds": float(res_ns.elapsed_seconds),
+                "max_abs_velocity": float(np.max(np.abs(res_ns.velocity))),
+                "temperature_range": [float(res_ns.T.min()), float(res_ns.T.max())],
+            }
+            n_iter = int(res_ns.n_outer_iterations)
+            converged = bool(res_ns.converged)
+            result: object = res_ns
+        elif family == EquationFamily.NAVIER_STOKES:
             assert mapping_input is not None
             nc_input = InpToNaturalConvectionProcess().execute(mapping_input)
             base_summary["solver"] = {
@@ -311,7 +342,7 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
             }
             n_iter = int(res.n_outer_iterations)
             converged = bool(res.converged)
-            result: object = res
+            result = res
         elif family == EquationFamily.HEAT_TRANSFER and grid is None:
             assert mesh is not None
             ht_input = InpToHeatTransferFVMProcess().execute(
