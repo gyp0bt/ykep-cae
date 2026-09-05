@@ -15,7 +15,7 @@ FDM（差分法）・FVM（有限体積法）による流体ソルバー基盤�
 
 ## 現在の状態
 
-**615 テスト** -- 2026-09-05 3D レンダリング: [messi mirador 連携](docs/design/mirador-export.md)（`MiradorExportProcess`、構造格子 → C3D8 + 断面スラブ elset + セル場、速度矢印、任意平面の断面 view cut（`--cut=z=0.5`、切り口をセル値で着色）、`*OUTPUT, FIELD, FORMAT=HTML` / `ykep -j=<job> view --slice=x=0.05`。残差マップ `res_u/res_v/res_w/res_T/res_mass` を場として出力、`FORMAT=` 未指定なら messi のある環境で HTML 自動出力。messi 側は v0.10.0 で要素場カラーマップ（Abaqus レインボー既定）・矢印・`.vtk` リーダを追加 / [status-34](docs/status/status-34.md)）。前: ykep .inp 入力フォーマット（[Abaqus 風キーワード構文](docs/design/inp-format.md)、`*PARAMETER`/`*CONTROLS`/`*GRID`、中立表現 `CaseDefinition`、`ykep -j=<job>.inp int` コマンド、`*NAVIER STOKES` → NaturalConvectionFDM / `*HEAT TRANSFER` → HeatTransferFDM、NPZ/YAML/VTK 出力。例題 Ra=1000 キャビティは 226 反復で収束し Nu=1.169 / [status-33](docs/status/status-33.md)）。前: nsb を xkep_cae_fluid から切り離し（[`data`/`assembly` のコピー方式 + 同期スクリプト](nsb/README.md)、numpy/scipy/pypardiso だけで単体持ち出し可）+ 高速化見積り実測（LU 分解が 70〜81%、for ループ削減は 0%、JAX は autodiff 目的のみ）+ 疎 LU を PARDISO 前提に + 前処理 LU の遅延更新（144×96 で 40 s → 17 s、MKL スレッド分割が鍵 / [status-32](docs/status/status-32.md)）。前: Brinkman 流路の[座標マスク境界条件 + 質量流入 + 領域内マニホールド + 随伴設計感度](docs/design/brinkman-flow-fvm.md)（4 辺任意配置、流量固定で inlet 探索、紙面垂直方向のヘッダ、位置・径の勾配を陰関数定理で、冷却流路設計の前段 / [status-31](docs/status/status-31.md)）。前: 収束破綻の再現と機構切り分け（[status-30](docs/status/status-30.md)、[nsb/](nsb/README.md)） | 契約違反 **0件**（27プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**632 テスト**（本環境で 632 passed。pyamg / numba / pypardiso 未導入による 10 failed / 3 errors は従来どおり） -- 2026-09-05 ソルバー層の分離と非構造格子: [棚卸しと計画](docs/plans/2026-09-05-solver-layering.md)、[面ベース FVM 共通低レイヤー `xkep_cae_fluid.fvm`](docs/design/fvm-layer.md)（パッチ境界条件・面演算・係数組み立て・線形ソルバー Strategy）、`MeshData` に境界面・パッチ・セル種別（構造格子 6 パッチ、polyMesh の節点順序付き接続）、[`InpMeshProcess`](docs/design/unstructured-inp-mesh.md)（`.inp` の任意六面体 / 四辺形 → 面ベース非構造メッシュ、`*SURFACE` → パッチ）、`ScalarTransportFVMProcess`（パイロット、構造格子 FDM と 1e-8 一致）、[`DarcyFlowProcess` + `*DARCY`](docs/design/darcy-flow-fvm.md)（非構造 NPZ / VTK / HTML 出力、例題 darcy-1: せん断メッシュ + 低透過率ブロック、流入 = 流出）、mirador の `mesh=` 入力。`NaturalConvectionFDM` の過渡 dt 差し替えで `internal_face_bcs` が落ちる回帰を修正。前: 2026-09-05 3D レンダリング: [messi mirador 連携](docs/design/mirador-export.md)（`MiradorExportProcess`、構造格子 → C3D8 + 断面スラブ elset + セル場、速度矢印、任意平面の断面 view cut（`--cut=z=0.5`、切り口をセル値で着色）、`*OUTPUT, FIELD, FORMAT=HTML` / `ykep -j=<job> view --slice=x=0.05`。残差マップ `res_u/res_v/res_w/res_T/res_mass` を場として出力、`FORMAT=` 未指定なら messi のある環境で HTML 自動出力。messi 側は v0.10.0 で要素場カラーマップ（Abaqus レインボー既定）・矢印・`.vtk` リーダを追加 / [status-34](docs/status/status-34.md)）。前: ykep .inp 入力フォーマット（[Abaqus 風キーワード構文](docs/design/inp-format.md)、`*PARAMETER`/`*CONTROLS`/`*GRID`、中立表現 `CaseDefinition`、`ykep -j=<job>.inp int` コマンド、`*NAVIER STOKES` → NaturalConvectionFDM / `*HEAT TRANSFER` → HeatTransferFDM、NPZ/YAML/VTK 出力。例題 Ra=1000 キャビティは 226 反復で収束し Nu=1.169 / [status-33](docs/status/status-33.md)）。前: nsb を xkep_cae_fluid から切り離し（[`data`/`assembly` のコピー方式 + 同期スクリプト](nsb/README.md)、numpy/scipy/pypardiso だけで単体持ち出し可）+ 高速化見積り実測（LU 分解が 70〜81%、for ループ削減は 0%、JAX は autodiff 目的のみ）+ 疎 LU を PARDISO 前提に + 前処理 LU の遅延更新（144×96 で 40 s → 17 s、MKL スレッド分割が鍵 / [status-32](docs/status/status-32.md)）。前: Brinkman 流路の[座標マスク境界条件 + 質量流入 + 領域内マニホールド + 随伴設計感度](docs/design/brinkman-flow-fvm.md)（4 辺任意配置、流量固定で inlet 探索、紙面垂直方向のヘッダ、位置・径の勾配を陰関数定理で、冷却流路設計の前段 / [status-31](docs/status/status-31.md)）。前: 収束破綻の再現と機構切り分け（[status-30](docs/status/status-30.md)、[nsb/](nsb/README.md)） | 契約違反 **0件**（31プロセス） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 前: [単軸押出解析 Phase 1/1.5 + G5 文献照合](docs/design/single-screw-extruder.md)（展開チャネル 2.5D、ゲート G1〜G5 全通過、OpenFOAM 検算・Pinto–Tadmor RTD 照合済み / [status-29](docs/status/status-29.md) / [図解レポート](docs/reports/extruder/README.md)）
 
@@ -38,6 +38,14 @@ xkep_cae_fluid/
 |   +-- testing.py     # binds_to（テスト紐付け）
 |   +-- strategies/    # Strategy Protocol 定義 + 具象スキーム（拡散/対流/TVD/非直交補正）
 |   +-- docs/          # コアモジュール設計文書
++-- fvm/               # 面ベース FVM 共通低レイヤー（方程式ファミリー非依存、Phase 11）
+|   +-- boundary.py    # PatchBC（Dirichlet/Neumann/Robin/ゼロ勾配）+ resolve_boundary（パッチ名 → 境界面配列）
+|   +-- geometry.py    # 面補間重み・調和平均・面質量流束・Green-Gauss 勾配
+|   +-- assembly.py    # 拡散・1 次風上対流・時間項・ソース項の係数行列（体積積分形）
+|   +-- linear.py      # DirectSolver / BiCGSTABSolver / AMGSolver（LinearSolverStrategy 実装）
++-- darcy/             # Darcy 流れ（*DARCY 方程式ファミリー、面ベース FVM、非構造六面体メッシュ可）
+|   +-- data.py        # DarcyFlowInput / Result / DarcyPatchBC（PRESSURE / VELOCITY / WALL）
+|   +-- solver.py      # DarcyFlowProcess（圧力ポアソン + 面流束からのセル速度再構成）
 +-- natural_convection/ # 3次元自然対流解析 (FDM + SIMPLE法)
 |   +-- data.py        # NaturalConvectionInput / Result / FluidBoundarySpec
 |   +-- assembly.py    # 疎行列アセンブリ（運動量・圧力補正・エネルギー）
@@ -46,6 +54,7 @@ xkep_cae_fluid/
 |   +-- data.py        # ScalarFieldSpec / ScalarBoundarySpec / Input / Result
 |   +-- assembly.py    # 疎行列アセンブリ（対流-拡散-ソース、Dirichlet/Neumann/Robin BC）
 |   +-- solver.py      # ScalarTransportProcess (陰的Euler + BiCGSTAB+ILU)
+|   +-- fvm.py         # ScalarTransportFVMProcess（MeshData 上の面ベース版。構造格子で FDM と一致）
 +-- brinkman_flow/     # 2D Brinkman 補正 Navier-Stokes (FVM, Newton–Krylov) — 収束破綻の再現実験
 |   +-- data.py        # BrinkmanFlowInput / Result / SolverSettings / ThicknessSpec / BoundaryPatch（座標マスク・質量流入）
 |   +-- geometry.py    # UTurnThicknessProcess（flat / uturn 厚さ場）
@@ -71,8 +80,9 @@ xkep_cae_fluid/
 |   +-- case.py        # CaseDefinition（ソルバー非依存の中立表現）
 |   +-- builder.py     # InpCaseBuildProcess（意味付け、*GRID 拡張）
 |   +-- grid.py        # StructuredGridRecoveryProcess（*NODE/*ELEMENT → 直交構造格子、*SURFACE → 領域面）
-|   +-- mapping.py     # InpToNaturalConvectionProcess / InpToHeatTransferProcess（*CONTROLS 含む）
-|   +-- output.py      # InpOutputWriterProcess（NPZ / YAML サマリ / VTK）
+|   +-- mesh.py        # InpMeshProcess（*NODE/*ELEMENT → 面ベース非構造 MeshData、*SURFACE → 境界パッチ）
+|   +-- mapping.py     # InpToNaturalConvectionProcess / InpToHeatTransferProcess / InpToDarcyProcess（*CONTROLS 含む）
+|   +-- output.py      # InpOutputWriterProcess（NPZ / YAML サマリ / VTK RECTILINEAR or UNSTRUCTURED）
 |   +-- runner.py      # InpCaseRunnerProcess（方程式ファミリーで振り分け）
 |   +-- cli.py         # ykep コマンド（ykep -j=<job>.inp int）
 +-- heat_transfer/     # 3次元非定常伝熱解析 (FDM)
@@ -89,7 +99,7 @@ xkep_cae_fluid/
 |   +-- benchmark_solver_methods.py      # ソルバー手法別ベンチマーク
 |   +-- aquarium_heater_natural_convection.py  # Geometry+Heater+NC 3 段（Phase 6.2b）
 |   +-- aquarium_filter_circulation.py         # Geometry+Heater+Filter+NC 4 段（Phase 6.3b）
-|   +-- inp/           # .inp 例題（cavity-nc-1: Ra=1000 キャビティ、plate-ht-1: *INCLUDE メッシュの平板伝熱）+ results/
+|   +-- inp/           # .inp 例題（cavity-nc-1: Ra=1000 キャビティ、plate-ht-1: *INCLUDE メッシュの平板伝熱、darcy-1: せん断メッシュの Darcy 流れ）+ results/
 +-- experiments/brinkman_uturn/  # Brinkman U ターン収束性スイープ（sweep.py / diagnose_u2.py / diagnose_local_dtau.py / results / logs）
 +-- nsb/               # 手元構成ミラー（core / solver / utils / geo / adjoint + data / assembly のコピー。xkep_cae_fluid 非依存で単体持ち出し可）+ theory.md（数理ノート）+ ルート main.py
 +-- experiments/nsb/   # nsb パラメータスタディの results / logs
@@ -124,6 +134,7 @@ ykep -j=examples/inp/plate-ht-1 int -o=out          # 出力先指定（<job>.np
 ykep -j=case.inp --check                            # 解析せず読込・格子復元・マッピングのみ検証
 ykep -j=examples/inp/cavity-nc-1 view -o=out --slice=x=0.05   # 解析せず NPZ → <job>.html（messi mirador 3D ビューア）
 ykep -j=examples/inp/cavity-nc-1 view -o=out --cut=y=0.05     # 任意平面の断面（view cut）を y=0.05 で有効にして開く
+ykep -j=examples/inp/darcy-1 int -o=out                       # *DARCY: 箱格子でない六面体メッシュも InpMeshProcess で解く
 ```
 
 ## 3D レンダリング（messi mirador 連携）
@@ -133,7 +144,8 @@ ykep -j=examples/inp/cavity-nc-1 view -o=out --cut=y=0.05     # 任意平面の�
 Python からは `MiradorExportProcess`）。外皮 + 断面スラブ（elset 切替）+ 速度矢印、場ごとのカラーマップ（Abaqus レインボー既定）、残差マップ `res_*`、
 probe で値表示。任意平面の断面（view cut、`c` キー / `ykep view --cut=z=0.5`）は切り口をセル値で着色し、
 法線・位置・反転をパネルで動かせる。操作パネルは `h` キーで畳める（`ykep view --collapse-panel` で畳んだ状態から）。
-`FORMAT=` を書かなければ messi のある環境では HTML が自動で出る。詳細は [設計文書](docs/design/mirador-export.md)。
+`FORMAT=` を書かなければ messi のある環境では HTML が自動で出る。非構造格子（`*DARCY`）の結果は `MeshData` の六面体を
+そのまま描く（`MiradorExportInput.mesh`、`ykep view --cut` 可）。詳細は [設計文書](docs/design/mirador-export.md)。
 
 ```bash
 pip install -e ../messi     # 任意依存（未導入なら FORMAT=HTML は警告してスキップ）
