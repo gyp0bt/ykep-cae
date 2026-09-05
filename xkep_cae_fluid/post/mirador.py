@@ -96,6 +96,8 @@ class MiradorExportInput:
         開いた時点で ``domain``（外皮）を非表示にして断面を見せる（断面が無ければ表示）
     domain_name : str
         外皮 elset の名前
+    panel_collapsed : bool
+        ビューアの操作パネル（左上）を畳んだ状態で開く（「▾/▸」ボタンか ``h`` キーで開閉）
     verbose : bool
         messi の概要表示
     """
@@ -114,6 +116,7 @@ class MiradorExportInput:
     init_mode: str | None = None
     hide_domain: bool = True
     domain_name: str = "domain"
+    panel_collapsed: bool = False
     verbose: bool = False
 
 
@@ -448,6 +451,9 @@ def export_mirador(inp: MiradorExportInput) -> MiradorExportResult:
 
     out = Path(inp.output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
+    # panel_collapsed は messi 0.10 で追加された引数。既定（False）のときは渡さず、
+    # 引数を知らない古い messi でも動くようにしておく。
+    extra: dict[str, bool] = {"panel_collapsed": True} if inp.panel_collapsed else {}
     mesh.export_html(
         str(out),
         title=inp.title,
@@ -456,6 +462,7 @@ def export_mirador(inp: MiradorExportInput) -> MiradorExportResult:
         vector_scale=inp.vector_scale,
         init_mode=init_mode,
         hidden_groups=hidden,
+        **extra,
     )
     data = _embedded_data(out.read_text(encoding="utf-8"))
     return MiradorExportResult(

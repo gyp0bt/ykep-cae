@@ -290,9 +290,18 @@ class TestYkepCli:
         inp = tmp_path / "v.inp"
         inp.write_text(TINY_NS, encoding="utf-8")
         args = parse_args(
-            [f"-j={inp}", "view", "--slice=x=0.05", "--slice", "z=1i", "--no-vectors"]
+            [
+                f"-j={inp}",
+                "view",
+                "--slice=x=0.05",
+                "--slice",
+                "z=1i",
+                "--no-vectors",
+                "--collapse-panel",
+            ]
         )
         assert args.view and args.no_vectors and not args.no_slices
+        assert args.collapse_panel
         assert [(s.axis, s.position, s.index) for s in args.slices] == [
             ("x", 0.05, None),
             ("z", None, 1),

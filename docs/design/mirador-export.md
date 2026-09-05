@@ -62,6 +62,7 @@ ykep の `FORMAT=VTK` 出力は `messi mirador -i <job>.vtk` でもそのまま�
 | init_mode | str \| None | 最初に表示する場（None: T → P → 最初のスカラー → \|U\|） |
 | hide_domain | bool | 断面があるとき外皮を初期非表示 |
 | domain_name | str | 外皮 elset 名（既定 `domain`） |
+| panel_collapsed | bool | 操作パネルを畳んだ状態で開く（`ykep view --collapse-panel`） |
 
 ## 出力
 
@@ -126,6 +127,7 @@ ykep -j=examples/inp/cavity-nc-1.inp view -o=examples/inp/results --slice=x=0.05
 - 凡例の elset 名クリックで表示切替（`domain` を戻すと外皮、断面 elset を隠すとその断面が消える）
 - 「矢印 U」チェックとスライダー（×0.1〜×10）で速度矢印
 - `probe` で要素をクリックすると品質と全ての場の値を表示
+- 操作パネルはタイトル行の「▾/▸」ボタンか `h` キーで畳める（`panel_collapsed=True` で最初から畳む）
 
 ## テスト
 

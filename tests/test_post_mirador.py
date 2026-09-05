@@ -156,6 +156,17 @@ class TestMiradorExportAPI:
         assert d["vectors"]["maxMag"] == 2.0 and len(d["vectors"]["origins"]) == 18
         # セル 1 の中心は (1/6, 1/4, 1/2)
         assert np.allclose(d["vectors"]["origins"][:3], [1 / 6, 0.25, 0.5])
+        assert d["panelCollapsed"] is False  # 既定は操作パネルを開いた状態
+
+    @needs_messi
+    def test_panel_collapsed_is_passed_to_messi(self, tmp_path: Path):
+        x, y, z = _lines(2, 2, 1)
+        T = np.zeros((2, 2, 1))
+        out = tmp_path / "pc.html"
+        MiradorExportProcess().execute(
+            MiradorExportInput(x, y, z, {"T": T}, str(out), auto_slices=False, panel_collapsed=True)
+        )
+        assert _embedded(out)["panelCollapsed"] is True
 
     @needs_messi
     def test_slices_hide_domain_and_add_interface_faces(self, tmp_path: Path):

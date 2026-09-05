@@ -4,7 +4,7 @@
 
     ykep -j=<job>[.inp] [int|interactive] [-o=<dir>] [-p name=value ...] [--check]
     ykep job=<job> interactive
-    ykep -j=<job> view [-o=<dir>] [--slice=<axis>=<pos> ...] [--no-slices] [--no-vectors]
+    ykep -j=<job> view [-o=<dir>] [--slice=<axis>=<pos> ...] [--no-slices] [--no-vectors] [--collapse-panel]
 
 - ``-j=`` / ``job=``: 入力ファイル（拡張子省略時は .inp を補う）
 - ``int`` / ``interactive``: 反復ログを端末にも表示（無指定ならファイルのみ）
@@ -36,6 +36,7 @@ from xkep_cae_fluid.post.mirador import (
 USAGE = (
     "usage: ykep -j=<job>[.inp] [int] [-o=<dir>] [-p name=value ...] [--check]\n"
     "       ykep -j=<job> view [-o=<dir>] [--slice=<axis>=<pos> ...] [--no-slices] [--no-vectors]"
+    " [--collapse-panel]"
 )
 
 
@@ -55,6 +56,7 @@ class CliArgs:
     slices: tuple[SlicePlane, ...] = ()
     no_slices: bool = False
     no_vectors: bool = False
+    collapse_panel: bool = False
 
 
 def _parse_slice(text: str) -> SlicePlane:
@@ -81,6 +83,7 @@ def parse_args(argv: list[str]) -> CliArgs | None:
     check = False
     no_slices = False
     no_vectors = False
+    collapse_panel = False
     slices: list[SlicePlane] = []
     params: dict[str, ParameterValue] = {}
     i = 0
@@ -121,6 +124,8 @@ def parse_args(argv: list[str]) -> CliArgs | None:
             no_slices = True
         elif low == "--no-vectors":
             no_vectors = True
+        elif low == "--collapse-panel":
+            collapse_panel = True
         elif low == "--check":
             check = True
         else:
@@ -140,6 +145,7 @@ def parse_args(argv: list[str]) -> CliArgs | None:
         slices=tuple(slices),
         no_slices=no_slices,
         no_vectors=no_vectors,
+        collapse_panel=collapse_panel,
     )
 
 
@@ -165,6 +171,7 @@ def run_view(parsed: CliArgs) -> Path:
             slices=parsed.slices,
             auto_slices=not parsed.no_slices,
             vector_field="" if parsed.no_vectors else None,
+            panel_collapsed=parsed.collapse_panel,
         )
     )
     return html
