@@ -12,10 +12,9 @@ from pathlib import Path
 
 import yaml
 
-from nsb import BC, NSBSettings, make_case, solve_steady
+from nsb import BC, NSBSettings, east_span, make_case, north_span, solve_steady, west_span
 from nsb.geo import LX, LY
 from nsb.utils import inlet_velocity, summary
-from xkep_cae_fluid.brinkman_flow import east_span, north_span, west_span
 
 HERE = Path(__file__).resolve().parent
 MDOT = 0.1  # kg/s（h=1e-3, 幅 0.1 で U=1 m/s 相当）

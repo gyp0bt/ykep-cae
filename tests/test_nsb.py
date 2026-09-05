@@ -2,21 +2,59 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 import numpy as np
 import pytest
 
-from nsb import BC, NSBInput, NSBSettings, make_case, make_uturn_h, solve_steady
+from nsb import (
+    BC,
+    NSBInput,
+    NSBSettings,
+    east_span,
+    make_case,
+    make_uturn_h,
+    north_span,
+    solve_steady,
+)
+from nsb.assembly import BrinkmanDiscretization
 from nsb.geo import LX, LY, uturn_bc_preset
 from nsb.utils import inlet_velocity, mass_balance
-from xkep_cae_fluid.brinkman_flow import (
-    BrinkmanFlowFVMProcess,
-    BrinkmanSolverSettings,
-    east_span,
-    north_span,
-)
-from xkep_cae_fluid.brinkman_flow.assembly import BrinkmanDiscretization
+from xkep_cae_fluid import brinkman_flow as xkep_bf
+from xkep_cae_fluid.brinkman_flow import BrinkmanFlowFVMProcess, BrinkmanSolverSettings
+
+
+def to_xkep_flow_input(inp: NSBInput) -> xkep_bf.BrinkmanFlowInput:
+    """nsb（独立コピー）の入力を xkep_cae_fluid 側の型に変換する（Process ソルバー比較用）.
+
+    nsb.data と xkep_cae_fluid.brinkman_flow.data は同一内容のコピーだが別クラスなので、
+    Enum メンバの同一性比較（``kind is BoundaryKind.X``）が跨げない。名前で詰め替える。
+    """
+    fi = inp.to_flow_input()
+    patches = tuple(
+        xkep_bf.BoundaryPatch(
+            kind=xkep_bf.BoundaryKind[p.kind.name],
+            mask=p.mask,
+            velocity=p.velocity,
+            mass_flow=p.mass_flow,
+            pressure=p.pressure,
+            conductance=p.conductance,
+            weight=p.weight,
+            name=p.name,
+        )
+        for p in fi.boundaries
+    )
+    return xkep_bf.BrinkmanFlowInput(
+        nx=fi.nx,
+        ny=fi.ny,
+        thickness=fi.thickness,
+        geometry=xkep_bf.BrinkmanGeometry(lx=fi.geometry.lx, ly=fi.geometry.ly),
+        rho=fi.rho,
+        mu=fi.mu,
+        mu_brinkman=fi.mu_brinkman,
+        brinkman_factor=fi.brinkman_factor,
+        u_inlet=fi.u_inlet,
+        boundaries=patches,
+        settings=BrinkmanSolverSettings(),
+    )
 
 
 class TestNSBAPI:
@@ -67,9 +105,7 @@ class TestNSBConvergence:
         )
         res = solve_steady(inp, log=None)
         assert res.converged, res.failure_reason
-        ref = BrinkmanFlowFVMProcess().execute(
-            replace(inp.to_flow_input(), settings=BrinkmanSolverSettings())
-        )
+        ref = BrinkmanFlowFVMProcess().execute(to_xkep_flow_input(inp))
         assert ref.converged
         scale = np.abs(ref.u).max()
         assert np.abs(res.u - ref.u).max() < 1e-4 * scale

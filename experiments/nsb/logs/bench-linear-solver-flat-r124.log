@@ -1,0 +1,12 @@
+
+== refine=1 n3=10368 nnz=159552 (15.4/row)
+  splu[COLAMD        ] factor=  0.178s solve=   3.8ms fill=3,047,505 res=1.1e-13
+  pypardiso (4 cores)  factor=  0.141s solve=   2.9ms res=1.9e-14
+
+== refine=2 n3=41472 nnz=643968 (15.5/row)
+  splu[COLAMD        ] factor=  1.544s solve=  25.7ms fill=18,568,965 res=2.7e-13
+  pypardiso (4 cores)  factor=  0.307s solve=  16.1ms res=4.0e-14
+
+== refine=4 n3=165888 nnz=2587392 (15.6/row)
+  splu[COLAMD        ] factor= 17.112s solve= 144.6ms fill=104,495,003 res=6.2e-13
+  pypardiso (4 cores)  factor=  4.608s solve= 155.1ms res=8.2e-14

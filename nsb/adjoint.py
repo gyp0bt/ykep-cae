@@ -8,7 +8,7 @@
     f, g = prob.gradient(theta, x, objective)  # スカラー目的関数の値と dθ
 
 ヤコビアン J = ∂R/∂x は選択スキーム（2 次風上 + リミター）の残差そのものから
-彩色有限差分（構造格子、ステンシル半径 radius）で厳密に組む。1 次風上の解析ヤコビアン J1 は
+彩色有限差分（構造格子、ステンシル半径 radius）で厳密に組み、転置系は PARDISO で解く。1 次風上の解析ヤコビアン J1 は
 RC 係数を凍結しているので感度には使わない。∂R/∂θ は θ が少数なので中心差分で求める。
 """
 
@@ -19,11 +19,11 @@ from dataclasses import dataclass
 
 import numpy as np
 from scipy import sparse
-from scipy.sparse import linalg as spla
 
+from nsb.assembly import BrinkmanDiscretization
 from nsb.core import NSBInput, NSBResult
+from nsb.linalg import pardiso_solve
 from nsb.solver import solve_steady
-from xkep_cae_fluid.brinkman_flow.assembly import BrinkmanDiscretization
 
 BuildFn = Callable[[np.ndarray], NSBInput]
 
@@ -164,7 +164,7 @@ class ImplicitSolve:
     def adjoint(self, theta: np.ndarray, x: np.ndarray, x_bar: np.ndarray) -> np.ndarray:
         """Jᵀ λ = x_bar を解く."""
         J = self.jacobian(theta, x)
-        return spla.splu(J.T.tocsc()).solve(np.asarray(x_bar, dtype=float))
+        return pardiso_solve(J.T.tocsr(), np.asarray(x_bar, dtype=float))
 
     def vjp(self, theta: np.ndarray, x: np.ndarray, x_bar: np.ndarray) -> np.ndarray:
         """x(θ) の VJP: θ_bar = -(∂R/∂θ)ᵀ λ, Jᵀ λ = x_bar."""

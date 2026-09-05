@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from xkep_cae_fluid.brinkman_flow.data import (
+from nsb.data import (
     BoundaryKind,
     BoundaryPatch,
     BrinkmanFlowInput,
@@ -113,7 +113,19 @@ class NSBSettings:
     venkat_k : float
         Venkatakrishnan 定数 K
     linear_solver : str
-        "jfnk"（有限差分 J v を GMRES、LU(J1) 前処理）/ "lu"（J1 δ = -R を LU 直接）
+        "jfnk"（有限差分 J v を GMRES、LU(J1) 前処理）/ "lu"（J1 δ = -R を LU 直接）。
+        LU は常に PARDISO（pypardiso、`nsb.linalg.PardisoLU`）
+    precond_lag : int
+        前処理 LU(J1) の遅延更新: 1 回の分解を最大この回数の Newton 反復で使い回す。
+        1 で毎反復分解（従来動作）。GMRES が収束しなかったら即再分解して解き直す。
+        "lu" では無視（毎反復分解）
+    precond_refresh_gmres : int
+        直前の GMRES 反復数がこれを超えたら次の Newton 反復で前処理を再分解する
+        （前処理が古くなった兆候）
+    precond_cfl_ratio : float
+        分解時の CFL から現在の CFL がこの倍率以上変わったら再分解する。擬似時間対角 ρV/Δτ が
+        CFL に反比例するので、SER で CFL が伸びる局面では前処理の対角が過大になり GMRES が
+        遅くなる（status-32: 倍率無制限だと GMRES 反復 +70%）。0 以下で無効
     cfl_init, cfl_max, ser_growth : float
         擬似時間 CFL の初期値・上限・SER 成長率上限
     local_dtau : bool
@@ -165,6 +177,9 @@ class NSBSettings:
     gmres_tol: float = 1.0e-3
     gmres_restart: int = 40
     gmres_maxiter: int = 5
+    precond_lag: int = 4
+    precond_refresh_gmres: int = 30
+    precond_cfl_ratio: float = 4.0
     divergence_ratio: float = 1.0e6
     init_field: str = "zero"
     reject_growth: float = 0.0
@@ -265,6 +280,10 @@ class NSBResult:
         計算時間 [s]
     n_rejected : int
         棄却した更新の回数（線形解の追加コスト）
+    n_factorizations : int
+        前処理 LU（PARDISO）の分解回数（Stokes 初期場の 1 回を含む）
+    n_gmres_total : int
+        GMRES 内部反復の総数（JFNK の残差評価回数の目安）
     """
 
     u: np.ndarray
@@ -280,6 +299,8 @@ class NSBResult:
     mass_out: float
     elapsed: float
     n_rejected: int = 0
+    n_factorizations: int = 0
+    n_gmres_total: int = 0
 
     @property
     def rel_residual(self) -> float:

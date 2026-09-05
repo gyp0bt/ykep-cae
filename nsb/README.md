@@ -1,20 +1,55 @@
 # nsb: 手元構成ミラーの Brinkman-NS 実験パッケージ
 
-[<- README](../README.md) | [数理ノート（総和規約）](theory.md) | [設計文書（共有離散化）](../docs/design/brinkman-flow-fvm.md) | [status-30](../docs/status/status-30.md)
+[<- README](../README.md) | [数理ノート（総和規約）](theory.md) | [設計文書（共有離散化）](../docs/design/brinkman-flow-fvm.md) | [status-30](../docs/status/status-30.md) | [status-32（切り離し・高速化見積）](../docs/status/status-32.md)
 
 手元の 2D FVM Brinkman 補正 Navier-Stokes コードと**同じファイル構成・同じ制御則**で比較するための薄いレイヤ。
-離散化（残差、1 次風上ヤコビアン、Rhie–Chow、境界条件）は
-`xkep_cae_fluid.brinkman_flow.assembly.BrinkmanDiscretization` を共有し、
-Newton + 擬似時間の制御則だけを `solver.solve_steady` に関数として書き下している。
+離散化（残差、1 次風上ヤコビアン、Rhie–Chow、境界条件）は `nsb/assembly.py` の `BrinkmanDiscretization`、
+境界条件・入力型は `nsb/data.py` に持ち、Newton + 擬似時間の制御則だけを `solver.solve_steady` に関数として書き下している。
+
+## 単体で持ち出せる（xkep_cae_fluid 非依存、コピー方式）
+
+`nsb/` ディレクトリは **numpy / scipy / pypardiso だけ**で動き、`xkep_cae_fluid` を import しない（status-32）。
+`nsb/{data,assembly}.py` は `xkep_cae_fluid/brinkman_flow/{data,assembly}.py` の**コピー**で、差分は import 行
+（`from xkep_cae_fluid.brinkman_flow.` → `from nsb.`）のみ。xkep 側にも同じものを残す。
+
+```bash
+cp -r nsb /path/to/elsewhere/        # そのまま持ち出せる（pip install numpy scipy pypardiso）
+python scripts/sync_nsb_from_xkep.py            # xkep 側の変更を nsb へコピー同期
+python scripts/sync_nsb_from_xkep.py --reverse  # nsb 側で直した場合は逆向き
+python scripts/sync_nsb_from_xkep.py --check    # 乖離チェック（tests/test_nsb_standalone.py でも検査）
+```
+
+注意: `nsb.data.BoundaryKind` と `xkep_cae_fluid.brinkman_flow.BoundaryKind` は別クラスなので、
+nsb の入力を Process ソルバー（`BrinkmanFlowFVMProcess`）へ渡すときは名前で詰め替える
+（`tests/test_nsb.py::to_xkep_flow_input`）。
+
+## 線形ソルバー: PARDISO 必須 + 前処理 LU の遅延更新（status-32）
+
+疎 LU は **pypardiso（Intel MKL PARDISO）前提**で、scipy `splu` へのフォールバックは無い
+（`nsb/linalg.py::PardisoLU`。`pip install pypardiso`、libmkl_rt が見つからなければ `PYPARDISO_MKL_RT=/path/to/libmkl_rt.so`）。
+実測（flat、4 コア、`experiments/nsb/logs/bench-linear-solver-flat-r124.log`）では分解が splu の 4〜5 倍速い。
+
+- **スレッド分割**: 分解は全スレッド、三角解（GMRES 前処理）は 1 スレッド（`PardisoLU(factor_threads, solve_threads)`）。
+  三角解は数十回/反復呼ばれる小さな処理で、スレッド同期の方が高い（4 スレッド 15 ms vs 1 スレッド 5.7 ms、72×48）
+- **`KMP_BLOCKTIME=0`** を import 時に既定設定する。MKL スレッドの spin 待ち（既定 200 ms）が GMRES 内の numpy 処理と
+  CPU を奪い合い、三角解が 57 ms まで劣化した（実測）
+- **遅延更新** `NSBSettings.precond_lag`（既定 4）: 1 回の LU を最大 4 Newton 反復で使い回す。再分解の条件は
+  age ≥ lag / 直前 GMRES 反復数 > `precond_refresh_gmres`（30）/ 分解時から CFL が `precond_cfl_ratio`（2）倍以上変化 /
+  棄却後。GMRES が収束しなければ即再分解して解き直す。結果は `NSBResult.n_factorizations`、`n_gmres_total` に記録
+- 効果は格子・コア数依存（status-32 の表）。SER で CFL が毎反復 2 倍伸びる局面では擬似時間対角が前処理と食い違い
+  GMRES 反復が増えるので、`precond_cfl_ratio` で抑えている。`precond_lag=1` で従来の毎反復分解に戻る
 
 | ファイル | 役割 |
 |---|---|
+| `linalg.py` | `PardisoLU`（分解と三角解を分離、スレッド分割、MKL パス探索）、`pardiso_solve` |
+| `data.py` | （コピー）`BoundaryKind` / `BoundaryPatch` / `BrinkmanFlowInput`、マスク補助 `west_span` 等、`disk_mask` / `smooth_disk` |
+| `assembly.py` | （コピー）`BrinkmanDiscretization`: 残差、1 次風上ヤコビアン、Rhie–Chow、境界条件、領域内マニホールド |
 | `core.py` | 型宣言: `BC`（座標マスクの境界パッチ列。`BC.velocity_inlet / mass_flow_inlet / pressure_outlet`）, `NSBSettings`, `NSBInput`, `NSBResult` |
-| `solver.py` | メイン: `solve_steady`, `compute_dtau`, `solve_linear` |
+| `solver.py` | メイン: `solve_steady`, `compute_dtau`, `solve_linear`, `LaggedPreconditioner`（前処理 LU の遅延更新） |
 | `utils.py` | ポスト処理、面値⇄セル値変換、要約、npz 保存 |
 | `geo.py` | uturn / flat の厚さ場（inlet/outlet 位置に追従）、BC プリセット（速度 or 質量流量）、`run_uturn`, `run_flat`, `make_case` |
 | `../main.py` | パラメータスタディ（構成 × モデル × 細分化 × 流速） |
-| `adjoint.py` | 設計感度: 彩色 FD ヤコビアン `colored_fd_jacobian`、陰関数定理の VJP `ImplicitSolve`（forward / jacobian / vjp / gradient）、`Objective` |
+| `adjoint.py` | 設計感度: 彩色 FD ヤコビアン `colored_fd_jacobian`、陰関数定理の VJP `ImplicitSolve`（forward / jacobian / vjp / gradient、転置系は PARDISO）、`Objective` |
 | `theory.md` | 数理ノート: 支配方程式〜離散化〜Newton/擬似時間〜発散機構〜随伴感度を総和規約で記述 |
 
 ## `NSBSettings` の「踏んではいけない線」スイッチ
@@ -35,7 +70,7 @@ Newton + 擬似時間の制御則だけを `solver.solve_steady` に関数とし
 
 ```python
 from nsb import BC, NSBSettings, make_case, solve_steady
-from xkep_cae_fluid.brinkman_flow import north_span, west_span
+from nsb import north_span, west_span
 
 # 流量 0.1 kg/s を固定し、inlet を上壁 x∈(0.3, 0.4) に置く（outlet は左壁下部）
 bc = BC(patches=(
@@ -51,7 +86,7 @@ inp = make_case("uturn", 1, mass_flow=0.1, inlet_y=(0.20, 0.35))
 
 ```python
 # 領域内マニホールド（紙面垂直方向のヘッダ）: マスクはセル中心で評価
-from xkep_cae_fluid.brinkman_flow import disk_mask
+from nsb import disk_mask
 bc = BC(patches=(
     BC.interior_source(disk_mask(0.15, 0.2, 0.05), 0.1),                 # 注入 0.1 kg/s
     BC.interior_pressure_sink(disk_mask(0.55, 0.2, 0.05), 1e-4, p=0.0),  # 吸出 q = C (p - 0)
@@ -61,7 +96,7 @@ bc = BC(patches=(
 ```python
 # 位置・径を連続設計変数に: 滑らかな窓 smooth_disk(cx, cy, r, eps) を weight に渡し、随伴で dθ を得る
 from nsb import ImplicitSolve, source_mean_pressure_objective
-from xkep_cae_fluid.brinkman_flow import smooth_disk
+from nsb import smooth_disk
 
 def build(theta):                       # θ = (cx, cy, r) -> NSBInput
     cx, cy, r = theta

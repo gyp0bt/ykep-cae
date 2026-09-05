@@ -53,7 +53,7 @@ def mass_balance(res: NSBResult) -> float:
 
 def inlet_cells(inp: NSBInput) -> np.ndarray:
     """inlet 面に接するセルの bool マスク (nx, ny)."""
-    from xkep_cae_fluid.brinkman_flow.assembly import BrinkmanDiscretization
+    from nsb.assembly import BrinkmanDiscretization
 
     sides = BrinkmanDiscretization(inp.to_flow_input()).sides
     m = np.zeros((inp.nx, inp.ny), dtype=bool)
@@ -71,7 +71,7 @@ def inlet_mean_pressure(inp: NSBInput, res: NSBResult) -> float:
 
 def inlet_velocity(inp: NSBInput) -> float:
     """inlet の最大流入速度 [m/s]（質量流入境界は換算後）."""
-    from xkep_cae_fluid.brinkman_flow.assembly import BrinkmanDiscretization
+    from nsb.assembly import BrinkmanDiscretization
 
     return BrinkmanDiscretization(inp.to_flow_input()).u_scale
 
