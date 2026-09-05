@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import replace
 from typing import ClassVar
 
 import numpy as np
@@ -692,50 +693,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
         if new_alpha_u == inp.alpha_u and new_alpha_p == inp.alpha_p:
             return inp
 
-        return NaturalConvectionInput(
-            Lx=inp.Lx,
-            Ly=inp.Ly,
-            Lz=inp.Lz,
-            nx=inp.nx,
-            ny=inp.ny,
-            nz=inp.nz,
-            rho=inp.rho,
-            mu=inp.mu,
-            Cp=inp.Cp,
-            k_fluid=inp.k_fluid,
-            beta=inp.beta,
-            T_ref=inp.T_ref,
-            gravity=inp.gravity,
-            solid_mask=inp.solid_mask,
-            k_solid=inp.k_solid,
-            q_vol=inp.q_vol,
-            T0=inp.T0,
-            bc_xm=inp.bc_xm,
-            bc_xp=inp.bc_xp,
-            bc_ym=inp.bc_ym,
-            bc_yp=inp.bc_yp,
-            bc_zm=inp.bc_zm,
-            bc_zp=inp.bc_zp,
-            dt=inp.dt,
-            t_end=inp.t_end,
-            max_simple_iter=inp.max_simple_iter,
-            max_inner_iter=inp.max_inner_iter,
-            tol_simple=inp.tol_simple,
-            tol_inner=inp.tol_inner,
-            alpha_u=new_alpha_u,
-            alpha_p=new_alpha_p,
-            alpha_T=inp.alpha_T,
-            output_interval=inp.output_interval,
-            coupling_method=inp.coupling_method,
-            n_piso_correctors=inp.n_piso_correctors,
-            convection_scheme=inp.convection_scheme,
-            time_scheme=inp.time_scheme,
-            pressure_solver=inp.pressure_solver,
-            adaptive_relaxation=inp.adaptive_relaxation,
-            max_pressure_iter=inp.max_pressure_iter,
-            extra_scalars=inp.extra_scalars,
-            internal_face_bcs=inp.internal_face_bcs,
-        )
+        return replace(inp, alpha_u=new_alpha_u, alpha_p=new_alpha_p)
 
     def _solve_steady(
         self,
@@ -876,58 +834,10 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             dt_actual = min(dt_actual, inp.t_end - t_current)
             t_current += dt_actual
 
-            # dt_actual を使う一時的な入力を生成
-            if dt_actual != inp.dt:
-                # frozen dataclass なので object.__setattr__ で一時変更
-                inp_step = inp
-                # NaturalConvectionInput は frozen なので直接変更できない
-                # _simple_iteration 内で inp.dt を参照するため、
-                # 一時的に dt を差し替えた入力を使う
-                inp_step = NaturalConvectionInput(
-                    Lx=inp.Lx,
-                    Ly=inp.Ly,
-                    Lz=inp.Lz,
-                    nx=inp.nx,
-                    ny=inp.ny,
-                    nz=inp.nz,
-                    rho=inp.rho,
-                    mu=inp.mu,
-                    Cp=inp.Cp,
-                    k_fluid=inp.k_fluid,
-                    beta=inp.beta,
-                    T_ref=inp.T_ref,
-                    gravity=inp.gravity,
-                    solid_mask=inp.solid_mask,
-                    k_solid=inp.k_solid,
-                    q_vol=inp.q_vol,
-                    T0=inp.T0,
-                    bc_xm=inp.bc_xm,
-                    bc_xp=inp.bc_xp,
-                    bc_ym=inp.bc_ym,
-                    bc_yp=inp.bc_yp,
-                    bc_zm=inp.bc_zm,
-                    bc_zp=inp.bc_zp,
-                    dt=dt_actual,
-                    t_end=inp.t_end,
-                    max_simple_iter=inp.max_simple_iter,
-                    max_inner_iter=inp.max_inner_iter,
-                    tol_simple=inp.tol_simple,
-                    tol_inner=inp.tol_inner,
-                    alpha_u=inp.alpha_u,
-                    alpha_p=inp.alpha_p,
-                    alpha_T=inp.alpha_T,
-                    output_interval=inp.output_interval,
-                    coupling_method=inp.coupling_method,
-                    n_piso_correctors=inp.n_piso_correctors,
-                    convection_scheme=inp.convection_scheme,
-                    time_scheme=inp.time_scheme,
-                    pressure_solver=inp.pressure_solver,
-                    adaptive_relaxation=inp.adaptive_relaxation,
-                    max_pressure_iter=inp.max_pressure_iter,
-                    extra_scalars=inp.extra_scalars,
-                )
-            else:
-                inp_step = inp
+            # dt_actual を使う一時的な入力を生成（frozen dataclass なので replace で複製。
+            # 全フィールドを手書きで写すと internal_face_bcs のような後付けフィールドが
+            # 抜け落ちるので、必ず dataclasses.replace を使う）
+            inp_step = replace(inp, dt=dt_actual) if dt_actual != inp.dt else inp
 
             # 前々ステップ → 前ステップ → 現在の順に保存
             u_old_old_step = u_old_old
