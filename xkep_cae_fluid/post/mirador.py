@@ -402,7 +402,8 @@ def _embedded_data(html: str) -> dict[str, Any]:
 
 def export_mirador(inp: MiradorExportInput) -> MiradorExportResult:
     """:class:`MiradorExportProcess` の本体（messi の Mesher を組んで ``export_html``）."""
-    messi = _import_messi()
+    # 入力検証と六面体メッシュ構築は messi 非依存なので先に済ませる（messi 未導入でも
+    # 形状不一致などは ValueError で返す。MiradorUnavailableError は HTML を書く段階だけ）。
     x, y, z = _normalize_lines(inp.x_lines, inp.y_lines, inp.z_lines)
     dims = (len(x) - 1, len(y) - 1, len(z) - 1)
     fields = {str(k): _normalize_field(str(k), v, dims) for k, v in inp.fields.items()}
@@ -418,6 +419,7 @@ def export_mirador(inp: MiradorExportInput) -> MiradorExportResult:
     if hexmesh.elements.shape[0] == 0:
         raise ValueError("描画するセルがありません（mask で全て除外されています）")
 
+    messi = _import_messi()
     mesh = messi.Mesher.load(verbose=False)
     mesh.add_nodes(name="global", arr=hexmesh.nodes)
     for name, labels in hexmesh.elsets.items():

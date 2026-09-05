@@ -69,6 +69,11 @@ ykep の構造格子の計算結果（速度 U・圧力 P・温度 T・追加ス
    と `ykep view --collapse-panel` で渡す（True のときだけキーワードを渡すので、引数を知らない古い messi でも動く）。
    headless Chromium で「畳んで開く → `h` で展開 → ボタンで畳む」を確認（`shot-panel-collapsed.png` / `shot-panel-open.png`）。
    テスト: `test_post_mirador.py` +1、`test_inp_runner.py` の引数解釈テストを拡張、messi `test_viz.py` +1。
+5. **CI 対応**: GitHub Actions の `test` ジョブ（messi 未導入）で `test_input_validation` が `MiradorUnavailableError` になっていた
+   （入力検証の前に messi を import していた）。`export_mirador` で格子・場の検証と六面体構築を messi import より前に移し、
+   messi が無くても形状不一致などは `ValueError` で返るようにした（`sys.modules["messi"] = None` で再現 → 修正後 18 passed / 8 skipped）。
+   同ジョブの残り 9 件（`TestAMGSolverPhysics` / `TestNumbaSolverPhysics` の ImportError）は master でも同じく失敗している既存事象
+   （pyamg / numba は `test-optional-deps` ジョブでのみ導入。そちらは success）。本 PR では触らず、下の TODO に残す。
 
 ## 調査で分かったこと
 
@@ -105,6 +110,8 @@ python -m pytest tests/ -q -m "not slow and not external" --continue-on-collecti
 - [ ] 非構造格子（polyMesh 読込結果）を `MeshData.connectivity` から同じ経路で載せる
 - [ ] 水槽 CAE（Phase 6）で `AquariumGeometryProcess` のマスクと連携した実例（水・ガラス・底床を elset 分け）
 - [ ] 矢印の本数が多いとき（10^5 級）の間引きオプション（messi。`vector_stride=` で i/j/k 方向に飛ばす）
+- [ ] CI: `test` ジョブ（pyamg / numba 無し）で `TestAMGSolverPhysics` / `TestNumbaSolverPhysics` が ImportError で落ち master が赤。
+  `pytest.importorskip` で skip にするか、`-m` で `test-optional-deps` ジョブ側へ寄せる（status-32 以降ずっと赤）
 - [ ] status-33 の残 TODO（`*DARCY` 実行、`HEAT TRANSFER=NONE`、SYMMETRY/SLIP の発散切り分け）は据え置き
 
 ## ファイル
