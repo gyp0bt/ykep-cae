@@ -169,6 +169,31 @@ class TestMiradorExportAPI:
         assert _embedded(out)["panelCollapsed"] is True
 
     @needs_messi
+    def test_cut_plane_is_passed_to_messi(self, tmp_path: Path):
+        x, y, z = _lines(4, 4, 4)
+        T = np.zeros((4, 4, 4))
+        out = tmp_path / "cut.html"
+        res = MiradorExportProcess().execute(
+            MiradorExportInput(x, y, z, {"T": T}, str(out), cut_plane=((0.0, 0.0, 2.0), 0.5))
+        )
+        d = _embedded(out)
+        assert d["cut"] == {"normal": [0.0, 0.0, 1.0], "d": 0.5}
+        assert res.n_section_cells == 64 and d["nCells"] == 64  # 全セルが切り口用に載る
+        assert res.slice_names  # 自動スラブは残るが…
+        assert d["hiddenGroups"] == []  # …外皮は隠さない（切った立体として見せる）
+        assert d["cells"]["offset"][-1] == 64 * 8
+
+    def test_cut_plane_zero_normal_rejected(self, tmp_path: Path):
+        x, y, z = _lines(2, 2, 2)
+        T = np.zeros((2, 2, 2))
+        with pytest.raises(ValueError, match="cut_plane"):
+            MiradorExportProcess().execute(
+                MiradorExportInput(
+                    x, y, z, {"T": T}, str(tmp_path / "z.html"), cut_plane=((0.0, 0.0, 0.0), 0.5)
+                )
+            )
+
+    @needs_messi
     def test_slices_hide_domain_and_add_interface_faces(self, tmp_path: Path):
         x, y, z = _lines(4, 4, 4)
         T = np.zeros((4, 4, 4))

@@ -63,6 +63,7 @@ ykep の `FORMAT=VTK` 出力は `messi mirador -i <job>.vtk` でもそのまま�
 | hide_domain | bool | 断面があるとき外皮を初期非表示 |
 | domain_name | str | 外皮 elset 名（既定 `domain`） |
 | panel_collapsed | bool | 操作パネルを畳んだ状態で開く（`ykep view --collapse-panel`） |
+| cut_plane | tuple[tuple[float,float,float], float] \| None | 開いた時点で有効にする任意平面の断面（view cut）`((nx,ny,nz), d)`。`n·x ≤ d` 側を残し切り口をセル値で着色。指定時は外皮を隠さない（`ykep view --cut=z=0.5` / `--cut=1,1,0,0.3`。`--cut` 時は中央スラブの自動挿入なし） |
 
 ## 出力
 
@@ -128,6 +129,10 @@ ykep -j=examples/inp/cavity-nc-1.inp view -o=examples/inp/results --slice=x=0.05
 - 「矢印 U」チェックとスライダー（×0.1〜×10）で速度矢印
 - `probe` で要素をクリックすると品質と全ての場の値を表示
 - 操作パネルはタイトル行の「▾/▸」ボタンか `h` キーで畳める（`panel_collapsed=True` で最初から畳む）
+- 「断面（view cut）」チェック / `c` キーで任意平面の断面。法線は X/Y/Z か任意（3 成分入力）、位置はスライダー
+  （法線方向の範囲を 0〜1）、「反転」で残す側を入れ替え。切り口は平面が横切る各セルの交差多角形をセル値で着色
+  （messi v0.10.0 の `section=True` で全セルのコーナー結線を埋め込む。probe は切り口のセルも選択できる）。
+  `cut_plane=` / `ykep view --cut=` で最初から有効にして開く
 
 ## テスト
 
@@ -135,12 +140,14 @@ ykep -j=examples/inp/cavity-nc-1.inp view -o=examples/inp/results --slice=x=0.05
 
 - `TestMiradorExportAPI`: 六面体メッシュ構築（ラベル順・接続・mask・断面 elset）、断面解決、
   HTML 出力と埋め込み JSON の整合（三角形数 = 外皮 + 界面、場の値がセル値と一致、矢印数）、
-  2D 入力の押し出し、NPZ 読み戻し、例外（形状不一致・範囲外断面・未知のベクトル場）
+  2D 入力の押し出し、NPZ 読み戻し、例外（形状不一致・範囲外断面・未知のベクトル場・零法線の `cut_plane`）、
+  `cut_plane` の埋め込み（法線の正規化、全セルの結線、外皮を隠さない）
 - `TestInpOutputWriterAPI`（既存）: `FORMAT=HTML` で `<job>.html` が出ること
 
 ## 既知の制約 / TODO
 
 - three.js は CDN（unpkg）から読むためオフラインでは表示できない（messi 側の仕様）
-- 断面は軸に垂直な 1 セル厚のみ（任意平面の切断は未対応）
+- 断面スラブ（elset）は軸に垂直な 1 セル厚のみ。任意平面は view cut（`cut_plane` / `--cut`）で対応したが、
+  スラブと違い断面の場は elset として残らないので、複数断面を同時に見るときはスラブを使う
 - 非構造格子（polyMesh 読込結果）は未対応。`MeshData` の connectivity から Mesher を組めば同じ経路で載る
 - 時系列（`T_history`）はスナップショット 1 枚のみ。フレーム切替は messi 側の拡張が必要

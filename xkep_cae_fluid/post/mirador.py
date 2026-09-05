@@ -98,6 +98,11 @@ class MiradorExportInput:
         外皮 elset の名前
     panel_collapsed : bool
         ビューアの操作パネル（左上）を畳んだ状態で開く（「▾/▸」ボタンか ``h`` キーで開閉）
+    cut_plane : tuple[tuple[float, float, float], float] | None
+        開いた時点で有効にする**任意平面の断面**（messi の view cut）``((nx, ny, nz), d)``。
+        平面 ``n·x = d`` で ``n·x ≤ d`` 側を残し、切り口をセル値で着色する（ビューアの
+        「断面」チェック / ``c`` キーで on/off、法線・位置・反転はパネルで変更可）。
+        指定時は外皮を隠さない（``hide_domain`` は無視。切った立体として見せる）
     verbose : bool
         messi の概要表示
     """
@@ -117,6 +122,7 @@ class MiradorExportInput:
     hide_domain: bool = True
     domain_name: str = "domain"
     panel_collapsed: bool = False
+    cut_plane: tuple[tuple[float, float, float], float] | None = None
     verbose: bool = False
 
 
@@ -132,6 +138,7 @@ class MiradorExportResult:
     slice_names: tuple[str, ...]
     n_vectors: int
     init_mode: str
+    n_section_cells: int = 0  # 断面（view cut）用に埋め込んだセル数（古い messi では 0）
 
 
 @dataclass(frozen=True)
@@ -449,13 +456,24 @@ def export_mirador(inp: MiradorExportInput) -> MiradorExportResult:
             f"vector_field {vector_field!r} はベクトル場ではありません: {vector_names}"
         )
     init_mode = inp.init_mode or _pick_init_mode(scalar_names, vector_names)
-    hidden = (inp.domain_name,) if (inp.hide_domain and slices) else ()
+    # 任意平面の断面（view cut）を使うときは外皮を隠さない（切った立体として見せる）。
+    hidden = (inp.domain_name,) if (inp.hide_domain and slices and inp.cut_plane is None) else ()
 
     out = Path(inp.output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    # panel_collapsed は messi 0.10 で追加された引数。既定（False）のときは渡さず、
-    # 引数を知らない古い messi でも動くようにしておく。
-    extra: dict[str, bool] = {"panel_collapsed": True} if inp.panel_collapsed else {}
+    # panel_collapsed / cut_plane は messi 0.10 で追加された引数。既定（False / None）の
+    # ときは渡さず、引数を知らない古い messi でも動くようにしておく。
+    extra: dict[str, Any] = {}
+    if inp.panel_collapsed:
+        extra["panel_collapsed"] = True
+    if inp.cut_plane is not None:
+        normal, d = inp.cut_plane
+        n = tuple(float(v) for v in normal)
+        if len(n) != 3 or not all(np.isfinite(n)) or not any(n):
+            raise ValueError(f"cut_plane の法線が不正です（零ベクトル / 非数）: {normal!r}")
+        if not np.isfinite(float(d)):
+            raise ValueError(f"cut_plane の位置 d が非数です: {d!r}")
+        extra["cut_plane"] = (n, float(d))
     mesh.export_html(
         str(out),
         title=inp.title,
@@ -476,6 +494,7 @@ def export_mirador(inp: MiradorExportInput) -> MiradorExportResult:
         slice_names=tuple(name for name, _ai, _idx in slices),
         n_vectors=int(data.get("vectors", {}).get("n", 0)),
         init_mode=str(data.get("initMode", "")),
+        n_section_cells=int(data.get("nCells", 0)),
     )
 
 

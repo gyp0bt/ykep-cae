@@ -298,10 +298,18 @@ class TestYkepCli:
                 "z=1i",
                 "--no-vectors",
                 "--collapse-panel",
+                "--cut=z=0.5",
             ]
         )
         assert args.view and args.no_vectors and not args.no_slices
         assert args.collapse_panel
+        assert args.cut == ((0.0, 0.0, 1.0), 0.5)
+        assert parse_args([f"-j={inp}", "view"]).cut is None
+        assert parse_args([f"-j={inp}", "view", "--cut", "-x=0.1"]).cut == ((-1.0, 0.0, 0.0), -0.1)
+        assert parse_args([f"-j={inp}", "view", "--cut=1, 1, 0, 0.3"]).cut == ((1.0, 1.0, 0.0), 0.3)
+        for bad in ("w=1", "z=abc", "1,2,3", "0,0,0,1"):
+            with pytest.raises(SystemExit):
+                parse_args([f"-j={inp}", "view", f"--cut={bad}"])
         assert [(s.axis, s.position, s.index) for s in args.slices] == [
             ("x", 0.05, None),
             ("z", None, 1),
@@ -325,6 +333,12 @@ class TestYkepCli:
         assert "VIEW:" in out and (tmp_path / "tiny.html").exists()
         html = (tmp_path / "tiny.html").read_text(encoding="utf-8")
         assert '"groupNames": ["domain", "x=' in html  # --no-slices でも明示 --slice は有効
+        # --cut: 任意平面の断面を有効にして開く（自動スラブ無し、外皮は隠さない）
+        assert main([f"-j={inp}", "view", "--cut=y=0.5"]) == 0
+        capsys.readouterr()
+        html = (tmp_path / "tiny.html").read_text(encoding="utf-8")
+        assert '"cut": {"normal": [0.0, 1.0, 0.0], "d": 0.5}' in html
+        assert '"groupNames": ["domain"]' in html and '"hiddenGroups": []' in html
 
 
 class TestInpPhysics:

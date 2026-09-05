@@ -4,7 +4,7 @@
 
 **日付**: 2026-09-05
 **ブランチ**: `claude/ykep-3d-rendering-mirador-bhyquf`（ykep-cae / messi の両リポジトリで同名）
-**テスト数**: 613 = 612 + 1（本環境の `pytest --collect-only` は 597 件 + `tests/test_nsb*.py` 3 ファイルが pypardiso 未導入で収集不可。`tests/test_post_mirador.py` +11、`tests/test_inp_runner.py` +3、`tests/test_inp_parser.py` +1。本セッション環境で `pytest tests/ -m "not slow and not external"` の結果は本文末尾）
+**テスト数**: 615 = 613 + 2（追記 6。本環境の `pytest --collect-only` は 599 件 + `tests/test_nsb*.py` 3 ファイルが pypardiso 未導入で収集不可。`tests/test_post_mirador.py` +11、`tests/test_inp_runner.py` +3、`tests/test_inp_parser.py` +1。本セッション環境で `pytest tests/ -m "not slow and not external"` の結果は本文末尾）
 **契約違反**: 0 件（登録プロセス 27。+1: MiradorExport）
 
 ## 目的
@@ -74,6 +74,18 @@ ykep の構造格子の計算結果（速度 U・圧力 P・温度 T・追加ス
    messi が無くても形状不一致などは `ValueError` で返るようにした（`sys.modules["messi"] = None` で再現 → 修正後 18 passed / 8 skipped）。
    同ジョブの残り 9 件（`TestAMGSolverPhysics` / `TestNumbaSolverPhysics` の ImportError）は master でも同じく失敗している既存事象
    （pyamg / numba は `test-optional-deps` ジョブでのみ導入。そちらは success）。本 PR では触らず、下の TODO に残す。
+6. **任意平面の断面（view cut）**: messi mirador に Abaqus の view cut 相当を追加した（同名ブランチ、v0.10.0 に含める）。
+   `export_html(section=True)`（既定）でソリッド要素のコーナー結線を全セル分埋め込み、ビューアの「断面」チェック /
+   `c` キーで任意平面 `n·x = d` のクリップ（three.js の `clippingPlanes`、外皮・ワイヤ・矢印・反則/整合漏れ・選択に適用）と、
+   平面が横切る各セルの交差多角形（辺との交点を面内で角度順に並べて扇状三角形化）をセル値で着色した切り口を描く。
+   法線は X/Y/Z か任意（3 成分）、位置はスライダー、「反転」で残す側を入れ替え。probe は切り口のセルも選択できる。
+   凡例レンジは内部要素も含めて取る。`cut_plane=((nx,ny,nz), d)` / CLI `messi mirador --cut z=0.5` で最初から有効。
+   ykep 側は `MiradorExportInput.cut_plane` と `ykep view --cut=<axis>=<pos> | <nx>,<ny>,<nz>,<d>`（指定時は中央スラブを
+   自動挿入せず外皮も隠さない = 切った立体として見せる）。headless Chromium で 10×8×6 ブロック（T 場・2 elset）と
+   `cavity-nc-1` の NPZ で確認: z 断面（切り口 160 三角形 = 10×8 セル × 2）、反転 + elset 非表示 + x 断面（48 = 8×3×2）、
+   任意法線 (1,1,0.5)（三角形〜六角形の切り口）、`section=False`（クリップのみ）、`c` キーの on/off、切り口の probe
+   （`shot-cut-on.png` / `shot-cut-flip.png` / `shot-cut-free.png` / `shot-cavity-cut.png`）。
+   テスト: messi `test_viz.py` +6、`test_cli.py` +3、ykep `test_post_mirador.py` +2、`test_inp_runner.py` の引数解釈・view テストを拡張。
 
 ## 調査で分かったこと
 
@@ -106,7 +118,10 @@ python -m pytest tests/ -q -m "not slow and not external" --continue-on-collecti
 - [ ] `HeatTransferFDMProcess` の**過渡**でも `res_T` を返す（いまは定常のみ。陰解法の各ステップの最終残差を使う）
 - [ ] 断面スラブの色に外皮の値が混ざらないよう、`domain` を隠したときの界面三角形の owner をスラブ側に固定する
   （いまは messi の `interface_faces` が「表示側」を owner にするので問題ないが、両方表示のときの規約を設計文書に明記）
-- [ ] 任意平面の切断（軸垂直 1 セル厚以外）、時系列 `T_history` のフレーム切替（messi）
+- [x] 任意平面の切断 → 追記 6 の view cut で対応（`cut_plane` / `--cut`）
+- [ ] view cut の切り口に**節点補間**（いまはセル値のフラット着色。セル中心値を節点へ平均して切り口内を補間すると滑らかになる）
+- [ ] view cut の平面を**複数枚**（いまは 1 枚。three.js の `clippingPlanes` は複数可、切り口は平面ごとに作る）
+- [ ] 時系列 `T_history` のフレーム切替（messi）
 - [ ] 非構造格子（polyMesh 読込結果）を `MeshData.connectivity` から同じ経路で載せる
 - [ ] 水槽 CAE（Phase 6）で `AquariumGeometryProcess` のマスクと連携した実例（水・ガラス・底床を elset 分け）
 - [ ] 矢印の本数が多いとき（10^5 級）の間引きオプション（messi。`vector_stride=` で i/j/k 方向に飛ばす）

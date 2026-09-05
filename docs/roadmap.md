@@ -205,7 +205,8 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] `*OUTPUT, FIELD, FORMAT=HTML` と `ykep -j=<job> view [--slice=x=0.05]`（NPZ から後追い生成）— status-34
 - [x] 残差マップ `res_*`、`FORMAT=` 未指定時の HTML 自動出力、Abaqus レインボー、操作パネルの畳み込み — status-34 追記
 - [ ] 残差マップの対数スケール表示、`ykep view --colormap/--init-mode`、過渡伝熱の `res_T`（status-34「次にやること」）
-- [ ] 任意平面の切断（軸垂直 1 セル厚以外）と時系列（`T_history`）のフレーム切替
+- [x] 任意平面の断面（view cut）: messi mirador の「断面」（クリップ + 切り口をセル値で着色）、`cut_plane` / `ykep view --cut` — status-34 追記 6
+- [ ] view cut の節点補間・複数平面、時系列（`T_history`）のフレーム切替
 - [ ] 非構造格子（polyMesh 読込結果）を `MeshData.connectivity` から同じ経路で載せる
 - [ ] 水槽 CAE（Phase 6）の `AquariumGeometryProcess` マスクと連携した実例（水・ガラス・底床の elset 分け）
 

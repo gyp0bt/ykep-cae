@@ -5,6 +5,7 @@
     ykep -j=<job>[.inp] [int|interactive] [-o=<dir>] [-p name=value ...] [--check]
     ykep job=<job> interactive
     ykep -j=<job> view [-o=<dir>] [--slice=<axis>=<pos> ...] [--no-slices] [--no-vectors] [--collapse-panel]
+                       [--cut=<axis>=<pos> | --cut=<nx>,<ny>,<nz>,<d>]
 
 - ``-j=`` / ``job=``: 入力ファイル（拡張子省略時は .inp を補う）
 - ``int`` / ``interactive``: 反復ログを端末にも表示（無指定ならファイルのみ）
@@ -12,7 +13,9 @@
 - ``-p name=value``: ``*PARAMETER`` の初期値を与える（.inp 内の定義が優先）
 - ``--check``: 解析を実行せず読込・格子復元・マッピングのみ検証
 - ``view``: 解析を実行せず、既にある ``<out>/<job>.npz`` から messi mirador の
-  3D ビューア ``<out>/<job>.html`` を書く（``--slice=x=0.05`` で断面、複数可）
+  3D ビューア ``<out>/<job>.html`` を書く（``--slice=x=0.05`` で断面スラブ、複数可。
+  ``--cut=z=0.5`` / ``--cut=1,1,0,0.3`` で任意平面の断面（view cut）を有効にして開く。
+  ``--cut`` を付けると中央断面スラブの自動挿入は行わない。明示した ``--slice`` は残る）
 
 ログは常に ``<out>/<job>.log`` に残す（CLAUDE.md のログ出力ルール）。
 """
@@ -36,8 +39,10 @@ from xkep_cae_fluid.post.mirador import (
 USAGE = (
     "usage: ykep -j=<job>[.inp] [int] [-o=<dir>] [-p name=value ...] [--check]\n"
     "       ykep -j=<job> view [-o=<dir>] [--slice=<axis>=<pos> ...] [--no-slices] [--no-vectors]"
-    " [--collapse-panel]"
+    " [--collapse-panel] [--cut=<axis>=<pos> | --cut=<nx>,<ny>,<nz>,<d>]"
 )
+
+CutPlaneSpec = tuple[tuple[float, float, float], float]
 
 
 class CliError(SystemExit):
@@ -57,6 +62,7 @@ class CliArgs:
     no_slices: bool = False
     no_vectors: bool = False
     collapse_panel: bool = False
+    cut: CutPlaneSpec | None = None
 
 
 def _parse_slice(text: str) -> SlicePlane:
@@ -74,6 +80,47 @@ def _parse_slice(text: str) -> SlicePlane:
         raise CliError(f"--slice の値を解釈できません: {text!r}") from exc
 
 
+_CUT_AXES: dict[str, tuple[float, float, float]] = {
+    "x": (1.0, 0.0, 0.0),
+    "y": (0.0, 1.0, 0.0),
+    "z": (0.0, 0.0, 1.0),
+}
+
+
+def _parse_cut(text: str) -> CutPlaneSpec:
+    """``z=0.5`` / ``-x=0.1`` / ``nx,ny,nz,d`` を ``((nx, ny, nz), d)`` にする.
+
+    ``axis=pos`` は軸に垂直な平面（``n·x ≤ pos`` 側を残す）。``-axis=pos`` は法線を
+    反転して残す側を入れ替える。4 つの数は任意平面 ``n·x = d``。
+    """
+    t = text.strip()
+    if "=" in t:
+        axis, _, value = t.partition("=")
+        axis = axis.strip().lower()
+        sign = 1.0
+        if axis[:1] in ("+", "-"):
+            sign = -1.0 if axis[0] == "-" else 1.0
+            axis = axis[1:]
+        if axis not in _CUT_AXES or not value.strip():
+            raise CliError(f"--cut は <axis>=<座標> か <nx>,<ny>,<nz>,<d> の形式: {text!r}")
+        try:
+            d = float(value)
+        except ValueError as exc:
+            raise CliError(f"--cut の値を解釈できません: {text!r}") from exc
+        n = _CUT_AXES[axis]
+        return (sign * n[0], sign * n[1], sign * n[2]), sign * d
+    parts = [v.strip() for v in t.split(",")]
+    if len(parts) != 4:
+        raise CliError(f"--cut は <axis>=<座標> か <nx>,<ny>,<nz>,<d> の形式: {text!r}")
+    try:
+        nx, ny, nz, d = (float(v) for v in parts)
+    except ValueError as exc:
+        raise CliError(f"--cut の値を解釈できません: {text!r}") from exc
+    if nx == 0.0 and ny == 0.0 and nz == 0.0:
+        raise CliError(f"--cut の法線が零ベクトルです: {text!r}")
+    return (nx, ny, nz), d
+
+
 def parse_args(argv: list[str]) -> CliArgs | None:
     """引数を :class:`CliArgs` に変換する（``--help`` なら None）."""
     job: str | None = None
@@ -84,6 +131,7 @@ def parse_args(argv: list[str]) -> CliArgs | None:
     no_slices = False
     no_vectors = False
     collapse_panel = False
+    cut: CutPlaneSpec | None = None
     slices: list[SlicePlane] = []
     params: dict[str, ParameterValue] = {}
     i = 0
@@ -126,6 +174,11 @@ def parse_args(argv: list[str]) -> CliArgs | None:
             no_vectors = True
         elif low == "--collapse-panel":
             collapse_panel = True
+        elif low.startswith("--cut="):
+            cut = _parse_cut(arg.split("=", 1)[1])
+        elif low == "--cut" and i + 1 < len(argv):
+            i += 1
+            cut = _parse_cut(argv[i])
         elif low == "--check":
             check = True
         else:
@@ -146,6 +199,7 @@ def parse_args(argv: list[str]) -> CliArgs | None:
         no_slices=no_slices,
         no_vectors=no_vectors,
         collapse_panel=collapse_panel,
+        cut=cut,
     )
 
 
@@ -169,9 +223,11 @@ def run_view(parsed: CliArgs) -> Path:
             output_path=str(html),
             title=path.stem,
             slices=parsed.slices,
-            auto_slices=not parsed.no_slices,
+            # --cut（任意平面の断面）を使うときは中央スラブの自動挿入はしない。
+            auto_slices=not parsed.no_slices and parsed.cut is None,
             vector_field="" if parsed.no_vectors else None,
             panel_collapsed=parsed.collapse_panel,
+            cut_plane=parsed.cut,
         )
     )
     return html
