@@ -101,6 +101,7 @@ MiradorExportProcess().execute(MiradorExportInput(x, y, z, fields, "results/cavi
 
 ```bash
 # (c) .inp から: *OUTPUT, FIELD, FORMAT=VTK+HTML で <job>.html を同時出力
+#     （FORMAT= を書かなければ messi のある環境では自動で HTML も出る）
 ykep -j=examples/inp/cavity-nc-1.inp int -o=examples/inp/results
 # (d) 既に解いた NPZ を後から可視化（解析は走らない）
 ykep -j=examples/inp/cavity-nc-1.inp view -o=examples/inp/results --slice=x=0.05 --slice=z=0.0125
@@ -108,9 +109,20 @@ ykep -j=examples/inp/cavity-nc-1.inp view -o=examples/inp/results --slice=x=0.05
 
 `view` のオプション: `--slice=<axis>=<座標>`（複数可）、`--no-slices`（外皮のみ）、`--no-vectors`（矢印なし）。
 
+## 残差マップとカラーマップ
+
+- ソルバーが最終反復の**セル別残差**を `residual_fields` として返す（`NaturalConvectionResult`:
+  `res_u / res_v / res_w / res_T` = |b − A x| / ‖b‖ の分布（L2 ノルムがスカラー残差と一致）、`res_mass` =
+  Rhie-Chow 面速度による連続の式の不整合 [kg/m³/s]、追加スカラーは `res_phi_<name>`。`HeatTransferResult`: 定常のみ `res_T`）。
+  `fields_from_natural_convection` / `.inp` ランナーはこれを場として含めるので、mirador のモードボタンに `res_*` が並ぶ。
+  どこで収束が悪いか（角・境界層・ヒーター周り）を断面で確認できる
+- カラーマップは messi 側で **Abaqus 既定の 12 段レインボー**が既定（`colormap="abaqus"`）。ビューアのセレクトで
+  `Abaqus（連続）` / `Turbo 風（従来）` に切替。`MiradorExportInput` からは messi の既定に任せる
+
 ## ビューア側の操作
 
-- 上段ボタン: `skewness / aspect / detJ`（メッシュ品質）、`|U| U_x U_y U_z P T …`（解析場）、`elset / cluster`
+- 上段ボタン: `skewness / aspect / detJ`（メッシュ品質）、`|U| U_x U_y U_z P T res_* …`（解析場・残差マップ）、`elset / cluster`
+- カラーマップのセレクト（Abaqus 12 段 / 連続 / Turbo 風）
 - 凡例の elset 名クリックで表示切替（`domain` を戻すと外皮、断面 elset を隠すとその断面が消える）
 - 「矢印 U」チェックとスライダー（×0.1〜×10）で速度矢印
 - `probe` で要素をクリックすると品質と全ての場の値を表示

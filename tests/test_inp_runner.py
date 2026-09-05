@@ -19,6 +19,13 @@ from xkep_cae_fluid.inp.runner import InpCaseRunnerProcess, InpJobInput
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples" / "inp"
 
+try:
+    import messi  # noqa: F401
+
+    _HAS_MESSI = True
+except ImportError:  # pragma: no cover - 環境依存
+    _HAS_MESSI = False
+
 
 def _grid(nx=2, ny=2, nz=1):
     case = build_case(parse_inp_text(f"*GRID, NX={nx}, NY={ny}, NZ={nz}, LX=1, LY=1, LZ=0.5\n"))
@@ -49,7 +56,9 @@ class TestInpOutputWriterAPI:
                 },
                 requests=(
                     OutputRequest(
-                        variables=("NT11", "P"), formats=(OutputFormat.NPZ, OutputFormat.VTK)
+                        variables=("NT11", "P"),
+                        formats=(OutputFormat.NPZ, OutputFormat.VTK),
+                        formats_explicit=True,
                     ),
                 ),
             )
@@ -78,7 +87,9 @@ class TestInpOutputWriterAPI:
         res = InpOutputWriterProcess().execute(
             FieldOutputInput(job_name="k", output_dir=str(tmp_path), grid=grid, fields=fields)
         )
-        assert [Path(p).name for p in res.paths] == ["k.npz", "k.yaml"]
+        # FORMAT 未指定: messi があれば HTML も自動で付く
+        expected = ["k.npz", "k.html", "k.yaml"] if _HAS_MESSI else ["k.npz", "k.yaml"]
+        assert [Path(p).name for p in res.paths] == expected
         with pytest.raises(ValueError, match="未対応"):
             InpOutputWriterProcess().execute(
                 FieldOutputInput(
@@ -110,6 +121,42 @@ class TestInpOutputWriterAPI:
         yaml = pytest.importorskip("yaml")
         loaded = yaml.safe_load((tmp_path / "h.yaml").read_text())
         assert loaded["output_files"] == ["h.npz", "h.html", "h.yaml"]
+
+    def test_html_auto_when_format_unspecified_and_residual_alias(self, tmp_path: Path):
+        pytest.importorskip("messi")
+        grid = _grid(3, 3, 1)
+        fields = {
+            "T": np.zeros((3, 3, 1)),
+            "res_T": np.ones((3, 3, 1)),
+            "res_mass": np.ones((3, 3, 1)),
+        }
+        # FORMAT 未指定（*OUTPUT なし）→ messi があれば HTML も自動
+        res = InpOutputWriterProcess().execute(
+            FieldOutputInput(job_name="a", output_dir=str(tmp_path), grid=grid, fields=fields)
+        )
+        assert [Path(p).name for p in res.paths] == ["a.npz", "a.html", "a.yaml"]
+        # FORMAT=NPZ を明示 → HTML は出さない
+        res = InpOutputWriterProcess().execute(
+            FieldOutputInput(
+                job_name="b",
+                output_dir=str(tmp_path),
+                grid=grid,
+                fields=fields,
+                requests=(OutputRequest(formats=(OutputFormat.NPZ,), formats_explicit=True),),
+            )
+        )
+        assert [Path(p).name for p in res.paths] == ["b.npz", "b.yaml"]
+        # VARIABLE=T,RES → 残差マップ全部を展開
+        res = InpOutputWriterProcess().execute(
+            FieldOutputInput(
+                job_name="c",
+                output_dir=str(tmp_path),
+                grid=grid,
+                fields=fields,
+                requests=(OutputRequest(variables=("T", "RES"), formats_explicit=True),),
+            )
+        )
+        assert set(np.load(tmp_path / "c.npz").files) >= {"T", "res_T", "res_mass"}
 
     def test_dump_yaml_roundtrip(self):
         yaml = pytest.importorskip("yaml")
@@ -173,8 +220,9 @@ class TestInpCaseRunnerAPI:
         assert step.family == EquationFamily.NAVIER_STOKES
         assert step.n_iterations == 3  # MAX_OUTER=3 で打ち切り（収束は要求しない）
         assert (tmp_path / "tiny.npz").exists() and (tmp_path / "tiny.vtk").exists()
-        U = np.load(tmp_path / "tiny.npz")["U"]
-        assert U.shape == (4, 4, 2, 3)
+        data = np.load(tmp_path / "tiny.npz")
+        assert data["U"].shape == (4, 4, 2, 3)
+        assert data["res_mass"].shape == (4, 4, 2)  # 残差マップも出力に含まれる
         assert step.summary["solver"]["process"] == "NaturalConvectionFDMProcess"
         assert "final_residuals" in step.summary
 

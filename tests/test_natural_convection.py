@@ -2147,6 +2147,37 @@ class TestAMGPressureSolver:
         result = NaturalConvectionFDMProcess().process(inp)
         assert result.converged
 
+    def test_residual_fields_are_cell_maps_consistent_with_scalars(self):
+        """残差マップ（セル別残差）の形状と、そのノルムがスカラー残差に一致すること."""
+        inp = NaturalConvectionInput(
+            Lx=0.1,
+            Ly=0.1,
+            Lz=0.05,
+            nx=4,
+            ny=4,
+            nz=2,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=1e-3,
+            T_ref=300.0,
+            gravity=(0.0, -9.81, 0.0),
+            bc_xm=FluidBoundarySpec(thermal=ThermalBoundaryCondition.DIRICHLET, temperature=310.0),
+            bc_xp=FluidBoundarySpec(thermal=ThermalBoundaryCondition.DIRICHLET, temperature=290.0),
+            max_simple_iter=3,
+        )
+        result = NaturalConvectionFDMProcess().process(inp)
+        rf = result.residual_fields
+        assert set(rf) == {"res_u", "res_v", "res_w", "res_T", "res_mass"}
+        for arr in rf.values():
+            assert arr.shape == (4, 4, 2) and np.all(np.isfinite(arr))
+        # 正規化残差マップの L2 ノルム = 最終反復のスカラー残差（同じ定義）
+        for key, name in (("res_u", "u"), ("res_v", "v"), ("res_w", "w"), ("res_T", "T")):
+            assert np.isclose(np.linalg.norm(rf[key]), result.residual_history[name][-1])
+        assert np.isclose(np.linalg.norm(rf["res_mass"]), result.residual_history["mass"][-1])
+        assert np.all(rf["res_u"] >= 0.0)
+
     def test_face_mass_residual_consistency(self):
         """面ベース質量残差が圧力補正RHSと整合する."""
         from xkep_cae_fluid.natural_convection.assembly import (

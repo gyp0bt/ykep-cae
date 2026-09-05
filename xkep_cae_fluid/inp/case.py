@@ -290,6 +290,7 @@ class OutputRequest:
     variables: tuple[str, ...] = ()  # 空 = 全変数
     formats: tuple[OutputFormat, ...] = (OutputFormat.NPZ,)
     frequency: int = 1
+    formats_explicit: bool = False  # FORMAT= を書いた（書かなければ messi があれば HTML も自動）
 
 
 @dataclass(frozen=True)

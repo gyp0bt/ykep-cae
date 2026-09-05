@@ -610,6 +610,7 @@ def _parse_output(block: KeywordBlock) -> OutputRequest:
     if not block.has("FIELD"):
         raise InpSyntaxError("*OUTPUT は FIELD のみ対応", block.source, block.line_no)
     fmt_text = block.get("FORMAT", "NPZ") or "NPZ"
+    explicit = block.get("FORMAT") is not None
     formats: list[OutputFormat] = []
     for token in fmt_text.replace("+", " ").replace("/", " ").split():
         try:
@@ -623,7 +624,12 @@ def _parse_output(block: KeywordBlock) -> OutputRequest:
     variables_text = block.get("VARIABLE", "") or ""
     variables = tuple(_norm_name(v) for v in variables_text.replace(" ", ",").split(",") if v)
     frequency = int(block.get("FREQUENCY", "1") or 1)
-    return OutputRequest(variables=variables, formats=tuple(formats), frequency=max(frequency, 1))
+    return OutputRequest(
+        variables=variables,
+        formats=tuple(formats),
+        frequency=max(frequency, 1),
+        formats_explicit=explicit,
+    )
 
 
 # ---------------------------------------------------------------------------

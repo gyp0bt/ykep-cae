@@ -1230,7 +1230,7 @@ def build_energy_system(
     return A, rhs
 
 
-def compute_face_mass_residual(
+def compute_face_mass_residual_field(
     inp: NaturalConvectionInput,
     u: np.ndarray,
     v: np.ndarray,
@@ -1239,11 +1239,11 @@ def compute_face_mass_residual(
     a_P_u: np.ndarray,
     a_P_v: np.ndarray,
     a_P_w: np.ndarray,
-) -> float:
-    """Rhie-Chow 面速度による質量残差を計算.
+) -> np.ndarray:
+    """Rhie-Chow 面速度による質量残差のセル別分布 ``(nx, ny, nz)`` [kg/m^3/s].
 
-    圧力補正方程式のRHSと同じ面ベース発散を使うことで、
-    SIMPLE反復の収束を正しく評価する。
+    圧力補正方程式の RHS と同じ面ベース発散（符号付き）。固体セルは 0。
+    :func:`compute_face_mass_residual` はこのノルム。残差マップの表示に使う。
     """
     nx, ny, nz = inp.nx, inp.ny, inp.nz
     dx, dy, dz = inp.dx, inp.dy, inp.dz
@@ -1273,4 +1273,23 @@ def compute_face_mass_residual(
     if inp.solid_mask is not None:
         div_3d[inp.solid_mask] = 0.0
 
+    return div_3d
+
+
+def compute_face_mass_residual(
+    inp: NaturalConvectionInput,
+    u: np.ndarray,
+    v: np.ndarray,
+    w: np.ndarray,
+    p: np.ndarray,
+    a_P_u: np.ndarray,
+    a_P_v: np.ndarray,
+    a_P_w: np.ndarray,
+) -> float:
+    """Rhie-Chow 面速度による質量残差（セル別分布の L2 ノルム）.
+
+    圧力補正方程式のRHSと同じ面ベース発散を使うことで、
+    SIMPLE反復の収束を正しく評価する。
+    """
+    div_3d = compute_face_mass_residual_field(inp, u, v, w, p, a_P_u, a_P_v, a_P_w)
     return float(np.linalg.norm(div_3d.ravel()))

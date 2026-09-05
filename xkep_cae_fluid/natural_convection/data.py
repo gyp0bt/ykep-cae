@@ -308,6 +308,12 @@ class NaturalConvectionResult:
     extra_scalars : dict[str, np.ndarray]
         追加スカラーの最終値 {name: (nx, ny, nz) 配列}。
         入力の `extra_scalars` が空の場合は空 dict。
+    residual_fields : dict[str, np.ndarray]
+        最終 SIMPLE 反復のセル別残差（残差マップ）{name: (nx, ny, nz) 配列}。
+        ``res_u`` / ``res_v`` / ``res_w`` / ``res_T``: 各方程式の初期残差 |b - A x| を
+        ||b|| で正規化したもの（スカラー残差 ``residual_history`` と同じ定義の分布）。
+        ``res_mass``: Rhie-Chow 面速度による連続の式の不整合（符号付き、[kg/m^3/s]）。
+        追加スカラーは ``res_phi_<name>``。
     """
 
     u: np.ndarray
@@ -321,3 +327,4 @@ class NaturalConvectionResult:
     elapsed_seconds: float = 0.0
     n_timesteps: int = 0
     extra_scalars: dict[str, np.ndarray] = field(default_factory=dict)
+    residual_fields: dict[str, np.ndarray] = field(default_factory=dict)

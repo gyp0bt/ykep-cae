@@ -4,7 +4,9 @@
 - ``<job>.yaml``: 収束情報・残差・実行条件（STA2 防止ルール: ログと照合できる形）
 - ``<job>.vtk``: ``FORMAT=VTK`` 指定時。RECTILINEAR_GRID + CELL_DATA（依存ライブラリなし）
 - ``<job>.html``: ``FORMAT=HTML`` 指定時。messi mirador（three.js）3D ビューア
-  （:class:`MiradorExportProcess`。messi 未導入なら警告して他の出力は続行）
+  （:class:`MiradorExportProcess`。messi 未導入なら警告して他の出力は続行）。
+  ``FORMAT=`` を書いていない（``*OUTPUT`` 自体が無い場合も含む）ときは、messi が
+  import できる環境なら自動で書く（明示した FORMAT はそのまま尊重）
 """
 
 from __future__ import annotations
@@ -40,6 +42,8 @@ VARIABLE_ALIASES: dict[str, str] = {
     "NT11": "T",
     "TEMP": "T",
     "TEMPERATURE": "T",
+    "RES": "res_*",  # 残差マップ全部（res_u / res_v / res_w / res_T / res_mass …）
+    "RESIDUAL": "res_*",
 }
 
 
@@ -85,17 +89,31 @@ def _selected_variables(requests: tuple[OutputRequest, ...], available: list[str
                 raise ValueError(
                     f"*OUTPUT の変数 {v!r} は未対応（{sorted(set(VARIABLE_ALIASES))}）"
                 )
-            if name in available and name not in wanted:
+            if name == "res_*":
+                wanted.extend(a for a in available if a.startswith("res_") and a not in wanted)
+            elif name in available and name not in wanted:
                 wanted.append(name)
     if not wanted:
         return list(available)
     return wanted
 
 
+def _messi_available() -> bool:
+    """messi が import できるか（自動 HTML 出力の判定）."""
+    try:
+        import messi  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def _formats(requests: tuple[OutputRequest, ...]) -> set[OutputFormat]:
     fmts: set[OutputFormat] = {OutputFormat.NPZ}
     for req in requests:
         fmts.update(req.formats)
+    # FORMAT= をどこにも書いていなければ、messi がある環境では HTML も自動で出す。
+    if not any(req.formats_explicit for req in requests) and _messi_available():
+        fmts.add(OutputFormat.HTML)
     return fmts
 
 

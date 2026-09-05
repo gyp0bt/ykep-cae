@@ -195,6 +195,10 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
             logger.info("ステップ %s: *NAVIER STOKES → NaturalConvectionFDMProcess", step.name)
             res = NaturalConvectionFDMProcess().execute(nc_input)
             fields = {"U": _velocity_field(res.u, res.v, res.w), "P": res.p, "T": res.T}
+            fields.update({str(k): v for k, v in res.extra_scalars.items()})
+            fields.update(
+                res.residual_fields
+            )  # 残差マップ res_u / res_v / res_w / res_T / res_mass
             last = {k: (v[-1] if v else None) for k, v in res.residual_history.items()}
             summary = {
                 **base_summary,
@@ -225,7 +229,7 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
                 "ステップ %s: *HEAT TRANSFER → HeatTransferFDMProcess(%s)", step.name, mapped.method
             )
             res_ht = HeatTransferFDMProcess(method=mapped.method).execute(mapped.input)
-            fields = {"T": res_ht.T}
+            fields = {"T": res_ht.T, **res_ht.residual_fields}
             summary = {
                 **base_summary,
                 "converged": bool(res_ht.converged),

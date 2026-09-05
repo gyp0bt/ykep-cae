@@ -12,7 +12,7 @@ lengths:
   lx: 0.1
   ly: 0.1
   lz: 0.025000000000000005
-commit: 2a0f4d7
+commit: 7537fc7
 parameters:
   L: 0.1
   n: 12
@@ -51,12 +51,12 @@ final_residuals:
   p: 9.59481765671586e-06
   T: 7.817377799527687e-07
   mass: 8.673060776850491e-06
-elapsed_seconds: 4.254803978999917
+elapsed_seconds: 4.338717448999887
 max_abs_velocity: 0.035667957409045874
 temperature_range:
   - 290.6149714058406
   - 309.38502502700453
-wall_seconds: 4.259840906000136
+wall_seconds: 4.346956798999599
 output_files:
   - cavity-nc-1.npz
   - cavity-nc-1.vtk
@@ -66,3 +66,8 @@ variables:
   - U
   - P
   - T
+  - res_u
+  - res_v
+  - res_w
+  - res_T
+  - res_mass

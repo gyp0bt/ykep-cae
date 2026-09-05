@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from typing import ClassVar
 
 import numpy as np
@@ -222,6 +223,18 @@ def _bc_coefficients(
         return 0.0, 0.0
 
 
+def _steady_residual_fields(inp: HeatTransferInput, T: np.ndarray) -> dict[str, np.ndarray]:
+    """定常解の残差マップ ``{"res_T": |b - A T| / ||b||}``（疎行列系を組み直して評価）."""
+    from xkep_cae_fluid.heat_transfer.solver_sparse import _build_system
+
+    A, b = _build_system(inp)
+    r = np.abs(b - A @ T.ravel())
+    b_norm = float(np.linalg.norm(b))
+    if b_norm >= 1e-30:
+        r = r / b_norm
+    return {"res_T": np.asarray(r).reshape(T.shape)}
+
+
 class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferResult"]):
     """3次元非定常伝熱解析ソルバー (FDM, ガウスザイデル法).
 
@@ -282,8 +295,8 @@ class HeatTransferFDMProcess(SolverProcess["HeatTransferInput", "HeatTransferRes
 
         if inp.is_transient:
             return self._solve_transient(T, inp, t_start)
-        else:
-            return self._solve_steady(T, inp, t_start)
+        result = self._solve_steady(T, inp, t_start)
+        return replace(result, residual_fields=_steady_residual_fields(inp, result.T))
 
     def _solve_steady(
         self,

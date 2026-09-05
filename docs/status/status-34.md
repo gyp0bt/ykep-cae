@@ -51,6 +51,20 @@ ykep の構造格子の計算結果（速度 U・圧力 P・温度 T・追加ス
 ブラウザ描画は本セッションの Playwright スクリプト（scratchpad、リポジトリ外）で確認した。
 リポジトリにはスクリーンショットを入れていない（three.js は CDN 依存なので、表示にはネット接続が要る）。
 
+## 追記（同セッション、レビュー反映）
+
+1. **Abaqus レインボー**: messi 側でカラーマップを Abaqus 既定の 12 段レインボー（青→シアン→緑→黄→赤）に変更し、
+   ビューアのセレクトで `Abaqus（12 段）/ Abaqus（連続）/ Turbo 風（従来）` を切替可能に（`colormap=` 引数）。
+2. **自動 HTML 出力**: `.inp` の `*OUTPUT` に `FORMAT=` を書かなければ（`*OUTPUT` 自体が無くても）、messi が import
+   できる環境では `<job>.html` を自動で書く（`OutputRequest.formats_explicit`。明示した FORMAT はそのまま尊重）。
+3. **残差マップ**: `NaturalConvectionFDMProcess` が最終 SIMPLE 反復のセル別残差 `residual_fields`
+   （`res_u / res_v / res_w / res_T`: |b − A x| / ‖b‖ の分布、`res_mass`: RC 面速度の連続不整合、`res_phi_<name>`）を返す
+   （`assembly.compute_face_mass_residual_field` を新設し、既存のスカラー版はそのノルム）。`HeatTransferFDMProcess` は定常のみ
+   `res_T`（疎行列系を組み直して評価）。`.inp` ランナーは残差マップを場に含め、`*ELEMENT OUTPUT` の `RES` で選択、
+   mirador のモードに `res_*` が並ぶ。例題 `cavity-nc-1.inp` は `U, P, T, RES` に変更して再実行。
+   テスト: `test_natural_convection.py` +1（マップのノルム = スカラー残差）、`test_heat_transfer_fdm.py` +1、
+   `test_inp_runner.py` +1、`test_inp_parser.py` の HTML テストを拡張。
+
 ## 調査で分かったこと
 
 - messi の `Mesher.load` は cwd に使用刻印 `.messi` を書く。ykep 側の `.gitignore` に追加した

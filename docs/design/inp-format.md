@@ -150,8 +150,11 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
   （STA2 防止ルール: ログと照合可能）
 - `<job>.vtk`: `FORMAT=VTK` 指定時。legacy ASCII `RECTILINEAR_GRID` + `CELL_DATA`（ParaView で開ける、依存なし）
 - `<job>.html`: `FORMAT=HTML` 指定時（`FORMAT=VTK+HTML` のように併記可）。messi mirador（three.js）の 3D ビューア
-  （[設計文書](mirador-export.md)。messi 未導入なら警告して他の出力は続行）。`ykep -j=<job> view` で NPZ から後追い生成もできる
-- 変数の別名: `NT11`/`NT`/`TEMP` → `T`、`V`/`VELOCITY` → `U`、`PRESSURE` → `P`
+  （[設計文書](mirador-export.md)。messi 未導入なら警告して他の出力は続行）。`ykep -j=<job> view` で NPZ から後追い生成もできる。
+  **`FORMAT=` を書かなければ（`*OUTPUT` 自体が無くても）messi が import できる環境では自動で HTML も出す**（明示した FORMAT はそのまま）
+- 残差マップ: 最終反復のセル別残差 `res_u / res_v / res_w / res_T / res_mass`（+ `res_phi_<name>`、伝熱は定常のみ `res_T`）が場として出る。
+  `*ELEMENT OUTPUT` の変数に `RES`（別名 `RESIDUAL`）を書くと全部を選択。変数リストを書かなければ全変数（残差マップ含む）
+- 変数の別名: `NT11`/`NT`/`TEMP` → `T`、`V`/`VELOCITY` → `U`、`PRESSURE` → `P`、`RES`/`RESIDUAL` → `res_*` 全部
 
 ## 構造格子の復元規則
 

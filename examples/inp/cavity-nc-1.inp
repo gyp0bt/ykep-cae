@@ -58,5 +58,5 @@
 ** HTML は messi mirador（three.js）の 3D ビューア（messi 未導入なら警告してスキップ）
 *OUTPUT, FIELD, FORMAT=VTK+HTML
 *ELEMENT OUTPUT
- U, P, T
+ U, P, T, RES
 *END STEP

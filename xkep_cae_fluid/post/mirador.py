@@ -315,7 +315,7 @@ def build_structured_hex_mesh(
 
 
 def fields_from_natural_convection(result: NaturalConvectionResult) -> dict[str, np.ndarray]:
-    """:class:`NaturalConvectionResult` → ``{"U": (nx,ny,nz,3), "P", "T", 追加スカラー…}``."""
+    """:class:`NaturalConvectionResult` → ``{"U": (nx,ny,nz,3), "P", "T", 追加スカラー, 残差マップ res_*}``."""
     fields: dict[str, np.ndarray] = {
         "U": np.stack([result.u, result.v, result.w], axis=-1),
         "P": np.asarray(result.p),
@@ -323,12 +323,17 @@ def fields_from_natural_convection(result: NaturalConvectionResult) -> dict[str,
     }
     for name, arr in getattr(result, "extra_scalars", {}).items():
         fields[str(name)] = np.asarray(arr)
+    for name, arr in getattr(result, "residual_fields", {}).items():  # 残差マップ
+        fields[str(name)] = np.asarray(arr)
     return fields
 
 
 def fields_from_heat_transfer(result: HeatTransferResult) -> dict[str, np.ndarray]:
-    """:class:`HeatTransferResult` → ``{"T": (nx,ny,nz)}``."""
-    return {"T": np.asarray(result.T)}
+    """:class:`HeatTransferResult` → ``{"T": (nx,ny,nz), "res_T": …}``."""
+    fields = {"T": np.asarray(result.T)}
+    for name, arr in getattr(result, "residual_fields", {}).items():
+        fields[str(name)] = np.asarray(arr)
+    return fields
 
 
 def lines_from_structured_mesh(

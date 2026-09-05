@@ -230,8 +230,15 @@ class TestInpCaseBuildAPI:
                 "*OUTPUT, FIELD, FORMAT=VTK+HTML\n*END STEP\n"
             )
         )
-        fmts = case.steps[0].outputs[0].formats
-        assert fmts == (OutputFormat.NPZ, OutputFormat.VTK, OutputFormat.HTML)
+        out = case.steps[0].outputs[0]
+        assert out.formats == (OutputFormat.NPZ, OutputFormat.VTK, OutputFormat.HTML)
+        assert out.formats_explicit
+        case = build_case(
+            parse_inp_text(
+                "*GRID, NX=2, LX=1\n*STEP\n*NAVIER STOKES, STEADY STATE\n*OUTPUT, FIELD\n*END STEP\n"
+            )
+        )
+        assert not case.steps[0].outputs[0].formats_explicit
 
     def test_dof_boundary_forms(self):
         text = (

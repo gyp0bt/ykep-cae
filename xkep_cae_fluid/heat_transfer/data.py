@@ -204,6 +204,9 @@ class HeatTransferResult:
         出力温度場のスナップショット
     elapsed_seconds : float
         計算時間 [s]
+    residual_fields : dict[str, np.ndarray]
+        セル別残差（残差マップ）。定常解析では最終温度場での ``res_T`` =
+        |b - A T| / ||b||（疎行列系を組み直して評価）。非定常は空 dict
     """
 
     T: np.ndarray
@@ -214,3 +217,4 @@ class HeatTransferResult:
     time_history: tuple[float, ...] = ()
     T_history: tuple[np.ndarray, ...] = ()
     elapsed_seconds: float = 0.0
+    residual_fields: dict[str, np.ndarray] = field(default_factory=dict)
