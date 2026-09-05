@@ -616,7 +616,7 @@ def _parse_output(block: KeywordBlock) -> OutputRequest:
             formats.append(OutputFormat(_norm_name(token)))
         except ValueError as exc:
             raise InpSyntaxError(
-                f"*OUTPUT, FORMAT={token} は未対応（NPZ / VTK）", block.source, block.line_no
+                f"*OUTPUT, FORMAT={token} は未対応（NPZ / VTK / HTML）", block.source, block.line_no
             ) from exc
     if OutputFormat.NPZ not in formats:
         formats.insert(0, OutputFormat.NPZ)

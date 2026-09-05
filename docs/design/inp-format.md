@@ -27,7 +27,7 @@ StructuredGridRecoveryProcess
 InpToNaturalConvectionProcess   *NAVIER STOKES → NaturalConvectionInput
 InpToHeatTransferProcess        *HEAT TRANSFER → HeatTransferInput（+ 線形解法名）
 NaturalConvectionFDMProcess / HeatTransferFDMProcess（既存ソルバー）
-InpOutputWriterProcess   *OUTPUT, FIELD → <job>.npz / <job>.yaml / <job>.vtk
+InpOutputWriterProcess   *OUTPUT, FIELD → <job>.npz / <job>.yaml / <job>.vtk / <job>.html（MiradorExportProcess）
 InpCaseRunnerProcess     上記を束ねる BatchProcess（ykep コマンドの本体）
 ```
 
@@ -40,6 +40,7 @@ InpCaseRunnerProcess     上記を束ねる BatchProcess（ykep コマンドの�
 ```bash
 ykep -j=examples/inp/cavity-nc-1.inp int                # Abaqus 風（-j= / job=、int / interactive）
 ykep job=cavity-nc-1 interactive -o=results             # 拡張子 .inp は省略可
+ykep -j=cavity-nc-1 view -o=results --slice=x=0.05     # 解析せず NPZ → HTML（messi mirador 3D ビューア）
 ykep -j=case.inp int -p n=24 -p L=0.2                   # *PARAMETER の初期値（.inp 内定義が優先）
 ykep -j=case.inp --check                                # 解析せず読込・格子復元・マッピングのみ検証
 python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイント無しでも同じ
@@ -139,7 +140,7 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 #### 出力
 
 ```
-*OUTPUT, FIELD [, FORMAT=NPZ|VTK] [, FREQUENCY=n] [, VARIABLE=U,P,T]
+*OUTPUT, FIELD [, FORMAT=NPZ|VTK|HTML] [, FREQUENCY=n] [, VARIABLE=U,P,T]
 *ELEMENT OUTPUT            ← 変数リスト（*NODE OUTPUT も同じ扱い）
  U, P, T
 ```
@@ -148,6 +149,8 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 - `<job>.yaml`: 収束・反復数・最終残差・経過時間・格子・`*PARAMETER` 値・コミットハッシュ・出力ファイル名
   （STA2 防止ルール: ログと照合可能）
 - `<job>.vtk`: `FORMAT=VTK` 指定時。legacy ASCII `RECTILINEAR_GRID` + `CELL_DATA`（ParaView で開ける、依存なし）
+- `<job>.html`: `FORMAT=HTML` 指定時（`FORMAT=VTK+HTML` のように併記可）。messi mirador（three.js）の 3D ビューア
+  （[設計文書](mirador-export.md)。messi 未導入なら警告して他の出力は続行）。`ykep -j=<job> view` で NPZ から後追い生成もできる
 - 変数の別名: `NT11`/`NT`/`TEMP` → `T`、`V`/`VELOCITY` → `U`、`PRESSURE` → `P`
 
 ## 構造格子の復元規則

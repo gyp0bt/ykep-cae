@@ -90,6 +90,27 @@ class TestInpOutputWriterAPI:
                 )
             )
 
+    def test_html_output_via_mirador(self, tmp_path: Path):
+        pytest.importorskip("messi")
+        grid = _grid(3, 3, 1)
+        fields = {"T": np.arange(9.0).reshape(3, 3, 1), "U": np.zeros((3, 3, 1, 3))}
+        res = InpOutputWriterProcess().execute(
+            FieldOutputInput(
+                job_name="h",
+                output_dir=str(tmp_path),
+                grid=grid,
+                fields=fields,
+                title="html test",
+                requests=(OutputRequest(formats=(OutputFormat.HTML,)),),
+            )
+        )
+        assert [Path(p).name for p in res.paths] == ["h.npz", "h.html", "h.yaml"]
+        html = (tmp_path / "h.html").read_text(encoding="utf-8")
+        assert "html test" in html and '"fieldNames": ["T", "|U|"' in html
+        yaml = pytest.importorskip("yaml")
+        loaded = yaml.safe_load((tmp_path / "h.yaml").read_text())
+        assert loaded["output_files"] == ["h.npz", "h.html", "h.yaml"]
+
     def test_dump_yaml_roundtrip(self):
         yaml = pytest.importorskip("yaml")
         data = {"a": 1, "b": [1, "x y", {"c": 2.5}], "d": {}, "e": [], "f": "plain", "g": False}
@@ -216,6 +237,37 @@ class TestYkepCli:
         assert code == 0
         out = capsys.readouterr().out
         assert "CONVERGED" in out and "plate-ht-1.yaml" in out
+
+    def test_parse_view_args(self, tmp_path: Path):
+        inp = tmp_path / "v.inp"
+        inp.write_text(TINY_NS, encoding="utf-8")
+        args = parse_args(
+            [f"-j={inp}", "view", "--slice=x=0.05", "--slice", "z=1i", "--no-vectors"]
+        )
+        assert args.view and args.no_vectors and not args.no_slices
+        assert [(s.axis, s.position, s.index) for s in args.slices] == [
+            ("x", 0.05, None),
+            ("z", None, 1),
+        ]
+        with pytest.raises(SystemExit):
+            parse_args([f"-j={inp}", "view", "--slice=w=1"])
+        with pytest.raises(SystemExit):
+            parse_args([f"-j={inp}", "view", "--slice=x=abc"])
+
+    def test_main_view_from_npz(self, tmp_path: Path, capsys):
+        pytest.importorskip("messi")
+        inp = tmp_path / "tiny.inp"
+        inp.write_text(TINY_NS, encoding="utf-8")
+        # NPZ が無ければ案内して終了コード 2
+        assert main([f"-j={inp}", "view"]) == 2
+        assert "npz" in capsys.readouterr().err
+        assert main([f"-j={inp}"]) == 3  # MAX_OUTER=3 で打ち切り = NOT CONVERGED（NPZ は出る）
+        capsys.readouterr()
+        assert main([f"-j={inp}", "view", "--slice=x=0.05", "--no-slices"]) == 0
+        out = capsys.readouterr().out
+        assert "VIEW:" in out and (tmp_path / "tiny.html").exists()
+        html = (tmp_path / "tiny.html").read_text(encoding="utf-8")
+        assert '"groupNames": ["domain", "x=' in html  # --no-slices でも明示 --slice は有効
 
 
 class TestInpPhysics:

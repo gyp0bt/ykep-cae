@@ -37,3 +37,4 @@
 | 31 | 2026-09-04 | 516 | Brinkman 流路の座標マスク境界条件 + 質量流入 + 領域内マニホールド + 位置・径の随伴設計感度（冷却流路設計の前段） |
 | 32 | 2026-09-04 | 531 | nsb を xkep_cae_fluid から切り離し（`data`/`assembly` のコピー方式 + 同期スクリプト）+ 高速化見積り実測（LU 分解が 70〜81%）+ PARDISO 化（後方互換なし、分解/三角解のスレッド分割、`KMP_BLOCKTIME=0`）+ 前処理 LU の遅延更新（144×96: 40 s → 17 s） |
 | 33 | 2026-09-05 | 598 | ykep .inp 入力フォーマット（Abaqus 風キーワード構文、`*PARAMETER`/`*CONTROLS`/`*GRID`、`CaseDefinition` 中立表現、`ykep -j=<job>.inp int` CLI）+ NS/伝熱マッピング + 例題 2 本（Ra=1000 キャビティ Nu=1.169） |
+| 34 | 2026-09-05 | 612 | 3D レンダリング: messi mirador 連携 `MiradorExportProcess`（断面スラブ + 速度矢印、`FORMAT=HTML` / `ykep view`）+ messi v0.10.0（要素場カラーマップ・矢印・`.vtk` リーダ） |

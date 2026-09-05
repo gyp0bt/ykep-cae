@@ -223,6 +223,16 @@ class TestInpCaseBuildAPI:
         assert OutputFormat.VTK in out.formats and OutputFormat.NPZ in out.formats
         assert out.frequency == 5
 
+    def test_output_format_html_combined(self):
+        case = build_case(
+            parse_inp_text(
+                "*GRID, NX=2, LX=1\n*STEP\n*NAVIER STOKES, STEADY STATE\n"
+                "*OUTPUT, FIELD, FORMAT=VTK+HTML\n*END STEP\n"
+            )
+        )
+        fmts = case.steps[0].outputs[0].formats
+        assert fmts == (OutputFormat.NPZ, OutputFormat.VTK, OutputFormat.HTML)
+
     def test_dof_boundary_forms(self):
         text = (
             "*GRID, NX=2, LX=1\n*STEP\n*HEAT TRANSFER, STEADY STATE\n*BOUNDARY\n"

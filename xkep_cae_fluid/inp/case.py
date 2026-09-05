@@ -280,6 +280,7 @@ class ControlSet:
 class OutputFormat(Enum):
     NPZ = "NPZ"
     VTK = "VTK"
+    HTML = "HTML"  # messi mirador（three.js）3D ビューア
 
 
 @dataclass(frozen=True)

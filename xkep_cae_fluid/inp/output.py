@@ -3,11 +3,14 @@
 - ``<job>.npz``: 格子線と場（u, v, w, p, T …）。必ず出力
 - ``<job>.yaml``: 収束情報・残差・実行条件（STA2 防止ルール: ログと照合できる形）
 - ``<job>.vtk``: ``FORMAT=VTK`` 指定時。RECTILINEAR_GRID + CELL_DATA（依存ライブラリなし）
+- ``<job>.html``: ``FORMAT=HTML`` 指定時。messi mirador（three.js）3D ビューア
+  （:class:`MiradorExportProcess`。messi 未導入なら警告して他の出力は続行）
 """
 
 from __future__ import annotations
 
 import subprocess
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,6 +22,11 @@ from xkep_cae_fluid.core.base import AbstractProcess, ProcessMeta
 from xkep_cae_fluid.core.categories import PostProcess
 from xkep_cae_fluid.inp.case import OutputFormat, OutputRequest
 from xkep_cae_fluid.inp.grid import StructuredGridMap
+from xkep_cae_fluid.post.mirador import (
+    MiradorExportInput,
+    MiradorExportProcess,
+    MiradorUnavailableError,
+)
 
 # 変数名の別名（Abaqus 風 → 内部名）
 VARIABLE_ALIASES: dict[str, str] = {
@@ -60,6 +68,7 @@ class FieldOutputInput:
     fields: Mapping[str, np.ndarray]
     summary: Mapping[str, Any] = field(default_factory=dict)
     requests: tuple[OutputRequest, ...] = ()
+    title: str | None = None  # HTML のページタイトル（None なら job_name）
 
 
 @dataclass(frozen=True)
@@ -179,6 +188,26 @@ def write_vtk_rectilinear(
                     f.write(repr(float(v)) + "\n")
 
 
+def _write_html(inp: FieldOutputInput, names: list[str], out_dir: Path) -> str | None:
+    """``<job>.html``（messi mirador）を書く。messi が無ければ警告して None."""
+    html_path = out_dir / f"{inp.job_name}.html"
+    try:
+        MiradorExportProcess().execute(
+            MiradorExportInput(
+                x_lines=inp.grid.x_lines,
+                y_lines=inp.grid.y_lines,
+                z_lines=inp.grid.z_lines,
+                fields={n: inp.fields[n] for n in names},
+                output_path=str(html_path),
+                title=inp.title or inp.job_name,
+            )
+        )
+    except MiradorUnavailableError as exc:
+        warnings.warn(f"FORMAT=HTML をスキップ: {exc}", RuntimeWarning, stacklevel=2)
+        return None
+    return str(html_path)
+
+
 def write_field_output(inp: FieldOutputInput) -> FieldOutputResult:
     out_dir = Path(inp.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -203,6 +232,11 @@ def write_field_output(inp: FieldOutputInput) -> FieldOutputResult:
         write_vtk_rectilinear(vtk_path, inp.grid, inp.fields, names)
         paths.append(str(vtk_path))
 
+    if OutputFormat.HTML in fmts:
+        html_path = _write_html(inp, names, out_dir)
+        if html_path is not None:
+            paths.append(html_path)
+
     summary = dict(inp.summary)
     summary["output_files"] = [Path(p).name for p in paths] + [f"{inp.job_name}.yaml"]
     summary["variables"] = names
@@ -221,7 +255,7 @@ class InpOutputWriterProcess(PostProcess["FieldOutputInput", "FieldOutputResult"
         version="0.1.0",
         document_path="../../docs/design/inp-format.md",
     )
-    uses: ClassVar[list[type[AbstractProcess]]] = []
+    uses: ClassVar[list[type[AbstractProcess]]] = [MiradorExportProcess]
 
     def process(self, input_data: FieldOutputInput) -> FieldOutputResult:
         return write_field_output(input_data)

@@ -195,6 +195,18 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [ ] 格子の次段（直交格子 + 幾何解像用局所格子 / 非構造格子）の方針決定 — status-33 TODO
 - [ ] OpenFOAM / Fluent 書き出し Process
 
+## Phase 10: 3D レンダリング（messi mirador 連携）（status-34）
+
+構造格子の解析結果（U / P / T / 追加スカラー）を [messi](https://github.com/gyp0bt/messi) の three.js
+ビューア mirador で回して眺める。詳細は [設計文書](design/mirador-export.md)。
+
+- [x] `MiradorExportProcess`（格子 → C3D8 + 断面スラブ elset + セル場、`hidden_groups` で外皮を初期非表示）— status-34
+- [x] messi 側: `export_html` に要素場カラーマップ・矢印・`init_mode`・`hidden_groups`、`.vtk` legacy リーダ（messi v0.10.0）— status-34
+- [x] `*OUTPUT, FIELD, FORMAT=HTML` と `ykep -j=<job> view [--slice=x=0.05]`（NPZ から後追い生成）— status-34
+- [ ] 任意平面の切断（軸垂直 1 セル厚以外）と時系列（`T_history`）のフレーム切替
+- [ ] 非構造格子（polyMesh 読込結果）を `MeshData.connectivity` から同じ経路で載せる
+- [ ] 水槽 CAE（Phase 6）の `AquariumGeometryProcess` マスクと連携した実例（水・ガラス・底床の elset 分け）
+
 ## 将来構想
 
 - LES / DES

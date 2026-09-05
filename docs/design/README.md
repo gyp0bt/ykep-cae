@@ -24,6 +24,7 @@
 |------|--------|------|------|
 | [heat-transfer-fdm.md](heat-transfer-fdm.md) | `docs/design/` | 3D FDM 伝熱解析ソルバー（Robin BC対応） | 完了 |
 | [temperature-map.md](temperature-map.md) | `docs/design/` | 温度マップ可視化 PostProcess | 完了 |
+| [mirador-export.md](mirador-export.md) | `docs/design/` | 3D レンダリング PostProcess（messi mirador 連携、断面スラブ + 速度矢印、`FORMAT=HTML` / `ykep view`） | 完了（experimental） |
 | [multilayer-builder.md](multilayer-builder.md) | `docs/design/` | 多層シート物性値ビルダー PreProcess | 完了 |
 
 ## メッシュモジュール設計文書
