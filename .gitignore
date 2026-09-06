@@ -10,7 +10,12 @@ logs/
 # ykep .inp 例題の生成物（yaml サマリと log は残す）
 examples/inp/results/*.npz
 examples/inp/results/*.vtk
+examples/inp/results/*.html
 examples/inp/*.npz
 examples/inp/*.vtk
+examples/inp/*.html
 examples/inp/*.yaml
 examples/inp/*.log
+
+# messi の使用刻印（Mesher.load が cwd に書く。MiradorExportProcess / ykep view を走らせると出る）
+.messi

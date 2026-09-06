@@ -45,7 +45,8 @@ class PolyMeshResult:
     mesh : MeshData
         読み込まれたメッシュデータ
     boundary_patches : dict[str, dict]
-        境界パッチ情報（パッチ名 → {type, nFaces, startFace}）
+        境界パッチ情報（パッチ名 → {type, nFaces, startFace}）。
+        面インデックス配列は ``mesh.boundary_patches`` にもある
     """
 
     mesh: MeshData
@@ -344,7 +345,7 @@ def parse_boundary(text: str) -> dict[str, dict]:
 # ---------------------------------------------------------------------------
 
 
-def _compute_face_geometry(
+def compute_face_geometry(
     points: np.ndarray,
     faces: list[list[int]],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -377,7 +378,7 @@ def _compute_face_geometry(
     return areas, normals, centers
 
 
-def _compute_cell_geometry(
+def compute_cell_geometry(
     points: np.ndarray,
     faces: list[list[int]],
     owner: np.ndarray,
@@ -426,6 +427,141 @@ def _compute_cell_geometry(
 
     cell_volumes = np.abs(cell_volumes)
     return cell_volumes, cell_centers
+
+
+# ---------------------------------------------------------------------------
+# セル節点順序の復元（面リスト → 要素接続）
+# ---------------------------------------------------------------------------
+
+
+def _cell_face_lists(
+    faces: list[list[int]], owner: np.ndarray, neighbour: np.ndarray, n_cells: int
+) -> list[list[list[int]]]:
+    """セルごとに「そのセルから見て外向き」に並べた面節点リストを集める.
+
+    OpenFOAM の面は owner から見て外向きなので、neighbour 側では逆順にする。
+    """
+    cell_faces: list[list[list[int]]] = [[] for _ in range(n_cells)]
+    n_internal = len(neighbour)
+    for f_idx, face_nodes in enumerate(faces):
+        cell_faces[int(owner[f_idx])].append(list(face_nodes))
+        if f_idx < n_internal:
+            cell_faces[int(neighbour[f_idx])].append(list(face_nodes)[::-1])
+    return cell_faces
+
+
+def _rotate_to_min(nodes: list[int], points: np.ndarray) -> list[int]:
+    """節点列を (y, x, z) 辞書順で最小の節点から始まるように巡回させる."""
+    keys = [(float(points[n][1]), float(points[n][0]), float(points[n][2])) for n in nodes]
+    start = min(range(len(nodes)), key=lambda i: keys[i])
+    return nodes[start:] + nodes[:start]
+
+
+def _order_cell_nodes(cell_faces: list[list[int]], points: np.ndarray) -> tuple[list[int], int]:
+    """1 セルの外向き面リストから、節点順序付きの接続と VTK セル種別を返す.
+
+    - 六面体（4 節点面 × 6）と楔（三角 2 + 四角 3）: 最も下（外向き法線 z が最小）
+      の面を底面とし、内向き（右手系で上向き）に並べ替える。上面の節点は、底面の
+      各節点から側面の辺をたどって決める（Abaqus C3D8 / C3D6 の順序）。
+    - 四面体（三角 × 4）と角錐（四角 1 + 三角 4）: 底面 + 残りの 1 節点（頂点）。
+    - それ以外: 節点集合をソートしたものを返し、種別は多面体。
+    """
+    from xkep_cae_fluid.core.data import (
+        CELL_TYPE_HEX,
+        CELL_TYPE_POLYHEDRON,
+        CELL_TYPE_PYRAMID,
+        CELL_TYPE_TET,
+        CELL_TYPE_WEDGE,
+    )
+
+    sizes = sorted(len(f) for f in cell_faces)
+    all_nodes = sorted({n for f in cell_faces for n in f})
+
+    def outward_z(face: list[int]) -> float:
+        pts = points[face]
+        area_vec = np.zeros(3)
+        for j in range(1, len(face) - 1):
+            area_vec += 0.5 * np.cross(pts[j] - pts[0], pts[j + 1] - pts[0])
+        return float(area_vec[2])
+
+    def top_via_edges(base: list[int]) -> list[int] | None:
+        base_set = set(base)
+        top: list[int] = []
+        for n0 in base:
+            found: int | None = None
+            for f in cell_faces:
+                if n0 not in f or set(f) == base_set:
+                    continue
+                i = f.index(n0)
+                for cand in (f[(i + 1) % len(f)], f[i - 1]):
+                    if cand not in base_set:
+                        found = cand
+                        break
+                if found is not None:
+                    break
+            if found is None:
+                return None
+            top.append(found)
+        return top
+
+    kind: int | None = None
+    if sizes == [4, 4, 4, 4, 4, 4] and len(all_nodes) == 8:
+        kind = CELL_TYPE_HEX
+    elif sizes == [3, 3, 4, 4, 4] and len(all_nodes) == 6:
+        kind = CELL_TYPE_WEDGE
+    elif sizes == [3, 3, 3, 3] and len(all_nodes) == 4:
+        kind = CELL_TYPE_TET
+    elif sizes == [3, 3, 3, 3, 4] and len(all_nodes) == 5:
+        kind = CELL_TYPE_PYRAMID
+
+    if kind in (CELL_TYPE_HEX, CELL_TYPE_WEDGE):
+        n_base = 4 if kind == CELL_TYPE_HEX else 3
+        candidates = [f for f in cell_faces if len(f) == n_base]
+        base_out = min(candidates, key=outward_z)
+        base = _rotate_to_min(base_out[::-1], points)  # 内向き（右手系で上向き）
+        top = top_via_edges(base)
+        if top is not None and len(set(top)) == n_base:
+            return base + top, kind
+    elif kind in (CELL_TYPE_TET, CELL_TYPE_PYRAMID):
+        n_base = 3 if kind == CELL_TYPE_TET else 4
+        candidates = [f for f in cell_faces if len(f) == n_base]
+        base_out = min(candidates, key=outward_z)
+        base = _rotate_to_min(base_out[::-1], points)
+        apex = [n for n in all_nodes if n not in base]
+        if len(apex) == 1:
+            return base + apex, kind
+
+    return all_nodes, CELL_TYPE_POLYHEDRON
+
+
+def build_ordered_connectivity(
+    points: np.ndarray,
+    faces: list[list[int]],
+    owner: np.ndarray,
+    neighbour: np.ndarray,
+    n_cells: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """面リスト（owner/neighbour）から節点順序付き connectivity と cell_types を作る.
+
+    Returns
+    -------
+    connectivity : np.ndarray
+        (n_cells, max_nodes) int64。短いセルは -1 詰め
+    cell_types : np.ndarray
+        (n_cells,) VTK セル種別 ID
+    """
+    cell_faces = _cell_face_lists(faces, owner, neighbour, n_cells)
+    ordered: list[list[int]] = []
+    types = np.zeros(n_cells, dtype=np.int64)
+    for c in range(n_cells):
+        nodes, kind = _order_cell_nodes(cell_faces[c], points)
+        ordered.append(nodes)
+        types[c] = kind
+    max_nodes = max((len(n) for n in ordered), default=0)
+    connectivity = np.full((n_cells, max_nodes), -1, dtype=np.int64)
+    for c, nodes in enumerate(ordered):
+        connectivity[c, : len(nodes)] = nodes
+    return connectivity, types
 
 
 # ---------------------------------------------------------------------------
@@ -486,25 +622,25 @@ class PolyMeshReaderProcess(PreProcess["PolyMeshInput", "PolyMeshResult"]):
         n_internal_faces = len(neighbour)
 
         # 面の幾何情報
-        face_areas, face_normals, face_centers = _compute_face_geometry(points, faces_list)
+        face_areas, face_normals, face_centers = compute_face_geometry(points, faces_list)
 
         # セルの幾何情報
-        cell_volumes, cell_centers = _compute_cell_geometry(
+        cell_volumes, cell_centers = compute_cell_geometry(
             points, faces_list, owner, neighbour, n_cells
         )
 
-        # connectivity: セルごとのノードを集める（ユニーク）
-        cell_nodes: list[set[int]] = [set() for _ in range(n_cells)]
-        for f_idx, face_nodes in enumerate(faces_list):
-            cell_nodes[owner[f_idx]].update(face_nodes)
-            if f_idx < n_internal_faces:
-                cell_nodes[neighbour[f_idx]].update(face_nodes)
+        # connectivity: 面リストから節点順序付きの要素接続を復元（六面体・楔・
+        # 四面体・角錐は Abaqus / VTK の順序、それ以外は節点集合を -1 詰め）
+        connectivity, cell_types = build_ordered_connectivity(
+            points, faces_list, owner, neighbour, n_cells
+        )
 
-        max_cell_nodes = max((len(cn) for cn in cell_nodes), default=0)
-        connectivity = np.full((n_cells, max_cell_nodes), -1, dtype=np.int64)
-        for c, nodes in enumerate(cell_nodes):
-            sorted_nodes = sorted(nodes)
-            connectivity[c, : len(sorted_nodes)] = sorted_nodes
+        # 境界パッチ → 境界面インデックス
+        patches: dict[str, np.ndarray] = {}
+        for name, info in boundary_patches.items():
+            start = int(info.get("startFace", n_internal_faces))
+            count = int(info.get("nFaces", 0))
+            patches[name] = np.arange(start, start + count, dtype=np.int64)
 
         mesh = MeshData(
             node_coords=points,
@@ -514,8 +650,10 @@ class PolyMeshReaderProcess(PreProcess["PolyMeshInput", "PolyMeshResult"]):
             face_normals=face_normals,
             face_centers=face_centers,
             cell_centers=cell_centers,
+            cell_types=cell_types,
             face_owner=owner,
             face_neighbour=neighbour,
+            boundary_patches=patches,
         )
 
         return PolyMeshResult(mesh=mesh, boundary_patches=boundary_patches)

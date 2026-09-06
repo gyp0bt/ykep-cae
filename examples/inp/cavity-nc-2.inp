@@ -1,0 +1,58 @@
+** =====================================================================
+**  せん断で歪んだ差分加熱キャビティ（非構造メッシュ経路: InpMeshProcess + NavierStokesFVMProcess）
+**  cavity-nc-1 と同じ物性・Ra ~ 1e3 を、平行四辺形（せん断 0.25）の 12×12×1 メッシュで解く。
+**  予約面名 XM/XP（傾いた左右の壁）に温度固定、YM/YP は断熱壁、ZM/ZP は対称面。
+**  実行: ykep -j=examples/inp/cavity-nc-2.inp int
+** =====================================================================
+*HEADING
+ Differentially heated parallelogram cavity, Ra ~ 1e3 (unstructured FVM path)
+*PARAMETER
+ L      = 0.1
+ T_hot  = 310.0
+ T_cold = 290.0
+ T_ref  = 0.5 * (T_hot + T_cold)
+ rho    = 1.0
+ mu     = 0.01
+ Cp     = 1000.0
+ k      = 1.0
+ g      = 9.81
+ Ra     = 1000.0
+ nu     = mu / rho
+ alpha  = k / (rho * Cp)
+ beta   = Ra * nu * alpha / (g * (T_hot - T_cold) * L**3)
+ max_outer = 3000
+*INCLUDE, INPUT=cavity-skew-mesh.inp
+*MATERIAL, NAME=AIR
+*DENSITY
+ <rho>
+*VISCOSITY
+ <mu>
+*SPECIFIC HEAT
+ <Cp>
+*CONDUCTIVITY
+ <k>
+*EXPANSION, ZERO=<T_ref>
+ <beta>
+*FLUID SECTION, ELSET=ALL, MATERIAL=AIR
+*INITIAL CONDITIONS, TYPE=TEMPERATURE
+ NALL, <T_ref>
+*BOUNDARY, TYPE=SYMMETRY
+ ZM
+ ZP
+*BOUNDARY, TYPE=TEMPERATURE
+ XM, <T_hot>
+ XP, <T_cold>
+*STEP, NAME=Steady
+*NAVIER STOKES, TURBULENCE=LAMINAR, STEADY STATE, HEAT TRANSFER=COUPLED
+*DLOAD
+ ALL, GRAV, <g>, 0.0, -1.0, 0.0
+*CONTROLS, PARAMETERS=DISCRETIZATION
+ CONVECTION=UPWIND, PRESSURE_VELOCITY=SIMPLE
+*CONTROLS, PARAMETERS=RELAXATION
+ VELOCITY=0.5, PRESSURE=0.2, TEMPERATURE=0.7
+*CONTROLS, PARAMETERS=SOLVER
+ PRESSURE=DIRECT, MOMENTUM=DIRECT, MAX_OUTER=<max_outer>, TOL=1e-4
+*OUTPUT, FIELD, FORMAT=VTK+HTML
+*ELEMENT OUTPUT
+ U, P, T, RES
+*END STEP

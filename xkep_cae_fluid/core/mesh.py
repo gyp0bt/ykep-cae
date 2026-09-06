@@ -13,7 +13,7 @@ import numpy as np
 
 from xkep_cae_fluid.core.base import AbstractProcess, ProcessMeta
 from xkep_cae_fluid.core.categories import PreProcess
-from xkep_cae_fluid.core.data import MeshData
+from xkep_cae_fluid.core.data import CELL_TYPE_HEX, MeshData
 
 # ---------------------------------------------------------------------------
 # 入出力データ
@@ -150,6 +150,7 @@ class StructuredMeshProcess(PreProcess["StructuredMeshInput", "StructuredMeshRes
 
     ストレッチング対応の直交格子を生成し、MeshData を返す。
     セル中心座標、セル体積、面面積・法線・中心、隣接関係を全て計算する。
+    境界面は ``XM/XP/YM/YP/ZM/ZP`` の 6 パッチとして ``boundary_patches`` に載せる。
     """
 
     meta: ClassVar[ProcessMeta] = ProcessMeta(
@@ -227,8 +228,10 @@ class StructuredMeshProcess(PreProcess["StructuredMeshInput", "StructuredMeshRes
             face_centers=faces["centers"],
             cell_centers=cell_centers,
             dimensions=(nx, ny, nz),
+            cell_types=np.full(nx * ny * nz, CELL_TYPE_HEX, dtype=np.int64),
             face_owner=faces["owner"],
             face_neighbour=faces["neighbour"],
+            boundary_patches=faces["patches"],
         )
 
         return StructuredMeshResult(mesh=mesh, dx=dx, dy=dy, dz=dz)
@@ -247,10 +250,14 @@ class StructuredMeshProcess(PreProcess["StructuredMeshInput", "StructuredMeshRes
     ) -> dict[str, np.ndarray]:
         """内部面+境界面の情報を構築する.
 
+        内部面（法線 owner → neighbour）を先に並べ、その後ろに 6 つの境界面
+        （owner のみ、法線は領域外向き）を XM, XP, YM, YP, ZM, ZP の順で並べる。
+
         Returns
         -------
         dict
-            areas, normals, centers, owner, neighbour
+            areas, normals, centers, owner（全面）, neighbour（内部面のみ）,
+            patches（パッチ名 → 境界面インデックス）
         """
 
         # セルインデックス関数
@@ -282,7 +289,7 @@ class StructuredMeshProcess(PreProcess["StructuredMeshInput", "StructuredMeshRes
             all_normals.append(normals)
 
             # x方向の面位置 = セル i の右端 = Σdx[0:i+1]
-            x_face = np.cumsum(dx)[ii_f]
+            x_face = (x_centers[0] - dx[0] / 2) + np.cumsum(dx)[ii_f]
             centers = np.column_stack([x_face, y_centers[jj_f], z_centers[kk_f]])
             all_centers.append(centers)
 
@@ -304,7 +311,7 @@ class StructuredMeshProcess(PreProcess["StructuredMeshInput", "StructuredMeshRes
             normals[:, 1] = 1.0
             all_normals.append(normals)
 
-            y_face = np.cumsum(dy)[jj_f]
+            y_face = (y_centers[0] - dy[0] / 2) + np.cumsum(dy)[jj_f]
             centers = np.column_stack([x_centers[ii_f], y_face, z_centers[kk_f]])
             all_centers.append(centers)
 
@@ -326,7 +333,7 @@ class StructuredMeshProcess(PreProcess["StructuredMeshInput", "StructuredMeshRes
             normals[:, 2] = 1.0
             all_normals.append(normals)
 
-            z_face = np.cumsum(dz)[kk_f]
+            z_face = (z_centers[0] - dz[0] / 2) + np.cumsum(dz)[kk_f]
             centers = np.column_stack([x_centers[ii_f], y_centers[jj_f], z_face])
             all_centers.append(centers)
 
@@ -346,11 +353,120 @@ class StructuredMeshProcess(PreProcess["StructuredMeshInput", "StructuredMeshRes
             centers_arr = np.zeros((0, 3), dtype=np.float64)
             owner_arr = np.array([], dtype=np.int64)
             neighbour_arr = np.array([], dtype=np.int64)
+        n_internal = len(owner_arr)
+
+        # --- 境界面（owner のみ、法線は領域外向き）---
+        # パッチ名は inp の予約面名 XM/XP/YM/YP/ZM/ZP に合わせる
+        x_faces = np.concatenate([[0.0], np.cumsum(dx)])
+        y_faces = np.concatenate([[0.0], np.cumsum(dy)])
+        z_faces = np.concatenate([[0.0], np.cumsum(dz)])
+        # 原点オフセットはセル中心と同じ基準に揃える
+        x_faces += x_centers[0] - dx[0] / 2
+        y_faces += y_centers[0] - dy[0] / 2
+        z_faces += z_centers[0] - dz[0] / 2
+
+        b_areas: list[np.ndarray] = []
+        b_normals: list[np.ndarray] = []
+        b_centers: list[np.ndarray] = []
+        b_owner: list[np.ndarray] = []
+        patches: dict[str, np.ndarray] = {}
+        cursor = n_internal
+
+        def add_patch(
+            name: str,
+            ii_f: np.ndarray,
+            jj_f: np.ndarray,
+            kk_f: np.ndarray,
+            area: np.ndarray,
+            normal: tuple[float, float, float],
+            center: np.ndarray,
+        ) -> None:
+            nonlocal cursor
+            n_b = len(ii_f)
+            b_areas.append(area)
+            nrm = np.zeros((n_b, 3))
+            nrm[:] = normal
+            b_normals.append(nrm)
+            b_centers.append(center)
+            b_owner.append(cell_idx(ii_f, jj_f, kk_f))
+            patches[name] = np.arange(cursor, cursor + n_b, dtype=np.int64)
+            cursor += n_b
+
+        # x 面: (j, k) の meshgrid
+        jj, kk = np.meshgrid(np.arange(ny), np.arange(nz), indexing="ij")
+        jj_f, kk_f = jj.ravel(), kk.ravel()
+        area_x = dy[jj_f] * dz[kk_f]
+        zeros_x = np.zeros(len(jj_f), dtype=np.int64)
+        add_patch(
+            "XM",
+            zeros_x,
+            jj_f,
+            kk_f,
+            area_x,
+            (-1.0, 0.0, 0.0),
+            np.column_stack([np.full(len(jj_f), x_faces[0]), y_centers[jj_f], z_centers[kk_f]]),
+        )
+        add_patch(
+            "XP",
+            zeros_x + (nx - 1),
+            jj_f,
+            kk_f,
+            area_x,
+            (1.0, 0.0, 0.0),
+            np.column_stack([np.full(len(jj_f), x_faces[-1]), y_centers[jj_f], z_centers[kk_f]]),
+        )
+        # y 面: (i, k)
+        ii, kk = np.meshgrid(np.arange(nx), np.arange(nz), indexing="ij")
+        ii_f, kk_f = ii.ravel(), kk.ravel()
+        area_y = dx[ii_f] * dz[kk_f]
+        zeros_y = np.zeros(len(ii_f), dtype=np.int64)
+        add_patch(
+            "YM",
+            ii_f,
+            zeros_y,
+            kk_f,
+            area_y,
+            (0.0, -1.0, 0.0),
+            np.column_stack([x_centers[ii_f], np.full(len(ii_f), y_faces[0]), z_centers[kk_f]]),
+        )
+        add_patch(
+            "YP",
+            ii_f,
+            zeros_y + (ny - 1),
+            kk_f,
+            area_y,
+            (0.0, 1.0, 0.0),
+            np.column_stack([x_centers[ii_f], np.full(len(ii_f), y_faces[-1]), z_centers[kk_f]]),
+        )
+        # z 面: (i, j)
+        ii, jj = np.meshgrid(np.arange(nx), np.arange(ny), indexing="ij")
+        ii_f, jj_f = ii.ravel(), jj.ravel()
+        area_z = dx[ii_f] * dy[jj_f]
+        zeros_z = np.zeros(len(ii_f), dtype=np.int64)
+        add_patch(
+            "ZM",
+            ii_f,
+            jj_f,
+            zeros_z,
+            area_z,
+            (0.0, 0.0, -1.0),
+            np.column_stack([x_centers[ii_f], y_centers[jj_f], np.full(len(ii_f), z_faces[0])]),
+        )
+        add_patch(
+            "ZP",
+            ii_f,
+            jj_f,
+            zeros_z + (nz - 1),
+            area_z,
+            (0.0, 0.0, 1.0),
+            np.column_stack([x_centers[ii_f], y_centers[jj_f], np.full(len(ii_f), z_faces[-1])]),
+        )
 
         return {
-            "areas": areas_arr,
-            "normals": normals_arr,
-            "centers": centers_arr,
-            "owner": owner_arr,
+            "areas": np.concatenate([areas_arr, *b_areas]),
+            "normals": np.concatenate([normals_arr, *b_normals]),
+            "centers": np.concatenate([centers_arr, *b_centers]),
+            "owner": np.concatenate([owner_arr, *b_owner]),
             "neighbour": neighbour_arr,
+            "patches": patches,
         }

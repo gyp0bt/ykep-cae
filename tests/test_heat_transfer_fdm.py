@@ -1487,3 +1487,26 @@ class TestMeshDataIntegration:
             rtol=0.05,
             err_msg="不等間隔格子で発熱問題の解析解と一致しない",
         )
+
+
+def test_steady_residual_field_is_small_after_direct_solve():
+    """定常解の残差マップ res_T は直接法の解でほぼゼロ（正規化 |b - A T| / ||b||）."""
+    from xkep_cae_fluid.heat_transfer.data import BoundaryCondition, BoundarySpec, HeatTransferInput
+    from xkep_cae_fluid.heat_transfer.solver import HeatTransferFDMProcess
+
+    shape = (8, 2, 2)
+    inp = HeatTransferInput(
+        Lx=1.0,
+        Ly=0.1,
+        Lz=0.1,
+        k=np.full(shape, 5.0),
+        C=np.ones(shape),
+        q=np.zeros(shape),
+        T0=np.full(shape, 350.0),
+        bc_xm=BoundarySpec(BoundaryCondition.DIRICHLET, 400.0),
+        bc_xp=BoundarySpec(BoundaryCondition.DIRICHLET, 300.0),
+    )
+    res = HeatTransferFDMProcess(method="direct").execute(inp)
+    assert set(res.residual_fields) == {"res_T"}
+    r = res.residual_fields["res_T"]
+    assert r.shape == (8, 2, 2) and np.all(r >= 0.0) and float(r.max()) < 1e-10

@@ -6,17 +6,17 @@
 離散化（残差、1 次風上ヤコビアン、Rhie–Chow、境界条件）は `nsb/assembly.py` の `BrinkmanDiscretization`、
 境界条件・入力型は `nsb/data.py` に持ち、Newton + 擬似時間の制御則だけを `solver.solve_steady` に関数として書き下している。
 
-## 単体で持ち出せる（xkep_cae_fluid 非依存、コピー方式）
+## 単体で持ち出せる（xkep_cae_fluid 非依存、スナップショット）
 
 `nsb/` ディレクトリは **numpy / scipy / pypardiso だけ**で動き、`xkep_cae_fluid` を import しない（status-32）。
-`nsb/{data,assembly}.py` は `xkep_cae_fluid/brinkman_flow/{data,assembly}.py` の**コピー**で、差分は import 行
-（`from xkep_cae_fluid.brinkman_flow.` → `from nsb.`）のみ。xkep 側にも同じものを残す。
+`nsb/{data,assembly}.py` は `xkep_cae_fluid/brinkman_flow/{data,assembly}.py` の**スナップショット**
+（コミット 1647839 時点、import 行のみ `from nsb.` に書き換え）で、2026-09-05 に本体側と**切り離した**。
+本体側は面ベース FVM 共通低レイヤー（[`xkep_cae_fluid.fvm`](../docs/design/fvm-layer.md)）へ移行して非構造格子対応を進め、
+nsb 側は構造格子の旧離散化をそのまま保つ。以後は同期しない（同期スクリプト `scripts/sync_nsb_from_xkep.py` は削除済み）。
 
 ```bash
 cp -r nsb /path/to/elsewhere/        # そのまま持ち出せる（pip install numpy scipy pypardiso）
-python scripts/sync_nsb_from_xkep.py            # xkep 側の変更を nsb へコピー同期
-python scripts/sync_nsb_from_xkep.py --reverse  # nsb 側で直した場合は逆向き
-python scripts/sync_nsb_from_xkep.py --check    # 乖離チェック（tests/test_nsb_standalone.py でも検査）
+pytest tests/test_nsb_standalone.py  # xkep_cae_fluid を import せずに読み込めることの検査
 ```
 
 注意: `nsb.data.BoundaryKind` と `xkep_cae_fluid.brinkman_flow.BoundaryKind` は別クラスなので、
@@ -42,8 +42,8 @@ nsb の入力を Process ソルバー（`BrinkmanFlowFVMProcess`）へ渡すと�
 | ファイル | 役割 |
 |---|---|
 | `linalg.py` | `PardisoLU`（分解と三角解を分離、スレッド分割、MKL パス探索）、`pardiso_solve` |
-| `data.py` | （コピー）`BoundaryKind` / `BoundaryPatch` / `BrinkmanFlowInput`、マスク補助 `west_span` 等、`disk_mask` / `smooth_disk` |
-| `assembly.py` | （コピー）`BrinkmanDiscretization`: 残差、1 次風上ヤコビアン、Rhie–Chow、境界条件、領域内マニホールド |
+| `data.py` | （スナップショット）`BoundaryKind` / `BoundaryPatch` / `BrinkmanFlowInput`、マスク補助 `west_span` 等、`disk_mask` / `smooth_disk` |
+| `assembly.py` | （スナップショット）`BrinkmanDiscretization`: 残差、1 次風上ヤコビアン、Rhie–Chow、境界条件、領域内マニホールド |
 | `core.py` | 型宣言: `BC`（座標マスクの境界パッチ列。`BC.velocity_inlet / mass_flow_inlet / pressure_outlet`）, `NSBSettings`, `NSBInput`, `NSBResult` |
 | `solver.py` | メイン: `solve_steady`, `compute_dtau`, `solve_linear`, `LaggedPreconditioner`（前処理 LU の遅延更新） |
 | `utils.py` | ポスト処理、面値⇄セル値変換、要約、npz 保存 |

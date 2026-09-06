@@ -223,6 +223,23 @@ class TestInpCaseBuildAPI:
         assert OutputFormat.VTK in out.formats and OutputFormat.NPZ in out.formats
         assert out.frequency == 5
 
+    def test_output_format_html_combined(self):
+        case = build_case(
+            parse_inp_text(
+                "*GRID, NX=2, LX=1\n*STEP\n*NAVIER STOKES, STEADY STATE\n"
+                "*OUTPUT, FIELD, FORMAT=VTK+HTML\n*END STEP\n"
+            )
+        )
+        out = case.steps[0].outputs[0]
+        assert out.formats == (OutputFormat.NPZ, OutputFormat.VTK, OutputFormat.HTML)
+        assert out.formats_explicit
+        case = build_case(
+            parse_inp_text(
+                "*GRID, NX=2, LX=1\n*STEP\n*NAVIER STOKES, STEADY STATE\n*OUTPUT, FIELD\n*END STEP\n"
+            )
+        )
+        assert not case.steps[0].outputs[0].formats_explicit
+
     def test_dof_boundary_forms(self):
         text = (
             "*GRID, NX=2, LX=1\n*STEP\n*HEAT TRANSFER, STEADY STATE\n*BOUNDARY\n"
@@ -272,7 +289,8 @@ class TestInpCaseBuildAPI:
             ("*GRID, NX=2, LX=1\n*STEP\n*HEAT TRANSFER\n*END STEP\n", "非定常"),
             ("*GRID, NX=2, LX=1\n*BOUNDARY, TYPE=MAGIC\n XM\n", "未対応"),
             ("*GRID, NX=2, LX=1\n*NODE\n 1, 0, 0, 0\n", "併用"),
-            ("*ELEMENT, TYPE=C3D4\n 1, 1, 2, 3, 4\n", "未対応"),
+            ("*ELEMENT, TYPE=C3D10\n 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10\n", "未対応"),
+            ("*ELEMENT, TYPE=CPS6\n 1, 1, 2, 3, 4, 5, 6\n", "未対応"),
             ("*GRID, NX=2, LX=1\n*FLUID SECTION, ELSET=NOPE, MATERIAL=M\n", "未定義"),
             (
                 "*GRID, NX=2, LX=1\n*STEP\n*NAVIER STOKES, STEADY STATE\n*CONTROLS, PARAMETERS=FOO\n*END STEP\n",

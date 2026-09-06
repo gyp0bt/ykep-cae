@@ -252,10 +252,16 @@ def recover_structured_grid(
     """節点・要素表から構造格子を復元する（:class:`StructuredGridRecoveryProcess` の本体）."""
     if not case.elements:
         raise UnsupportedMeshError("要素がありません")
-    widths = {b.nodes_per_element for b in case.elements}
-    if len(widths) != 1:
-        raise UnsupportedMeshError("2D 要素と 3D 要素が混在しています")
-    ndim = 3 if widths.pop() == 8 else 2
+    kinds = {("3D" in b.element_type.upper(), b.nodes_per_element) for b in case.elements}
+    if len(kinds) != 1:
+        raise UnsupportedMeshError("要素タイプが混在しています（箱格子は C3D8 か CPS4 の単一種別）")
+    is3d, width = kinds.pop()
+    if width != (8 if is3d else 4):
+        raise UnsupportedMeshError(
+            f"{width} 節点要素は箱格子として復元できません（六面体 / 四辺形のみ。"
+            "四面体・楔は非構造メッシュ経路）"
+        )
+    ndim = 3 if is3d else 2
 
     coords = case.nodes.coords
     extent = np.ptp(coords, axis=0)

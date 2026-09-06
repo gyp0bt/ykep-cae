@@ -1,0 +1,38 @@
+** =====================================================================
+**  せん断で歪んだ平板の定常伝熱（非構造メッシュ経路: InpMeshProcess + HeatTransferFVMProcess）
+**  plate-ht-1 と同じ物理（左端 温度固定、右端 熱流束、上面 対流熱伝達、中央 2 列に体積発熱）を
+**  軸平行でない六面体メッシュ（plate-skew-mesh.inp、最大非直交角 16.7°）で解く。
+**  実行: ykep -j=examples/inp/plate-ht-2.inp int
+** =====================================================================
+*HEADING
+ Steady conduction in a sheared plate (unstructured FVM path)
+*PARAMETER
+ T_left = 350.0
+ q_in   = 2000.0
+ q_vol  = 5.0e5
+ h_film = 25.0
+ T_amb  = 300.0
+*INCLUDE, INPUT=plate-skew-mesh.inp
+*MATERIAL, NAME=ALUMINIUM
+*DENSITY
+ 2700.0
+*SPECIFIC HEAT
+ 900.0
+*CONDUCTIVITY
+ 200.0
+*SOLID SECTION, ELSET=PLATE, MATERIAL=ALUMINIUM
+*INITIAL CONDITIONS, TYPE=TEMPERATURE
+ NALL, 300.0
+*STEP, NAME=Steady
+*HEAT TRANSFER, STEADY STATE
+*BOUNDARY
+ LEFT, 11, 11, <T_left>
+*DFLUX
+ RIGHT, S, <q_in>
+ HEATER, BF, <q_vol>
+*SFILM
+ TOP, F, <T_amb>, <h_film>
+*CONTROLS, PARAMETERS=SOLVER
+ METHOD=DIRECT
+*OUTPUT, FIELD, VARIABLE=T, FORMAT=VTK
+*END STEP

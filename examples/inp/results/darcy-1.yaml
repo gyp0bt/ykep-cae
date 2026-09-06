@@ -1,0 +1,52 @@
+job: darcy-1
+inp: examples/inp/darcy-1.inp
+step: Steady
+procedure: DARCY
+steady: true
+turbulence: LAMINAR
+commit: 04b0e70
+parameters:
+  p_in: 1000.0
+  mu: 0.001
+  K_sand: 1e-10
+  K_clay: 1e-13
+mesh:
+  n_cells: 144
+  n_faces: 540
+  n_boundary_faces: 216
+  patches:
+    - INLET
+    - OUTLET
+    - XM
+    - XP
+    - YM
+    - YP
+    - ZM
+    - ZP
+  max_nonorthogonality_deg: 14.036243467926614
+solver:
+  process: DarcyFlowProcess
+  linear_solver: direct
+  tol: 1e-10
+  max_iter: 1000
+  viscosity: 0.001
+converged: true
+residual: 6.919767568286336e-16
+elapsed_seconds: 0.0339256809966173
+max_abs_velocity: 0.00025116501804001894
+pressure_range:
+  - 15.373717281274036
+  - 984.6262827177454
+inflow_m3s: 2.51846827212496e-06
+outflow_m3s: 2.5184682720386122e-06
+max_mass_residual: 2.34137591742585e-17
+wall_seconds: 0.04340824300015811
+output_files:
+  - darcy-1.npz
+  - darcy-1.vtk
+  - darcy-1.html
+  - darcy-1.yaml
+variables:
+  - P
+  - U
+  - res_mass

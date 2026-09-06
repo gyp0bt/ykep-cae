@@ -21,14 +21,7 @@ from xkep_cae_fluid.core.categories import (
     VerifyProcess,
 )
 from xkep_cae_fluid.core.data import (
-    BoundaryData,
-    FlowFieldData,
-    FluidProperties,
     MeshData,
-    SolverInputData,
-    SolverResultData,
-    VerifyInput,
-    VerifyResult,
 )
 from xkep_cae_fluid.core.diagnostics import (
     DeprecatedProcessError,
@@ -65,13 +58,6 @@ __all__ = [
     "ProcessNode",
     "NodeType",
     "MeshData",
-    "BoundaryData",
-    "FluidProperties",
-    "FlowFieldData",
-    "SolverInputData",
-    "SolverResultData",
-    "VerifyInput",
-    "VerifyResult",
     "ProcessRegistry",
     "ProcessRunner",
     "ExecutionContext",

@@ -34,15 +34,25 @@ MeshData を返し、後続のソルバーで利用される。
 ## MeshData の構成
 
 - `node_coords`: (n_nodes, 3) — 全ノード座標
-- `connectivity`: (n_cells, 8) — 六面体セルの8頂点
+- `connectivity`: (n_cells, 8) — 六面体セルの8頂点（C3D8 順序: 底面 4 + 上面 4）
+- `cell_types`: (n_cells,) — 全て `CELL_TYPE_HEX`（VTK の 12）
 - `cell_volumes`: (n_cells,) — セル体積
 - `cell_centers`: (n_cells, 3) — セル中心座標
-- `face_areas`: (n_internal_faces,) — 内部面面積
-- `face_normals`: (n_internal_faces, 3) — 内部面法線
-- `face_centers`: (n_internal_faces, 3) — 内部面中心
-- `face_owner`: (n_internal_faces,) — 面のオーナーセル
-- `face_neighbour`: (n_internal_faces,) — 面の隣接セル
+- `face_areas`: (n_faces,) — 面面積
+- `face_normals`: (n_faces, 3) — 面法線（内部面は owner → neighbour、境界面は領域外向き）
+- `face_centers`: (n_faces, 3) — 面中心（原点オフセット込み）
+- `face_owner`: (n_faces,) — 面のオーナーセル
+- `face_neighbour`: (n_internal_faces,) — 内部面の隣接セル
+- `boundary_patches`: `{"XM": ..., "XP": ..., "YM": ..., "YP": ..., "ZM": ..., "ZP": ...}`
+  — 境界面インデックス（.inp の予約面名と同じ）
 - `dimensions`: (nx, ny, nz) — 構造化格子の次元
+
+面の並びは OpenFOAM 流で、先頭 `n_internal_faces` 本が内部面（x, y, z 方向の順）、
+その後ろに境界面が XM, XP, YM, YP, ZM, ZP の順に続く。`MeshData.n_faces` /
+`n_internal_faces` / `n_boundary_faces` / `boundary_faces` / `patch_faces(name)` で参照する。
+セル添字は `i * (ny * nz) + j * nz + k`（i 最遅・k 最速）で、各ソルバーの `ravel()` と同じ。
+
+境界面まで持つので、面ベース FVM 層（[fvm-layer.md](fvm-layer.md)）の境界条件をそのまま載せられる。
 
 ## 使用例
 

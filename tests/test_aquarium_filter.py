@@ -224,6 +224,40 @@ class TestInternalFaceBCIntegration:
             f"inlet 強制速度が維持されていない: mean={u_at_inlet.mean()}, target={u_target}"
         )
 
+    def test_internal_bcs_survive_dt_adaptation(self, monkeypatch):
+        """CFL 適応で dt が差し替わった入力にも internal_face_bcs が残る（回帰）.
+
+        過渡計算で dt を差し替えるときに入力 dataclass を全フィールド手書きで
+        再構築していたため internal_face_bcs が落ちていた（2 ステップ目以降）。
+        _adaptive_dt を常に dt/2 を返すよう差し替えて全ステップで再構築を強制し、
+        _simple_iteration が受け取る入力を捕捉して検証する。
+        """
+        import xkep_cae_fluid.natural_convection.solver as solver_mod
+
+        filt = AquariumFilterProcess().process(_make_filter_input(flow_rate_lph=440.0))
+        nc_inp = _make_simple_nc_input(
+            internal_bcs=(filt.inflow_bc, filt.outflow_bc), dt=0.05, max_simple_iter=3
+        )
+        monkeypatch.setattr(
+            solver_mod.NaturalConvectionFDMProcess,
+            "_adaptive_dt",
+            staticmethod(lambda inp, u, v, w, cfl_max=0.5: inp.dt * 0.5),
+        )
+        seen: list[NaturalConvectionInput] = []
+        original = solver_mod._simple_iteration
+
+        def spy(inp, *args, **kwargs):
+            seen.append(inp)
+            return original(inp, *args, **kwargs)
+
+        monkeypatch.setattr(solver_mod, "_simple_iteration", spy)
+        res = NaturalConvectionFDMProcess().process(nc_inp)
+        assert res.n_timesteps >= 2
+        assert seen, "_simple_iteration が呼ばれていない"
+        for step_inp in seen:
+            assert step_inp.dt == 0.025
+            assert step_inp.internal_face_bcs == nc_inp.internal_face_bcs
+
     def test_outlet_draws_flow_toward_it(self):
         """OUTLET マスク近傍で流れがアウトレットに引き寄せられる（|u|>0）."""
         filt = AquariumFilterProcess().process(_make_filter_input(flow_rate_lph=440.0))

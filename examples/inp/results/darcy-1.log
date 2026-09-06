@@ -1,0 +1,12 @@
+2026-09-05 09:43:39,463 INFO ykep: ykep -j=examples/inp/darcy-1.inp int -o=examples/inp/results
+2026-09-05 09:43:39,650 INFO xkep_cae_fluid.inp.runner: ジョブ darcy-1: Darcy flow through a sheared block with a low-permeability inclusion / 非構造メッシュ セル 144・面 540（境界 216、パッチ INLET, OUTLET, XM, XP, YM, YP, ZM, ZP）/ ステップ 1
+2026-09-05 09:43:39,655 INFO xkep_cae_fluid.inp.runner: ステップ Steady: *DARCY → DarcyFlowProcess(direct)
+2026-09-05 09:43:39,656 ERROR ykep: ValueError: 圧力の基準がありません（少なくとも 1 つのパッチに PRESSURE 境界が必要）
+2026-09-05 09:44:05,949 INFO ykep: ykep -j=examples/inp/darcy-1.inp int -o=examples/inp/results
+2026-09-05 09:44:06,146 INFO xkep_cae_fluid.inp.runner: ジョブ darcy-1: Darcy flow through a sheared block with a low-permeability inclusion / 非構造メッシュ セル 144・面 540（境界 216、パッチ INLET, OUTLET, XM, XP, YM, YP, ZM, ZP）/ ステップ 1
+2026-09-05 09:44:06,151 INFO xkep_cae_fluid.inp.runner: ステップ Steady: *DARCY → DarcyFlowProcess(direct)
+2026-09-05 09:44:06,703 INFO xkep_cae_fluid.inp.runner: ステップ Steady 完了: converged=True, 反復 1, 0.00 s → darcy-1.npz, darcy-1.vtk, darcy-1.html, darcy-1.yaml
+2026-09-05 13:28:04,380 INFO ykep: ykep -j=examples/inp/darcy-1.inp int -o=examples/inp/results
+2026-09-05 13:28:04,592 INFO xkep_cae_fluid.inp.runner: ジョブ darcy-1: Darcy flow through a sheared block with a low-permeability inclusion / 非構造メッシュ セル 144・面 540（境界 216、パッチ INLET, OUTLET, XM, XP, YM, YP, ZM, ZP、最大非直交角 14.0°）/ ステップ 1
+2026-09-05 13:28:04,601 INFO xkep_cae_fluid.inp.runner: ステップ Steady: *DARCY → DarcyFlowProcess(direct)
+2026-09-05 13:28:05,243 INFO xkep_cae_fluid.inp.runner: ステップ Steady 完了: converged=True, 反復 1, 0.03 s → darcy-1.npz, darcy-1.vtk, darcy-1.html, darcy-1.yaml

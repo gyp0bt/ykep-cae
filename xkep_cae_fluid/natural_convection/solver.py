@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import replace
 from typing import ClassVar
 
 import numpy as np
@@ -20,7 +21,7 @@ from xkep_cae_fluid.natural_convection.assembly import (
     build_energy_system,
     build_momentum_system,
     build_pressure_correction_system_rc,
-    compute_face_mass_residual,
+    compute_face_mass_residual_field,
     compute_rhie_chow_face_velocity,
 )
 from xkep_cae_fluid.natural_convection.data import (
@@ -113,6 +114,19 @@ def _compute_residual_norm(A, x, b):
     if b_norm < 1e-30:
         return np.linalg.norm(r)
     return np.linalg.norm(r) / b_norm
+
+
+def _residual_field(A, x, b, shape: tuple[int, int, int]) -> np.ndarray:
+    """セル別の正規化残差 |b - A x| / ||b|| を ``shape`` に整形して返す（残差マップ用）.
+
+    :func:`_compute_residual_norm` と同じ正規化なので、この配列の L2 ノルムが
+    スカラー残差に一致する。
+    """
+    r = np.abs(b - A @ x)
+    b_norm = np.linalg.norm(b)
+    if b_norm >= 1e-30:
+        r = r / b_norm
+    return np.asarray(r).reshape(shape)
 
 
 def _simple_convergence_residual(residuals: dict[str, float]) -> float:
@@ -294,6 +308,7 @@ def _solve_extra_scalars(
     w: np.ndarray,
     rc_faces: tuple[np.ndarray, np.ndarray, np.ndarray],
     residuals: dict[str, float],
+    residual_fields: dict[str, np.ndarray] | None = None,
 ) -> dict[str, np.ndarray]:
     """各 ExtraScalarSpec を RC 面速度で輸送し、緩和と固体ゼロ化を適用.
 
@@ -323,6 +338,10 @@ def _solve_extra_scalars(
             st_inp, phi_old_time=phi_old, rc_face_velocities=rc_faces
         )
         residuals[f"phi_{name}"] = _compute_residual_norm(A_phi, phi_curr.ravel(), b_phi)
+        if residual_fields is not None:
+            residual_fields[f"res_phi_{name}"] = _residual_field(
+                A_phi, phi_curr.ravel(), b_phi, (inp.nx, inp.ny, inp.nz)
+            )
         x = _solve_linear(
             A_phi,
             b_phi,
@@ -364,17 +383,22 @@ def _simple_iteration(
     np.ndarray,
     dict[str, np.ndarray],
     dict[str, float],
+    dict[str, np.ndarray],
 ]:
     """SIMPLE法の1反復を実行.
 
     Returns
     -------
     tuple
-        (u_new, v_new, w_new, p_new, T_new, phi_state_new, residuals)
+        (u_new, v_new, w_new, p_new, T_new, phi_state_new, residuals, residual_fields)。
+        ``residual_fields`` はセル別残差（残差マップ）: ``res_u`` / ``res_v`` / ``res_w`` /
+        ``res_T`` / ``res_mass``（+ ``res_phi_<name>``）
     """
     nx, ny, nz = inp.nx, inp.ny, inp.nz
+    shape = (nx, ny, nz)
 
     residuals: dict[str, float] = {}
+    residual_fields: dict[str, np.ndarray] = {}
 
     # 1. 運動量方程式を解く → u*, v*, w*
     #    残差は「初期残差」(解く前の残差) を使用 — OpenFOAM 方式。
@@ -395,6 +419,7 @@ def _simple_iteration(
         w_old_old_time,
     )
     residuals["u"] = _compute_residual_norm(A_u, u.ravel(), b_u)
+    residual_fields["res_u"] = _residual_field(A_u, u.ravel(), b_u, shape)
     u_star_flat = _solve_linear(A_u, b_u, u.ravel(), inp.tol_inner, inp.max_inner_iter)
 
     A_v, b_v, a_P_v = build_momentum_system(
@@ -413,6 +438,7 @@ def _simple_iteration(
         w_old_old_time,
     )
     residuals["v"] = _compute_residual_norm(A_v, v.ravel(), b_v)
+    residual_fields["res_v"] = _residual_field(A_v, v.ravel(), b_v, shape)
     v_star_flat = _solve_linear(A_v, b_v, v.ravel(), inp.tol_inner, inp.max_inner_iter)
 
     A_w, b_w, a_P_w = build_momentum_system(
@@ -431,6 +457,7 @@ def _simple_iteration(
         w_old_old_time,
     )
     residuals["w"] = _compute_residual_norm(A_w, w.ravel(), b_w)
+    residual_fields["res_w"] = _residual_field(A_w, w.ravel(), b_w, shape)
     w_star_flat = _solve_linear(A_w, b_w, w.ravel(), inp.tol_inner, inp.max_inner_iter)
 
     u_star = u_star_flat.reshape(nx, ny, nz)
@@ -541,6 +568,7 @@ def _simple_iteration(
         T_old_old_time=T_old_old_time,
     )
     residuals["T"] = _compute_residual_norm(A_T, T.ravel(), b_T)
+    residual_fields["res_T"] = _residual_field(A_T, T.ravel(), b_T, shape)
     T_new_flat = _solve_linear(A_T, b_T, T.ravel(), inp.tol_inner, inp.max_inner_iter)
     T_new = T_new_flat.reshape(nx, ny, nz)
 
@@ -561,17 +589,27 @@ def _simple_iteration(
     # 6. 追加スカラーを RC 面速度で同時輸送（Phase 6.1b）
     if inp.extra_scalars and phi_state is not None:
         phi_state_new = _solve_extra_scalars(
-            inp, phi_state, phi_old_time, u_new, v_new, w_new, rc_faces, residuals
+            inp,
+            phi_state,
+            phi_old_time,
+            u_new,
+            v_new,
+            w_new,
+            rc_faces,
+            residuals,
+            residual_fields,
         )
     else:
         phi_state_new = phi_state if phi_state is not None else {}
 
-    # 7. 質量残差（Rhie-Chow 面速度ベース — 圧力補正と整合的）
-    residuals["mass"] = compute_face_mass_residual(
+    # 7. 質量残差（Rhie-Chow 面速度ベース — 圧力補正と整合的）。セル別分布も残差マップに残す
+    mass_field = compute_face_mass_residual_field(
         inp, u_new, v_new, w_new, p_new, a_P_u_eff, a_P_v_eff, a_P_w_eff
     )
+    residuals["mass"] = float(np.linalg.norm(mass_field.ravel()))
+    residual_fields["res_mass"] = mass_field
 
-    return u_new, v_new, w_new, p_new, T_new, phi_state_new, residuals
+    return u_new, v_new, w_new, p_new, T_new, phi_state_new, residuals, residual_fields
 
 
 class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalConvectionResult]):
@@ -655,50 +693,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
         if new_alpha_u == inp.alpha_u and new_alpha_p == inp.alpha_p:
             return inp
 
-        return NaturalConvectionInput(
-            Lx=inp.Lx,
-            Ly=inp.Ly,
-            Lz=inp.Lz,
-            nx=inp.nx,
-            ny=inp.ny,
-            nz=inp.nz,
-            rho=inp.rho,
-            mu=inp.mu,
-            Cp=inp.Cp,
-            k_fluid=inp.k_fluid,
-            beta=inp.beta,
-            T_ref=inp.T_ref,
-            gravity=inp.gravity,
-            solid_mask=inp.solid_mask,
-            k_solid=inp.k_solid,
-            q_vol=inp.q_vol,
-            T0=inp.T0,
-            bc_xm=inp.bc_xm,
-            bc_xp=inp.bc_xp,
-            bc_ym=inp.bc_ym,
-            bc_yp=inp.bc_yp,
-            bc_zm=inp.bc_zm,
-            bc_zp=inp.bc_zp,
-            dt=inp.dt,
-            t_end=inp.t_end,
-            max_simple_iter=inp.max_simple_iter,
-            max_inner_iter=inp.max_inner_iter,
-            tol_simple=inp.tol_simple,
-            tol_inner=inp.tol_inner,
-            alpha_u=new_alpha_u,
-            alpha_p=new_alpha_p,
-            alpha_T=inp.alpha_T,
-            output_interval=inp.output_interval,
-            coupling_method=inp.coupling_method,
-            n_piso_correctors=inp.n_piso_correctors,
-            convection_scheme=inp.convection_scheme,
-            time_scheme=inp.time_scheme,
-            pressure_solver=inp.pressure_solver,
-            adaptive_relaxation=inp.adaptive_relaxation,
-            max_pressure_iter=inp.max_pressure_iter,
-            extra_scalars=inp.extra_scalars,
-            internal_face_bcs=inp.internal_face_bcs,
-        )
+        return replace(inp, alpha_u=new_alpha_u, alpha_p=new_alpha_p)
 
     def _solve_steady(
         self,
@@ -716,10 +711,11 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
         converged = False
         n_iter = 0
         prev_max_res = 0.0
+        residual_fields: dict[str, np.ndarray] = {}
 
         for outer in range(inp.max_simple_iter):
             n_iter = outer + 1
-            u, v, w, p, T, phi_state, residuals = _simple_iteration(
+            u, v, w, p, T, phi_state, residuals, residual_fields = _simple_iteration(
                 inp, u, v, w, p, T, phi_state=phi_state
             )
 
@@ -770,6 +766,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             residual_history=residual_history,
             elapsed_seconds=elapsed,
             extra_scalars=phi_state,
+            residual_fields=residual_fields,
         )
 
     @staticmethod
@@ -817,6 +814,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
     ) -> NaturalConvectionResult:
         """非定常解析."""
         t_current = 0.0
+        residual_fields: dict[str, np.ndarray] = {}
         n_timesteps = 0
         total_outer = 0
         converged = True
@@ -836,58 +834,10 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             dt_actual = min(dt_actual, inp.t_end - t_current)
             t_current += dt_actual
 
-            # dt_actual を使う一時的な入力を生成
-            if dt_actual != inp.dt:
-                # frozen dataclass なので object.__setattr__ で一時変更
-                inp_step = inp
-                # NaturalConvectionInput は frozen なので直接変更できない
-                # _simple_iteration 内で inp.dt を参照するため、
-                # 一時的に dt を差し替えた入力を使う
-                inp_step = NaturalConvectionInput(
-                    Lx=inp.Lx,
-                    Ly=inp.Ly,
-                    Lz=inp.Lz,
-                    nx=inp.nx,
-                    ny=inp.ny,
-                    nz=inp.nz,
-                    rho=inp.rho,
-                    mu=inp.mu,
-                    Cp=inp.Cp,
-                    k_fluid=inp.k_fluid,
-                    beta=inp.beta,
-                    T_ref=inp.T_ref,
-                    gravity=inp.gravity,
-                    solid_mask=inp.solid_mask,
-                    k_solid=inp.k_solid,
-                    q_vol=inp.q_vol,
-                    T0=inp.T0,
-                    bc_xm=inp.bc_xm,
-                    bc_xp=inp.bc_xp,
-                    bc_ym=inp.bc_ym,
-                    bc_yp=inp.bc_yp,
-                    bc_zm=inp.bc_zm,
-                    bc_zp=inp.bc_zp,
-                    dt=dt_actual,
-                    t_end=inp.t_end,
-                    max_simple_iter=inp.max_simple_iter,
-                    max_inner_iter=inp.max_inner_iter,
-                    tol_simple=inp.tol_simple,
-                    tol_inner=inp.tol_inner,
-                    alpha_u=inp.alpha_u,
-                    alpha_p=inp.alpha_p,
-                    alpha_T=inp.alpha_T,
-                    output_interval=inp.output_interval,
-                    coupling_method=inp.coupling_method,
-                    n_piso_correctors=inp.n_piso_correctors,
-                    convection_scheme=inp.convection_scheme,
-                    time_scheme=inp.time_scheme,
-                    pressure_solver=inp.pressure_solver,
-                    adaptive_relaxation=inp.adaptive_relaxation,
-                    max_pressure_iter=inp.max_pressure_iter,
-                    extra_scalars=inp.extra_scalars,
-                )
-            else:
-                inp_step = inp
+            # dt_actual を使う一時的な入力を生成（frozen dataclass なので replace で複製。
+            # 全フィールドを手書きで写すと internal_face_bcs のような後付けフィールドが
+            # 抜け落ちるので、必ず dataclasses.replace を使う）
+            inp_step = replace(inp, dt=dt_actual) if dt_actual != inp.dt else inp
 
             # 前々ステップ → 前ステップ → 現在の順に保存
             u_old_old_step = u_old_old
@@ -907,7 +857,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             for _outer in range(inp_step.max_simple_iter):
                 total_outer += 1
                 n_inner += 1
-                u, v, w, p, T, phi_state, residuals = _simple_iteration(
+                u, v, w, p, T, phi_state, residuals, residual_fields = _simple_iteration(
                     inp_step,
                     u,
                     v,
@@ -980,4 +930,5 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
             elapsed_seconds=elapsed,
             n_timesteps=n_timesteps,
             extra_scalars=phi_state,
+            residual_fields=residual_fields,
         )
