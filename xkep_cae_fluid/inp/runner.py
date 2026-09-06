@@ -436,6 +436,8 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
                 "inflow_m3s": float(res_d.inflow),
                 "outflow_m3s": float(res_d.outflow),
                 "max_mass_residual": float(np.max(np.abs(res_d.mass_residual))),
+                "n_picard_iter": int(res_d.n_picard_iter),
+                "n_timesteps": int(res_d.n_timesteps),
             }
             n_iter = 1
             converged = bool(res_d.converged)

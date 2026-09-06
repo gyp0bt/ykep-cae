@@ -15,8 +15,14 @@
 - WALL: 速度 Dirichlet（既定 0、動く壁は ``velocity``）、質量流束 0、圧力ゼロ勾配
 - INLET: 速度 Dirichlet、質量流束 ρ u_in·S、圧力ゼロ勾配
 - OUTLET: 速度ゼロ勾配、質量流束 ρ u_P·S（圧力補正で修正）、圧力 Dirichlet
-- SLIP（対称面）: 法線速度 0、接線ゼロ勾配。成分ごとの行列では owner 速度の接線射影を
-  Dirichlet 値にする遅延評価（軸に平行な面では法線成分 0・接線成分ゼロ勾配と同じ）
+- OUTFLOW（対流流出）: 速度・圧力ともゼロ勾配。質量流束は ρ u_P·S を他の境界の流出入と
+  釣り合うようスケーリング（全体質量保存を境界で強制、p' はゼロ勾配。圧力の基準は別途）
+- SLIP（対称面）: 法線速度 0、接線ゼロ勾配。軸に平行な面では成分ごとに陰的（法線成分 Dirichlet 0、
+  接線成分ゼロ勾配）、傾いた面では owner 速度の接線射影を Dirichlet 値にする遅延評価
+
+対流は 1 次風上（陰的）+ TVD 遅延補正（``convection="tvd"``）、時間項は Euler / BDF2
+（``u_old2``）。内部セルの固定速度（``fixed_mask`` / ``fixed_velocity``）と圧力補正の
+ピン留め（``pinned``）で、領域内部の吐出・吸入（InternalCellBC 相当）を表す。
 """
 
 from __future__ import annotations
@@ -32,7 +38,9 @@ from xkep_cae_fluid.core.data import MeshData
 from xkep_cae_fluid.fvm.assembly import (
     assemble_convection,
     assemble_diffusion,
+    convection_correction,
     nonorthogonal_correction,
+    time_derivative_terms,
 )
 from xkep_cae_fluid.fvm.boundary import BCKind, BoundaryFaces, PatchBC, resolve_boundary
 from xkep_cae_fluid.fvm.geometry import (
@@ -47,8 +55,9 @@ class VelocityBCKind(Enum):
 
     WALL = "wall"
     INLET = "inlet"
-    OUTLET = "outlet"
+    OUTLET = "outlet"  # 圧力指定の流出
     SLIP = "slip"  # 対称面も同じ
+    OUTFLOW = "outflow"  # 対流流出（速度・圧力ゼロ勾配、流束を流入と釣り合わせる）
 
 
 _VKIND_CODE: dict[VelocityBCKind, int] = {
@@ -56,6 +65,7 @@ _VKIND_CODE: dict[VelocityBCKind, int] = {
     VelocityBCKind.INLET: 1,
     VelocityBCKind.OUTLET: 2,
     VelocityBCKind.SLIP: 3,
+    VelocityBCKind.OUTFLOW: 4,
 }
 
 
@@ -92,6 +102,10 @@ class VelocityPatchBC:
     def slip() -> VelocityPatchBC:
         return VelocityPatchBC(VelocityBCKind.SLIP)
 
+    @staticmethod
+    def outflow() -> VelocityPatchBC:
+        return VelocityPatchBC(VelocityBCKind.OUTFLOW)
+
 
 @dataclass(frozen=True)
 class VelocityBoundaryFaces:
@@ -125,6 +139,10 @@ class VelocityBoundaryFaces:
     @property
     def is_slip(self) -> np.ndarray:
         return self.kind == _VKIND_CODE[VelocityBCKind.SLIP]
+
+    @property
+    def is_outflow(self) -> np.ndarray:
+        return self.kind == _VKIND_CODE[VelocityBCKind.OUTFLOW]
 
     @property
     def is_fixed_velocity(self) -> np.ndarray:
@@ -196,8 +214,9 @@ _ZERO_GRAD = 0
 def component_boundary(vb: VelocityBoundaryFaces, u: np.ndarray, component: int) -> BoundaryFaces:
     """運動量成分 ``component`` のスカラー境界条件（Dirichlet / ゼロ勾配）を作る.
 
-    WALL / INLET: Dirichlet（指定速度の成分）。SLIP: owner 速度の接線射影の成分を Dirichlet
-    （遅延評価）。OUTLET: ゼロ勾配。
+    WALL / INLET: Dirichlet（指定速度の成分）。OUTLET / OUTFLOW: ゼロ勾配。
+    SLIP: 面法線が軸 ``component`` に平行なら Dirichlet 0、直交ならゼロ勾配（どちらも陰的）。
+    傾いた対称面では owner 速度の接線射影の成分を Dirichlet にする遅延評価。
     """
     kind = np.full(vb.n, _ZERO_GRAD, dtype=np.int64)
     value = np.zeros(vb.n)
@@ -206,11 +225,17 @@ def component_boundary(vb: VelocityBoundaryFaces, u: np.ndarray, component: int)
     value[fixed] = vb.velocity[fixed, component]
     slip = vb.is_slip
     if np.any(slip):
-        u_p = u[vb.owner[slip]]
         n = vb.normal[slip]
+        nc = np.abs(n[:, component])
+        normal_axis = nc > 1.0 - 1e-12
+        tangent_axis = nc < 1e-12
+        tilted = ~(normal_axis | tangent_axis)
+        u_p = u[vb.owner[slip]]
         tangential = u_p - np.sum(u_p * n, axis=1)[:, None] * n
-        kind[slip] = _DIRICHLET
-        value[slip] = tangential[:, component]
+        k_s = np.where(tangent_axis, _ZERO_GRAD, _DIRICHLET)
+        v_s = np.where(tilted, tangential[:, component], 0.0)
+        kind[slip] = k_s
+        value[slip] = v_s
     return _boundary_faces_from_arrays(vb, kind, value)
 
 
@@ -224,13 +249,29 @@ def pressure_boundary(vb: VelocityBoundaryFaces, *, correction: bool = False) ->
 def boundary_mass_flux(
     mesh: MeshData, vb: VelocityBoundaryFaces, u: np.ndarray, rho: float
 ) -> np.ndarray:
-    """境界面の質量流束（外向き正）(n_boundary_faces,): INLET は指定速度、OUTLET は owner 速度、他は 0."""
+    """境界面の質量流束（外向き正）(n_boundary_faces,).
+
+    INLET は指定速度、OUTLET は owner 速度、壁・対称面は 0。OUTFLOW（対流流出）は owner 速度の
+    流束を、他の全境界の正味流入 −Σ_{other} ṁ_b と釣り合うようスケーリングする（流束が
+    まだ無い初期状態では面積比で配分）。OUTFLOW 面が無ければ質量の釣り合いは圧力補正に任せる。
+    """
     s_b = vb.normal * vb.area[:, None]
     out = np.zeros(vb.n)
     inl = vb.is_inlet
     out[inl] = rho * np.sum(vb.velocity[inl] * s_b[inl], axis=1)
     o = vb.is_outlet
     out[o] = rho * np.sum(u[vb.owner[o]] * s_b[o], axis=1)
+    cv = vb.is_outflow
+    if np.any(cv):
+        raw = rho * np.sum(u[vb.owner[cv]] * s_b[cv], axis=1)
+        target = -float(np.sum(out[~cv]))
+        total = float(np.sum(raw))
+        if total > 0.0 and target > 0.0:
+            out[cv] = raw * (target / total)
+        elif target > 0.0:
+            out[cv] = target * vb.area[cv] / float(np.sum(vb.area[cv]))
+        else:
+            out[cv] = 0.0
     return out
 
 
@@ -261,10 +302,18 @@ def assemble_momentum(
     dt: float = 0.0,
     u_old: np.ndarray | None = None,
     blocked: np.ndarray | None = None,
+    u_old2: np.ndarray | None = None,
+    convection: str = "upwind",
+    limiter: str = "van_leer",
+    fixed_mask: np.ndarray | None = None,
+    fixed_velocity: np.ndarray | None = None,
 ) -> tuple[sparse.csr_matrix, np.ndarray, np.ndarray, np.ndarray]:
     """運動量方程式（成分 ``component``）の陰的緩和付き係数行列を組む.
 
     ρ ∂u/∂t + ∇·(ṁ u) − ∇·(μ∇u) = −∂p/∂x_c + S − D u（D: 抵抗係数 [kg/(m³ s)]、Brinkman なら μ/K）
+
+    対流は有界形（``assemble_convection(bounded=True)``: 途中反復や内部吐出・吸入セルの
+    質量不整合を対角から差し引く）。
 
     Parameters
     ----------
@@ -278,6 +327,13 @@ def assemble_momentum(
         陰的緩和係数（対角を α で割り、(1−α)/α a_P u_prev を右辺へ）
     blocked : np.ndarray | None
         固体セル (n_cells,) bool。速度 0 を強制し、接する面の流束は無視
+    u_old2 : np.ndarray | None
+        前々ステップの速度 (n_cells, 3)。与えると時間項が BDF2
+    convection, limiter :
+        ``upwind`` / ``tvd``（現在の速度 ``u`` で遅延補正）とリミッタ
+    fixed_mask, fixed_velocity :
+        速度を固定する内部セル (n_cells,) bool とその値 (n_cells, 3)（吐出口など）。
+        固体セルと違い、接する面の流束は消さない
 
     Returns
     -------
@@ -290,9 +346,10 @@ def assemble_momentum(
     touch = _touching_faces(mesh, blocked)
     mf[touch] = 0.0
     A_d, b_d = assemble_diffusion(mesh, mu, bf)
-    A_c, b_c = assemble_convection(mesh, mf, bf)
+    A_c, b_c = assemble_convection(mesh, mf, bf, bounded=True)
     A = (A_d + A_c).tocsr()
     b = b_d + b_c + nonorthogonal_correction(mesh, u[:, component], mu, bf)
+    b = b + convection_correction(mesh, u[:, component], mf, bf, convection, limiter)
     vol = mesh.cell_volumes
     b = b - grad_p[:, component] * vol
     if source is not None:
@@ -301,9 +358,12 @@ def assemble_momentum(
     if drag is not None:
         diag_extra += np.asarray(drag, dtype=np.float64) * vol
     if dt > 0.0 and u_old is not None:
-        coeff = rho * vol / dt
+        old2 = None if u_old2 is None else np.asarray(u_old2, dtype=np.float64)[:, component]
+        coeff, rhs_t = time_derivative_terms(
+            mesh, rho, dt, np.asarray(u_old, dtype=np.float64)[:, component], old2
+        )
         diag_extra += coeff
-        b = b + coeff * np.asarray(u_old, dtype=np.float64)[:, component]
+        b = b + rhs_t
     A = (A + sparse.diags(diag_extra)).tocsr()
     diag = np.asarray(A.diagonal(), dtype=np.float64)
     off = np.asarray(abs(A).sum(axis=1)).ravel() - np.abs(diag)
@@ -313,19 +373,36 @@ def assemble_momentum(
         A = (A + sparse.diags(a_p - diag)).tocsr()
     else:
         a_p = diag
+    fix = np.zeros(n, dtype=bool)
+    fix_val = np.zeros(n)
     if blocked is not None:
-        blk = np.asarray(blocked, dtype=bool)
-        if np.any(blk):
-            A = A.tolil()
-            idx = np.flatnonzero(blk)
-            for i in idx:
-                A.rows[i] = [int(i)]
-                A.data[i] = [1.0]
-            A = A.tocsr()
-            b[idx] = 0.0
-            a_p[idx] = np.inf
-            off[idx] = 0.0
+        fix |= np.asarray(blocked, dtype=bool)
+    if fixed_mask is not None:
+        fm = np.asarray(fixed_mask, dtype=bool)
+        if fixed_velocity is None:
+            raise ValueError("fixed_mask には fixed_velocity (n_cells, 3) が必要")
+        fix_val[fm] = np.asarray(fixed_velocity, dtype=np.float64)[fm, component]
+        fix |= fm
+    if np.any(fix):
+        idx = np.flatnonzero(fix)
+        A = fix_rows(A, idx)
+        b = b.copy()
+        b[idx] = fix_val[idx]
+        a_p[idx] = np.inf
+        off[idx] = 0.0
     return A, b, a_p, off
+
+
+def fix_rows(A: sparse.spmatrix, idx: np.ndarray) -> sparse.csr_matrix:
+    """行 ``idx`` を単位行（対角 1、非対角 0）に置き換えた CSR 行列を返す（右辺は呼び出し側で）."""
+    if idx.size == 0:
+        return sparse.csr_matrix(A)
+    n = A.shape[0]
+    mask = np.ones(n)
+    mask[idx] = 0.0
+    out = sparse.diags(mask) @ sparse.csr_matrix(A)
+    out = out + sparse.coo_matrix((np.ones(idx.size), (idx, idx)), shape=(n, n))
+    return sparse.csr_matrix(out)
 
 
 def rhie_chow_mass_flux(
@@ -395,11 +472,13 @@ def assemble_pressure_correction(
     a_int: np.ndarray,
     a_b: np.ndarray,
     vb: VelocityBoundaryFaces,
+    pinned: np.ndarray | None = None,
 ) -> tuple[sparse.csr_matrix, np.ndarray, np.ndarray]:
     """圧力補正方程式 Σ_f a_f (p'_P − p'_N) = −Σ_f ṁ_f を組む.
 
-    OUTLET 面は p' = 0 の Dirichlet（係数 a_b）。Dirichlet 面が無い（閉じた領域）ときは
-    セル 0 を基準（p' = 0）にする。
+    OUTLET 面は p' = 0 の Dirichlet（係数 a_b）。``pinned`` のセル（内部の吐出・吸入セル）は
+    p' = 0 に固定（質量の湧き出し・吸い込みを許す）。Dirichlet 面もピン留めセルも無い
+    （閉じた領域）ときはセル 0 を基準（p' = 0）にする。
 
     Returns
     -------
@@ -420,23 +499,17 @@ def assemble_pressure_correction(
     cols = np.concatenate([nb, owner, np.arange(n)])
     vals = np.concatenate([-a_int, -a_int, diag])
     A = sparse.coo_matrix((vals, (rows, cols)), shape=(n, n)).tocsr()
-    b = -imbalance
-    if not np.any(a_b > 0):
-        A = A.tolil()
-        A.rows[0] = [0]
-        A.data[0] = [1.0]
-        A = A.tocsr()
-        b = b.copy()
-        b[0] = 0.0
-    zero = np.flatnonzero(diag == 0.0)
-    if zero.size:
-        A = A.tolil()
-        for i in zero:
-            A.rows[i] = [int(i)]
-            A.data[i] = [1.0]
-        A = A.tocsr()
-        b = b.copy()
-        b[zero] = 0.0
+    b = (-imbalance).copy()
+    pin = np.zeros(n, dtype=bool)
+    if pinned is not None:
+        pin |= np.asarray(pinned, dtype=bool)
+    if not np.any(a_b > 0) and not np.any(pin):
+        pin[0] = True
+    pin |= diag == 0.0
+    idx = np.flatnonzero(pin)
+    if idx.size:
+        A = fix_rows(A, idx)
+        b[idx] = 0.0
     return A, b, imbalance
 
 
@@ -457,7 +530,7 @@ def correct_mass_flux(
 
 
 def velocity_patch_from_kind(kind: str, **kwargs: object) -> VelocityPatchBC:
-    """文字列（wall / inlet / outlet / slip / symmetry）から :class:`VelocityPatchBC` を作る."""
+    """文字列（wall / inlet / outlet / slip / symmetry / outflow）から :class:`VelocityPatchBC` を作る."""
     key = kind.strip().lower()
     if key == "wall":
         return VelocityPatchBC.wall(kwargs.get("velocity", (0.0, 0.0, 0.0)))  # type: ignore[arg-type]
@@ -467,6 +540,8 @@ def velocity_patch_from_kind(kind: str, **kwargs: object) -> VelocityPatchBC:
         return VelocityPatchBC.outlet(float(kwargs.get("pressure", 0.0)))  # type: ignore[arg-type]
     if key in ("slip", "symmetry"):
         return VelocityPatchBC.slip()
+    if key in ("outflow", "convective"):
+        return VelocityPatchBC.outflow()
     raise ValueError(f"未知の速度境界 {kind!r}")
 
 
@@ -488,6 +563,7 @@ __all__ = [
     "pressure_correction_coefficients",
     "assemble_pressure_correction",
     "correct_mass_flux",
+    "fix_rows",
     "velocity_patch_from_kind",
     "thermal_boundary",
     "BCKind",

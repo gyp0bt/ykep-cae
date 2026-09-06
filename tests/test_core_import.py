@@ -8,16 +8,7 @@ from xkep_cae_fluid.core.categories import (
     SolverProcess,
     VerifyProcess,
 )
-from xkep_cae_fluid.core.data import (
-    BoundaryData,
-    FlowFieldData,
-    FluidProperties,
-    MeshData,
-    SolverInputData,
-    SolverResultData,
-    VerifyInput,
-    VerifyResult,
-)
+from xkep_cae_fluid.core.data import MeshData
 from xkep_cae_fluid.core.diagnostics import (
     ProcessExecutionLog,
 )
@@ -44,13 +35,13 @@ class TestCoreImport:
 
     def test_data_schemas(self):
         assert MeshData is not None
-        assert BoundaryData is not None
-        assert FluidProperties is not None
-        assert FlowFieldData is not None
-        assert SolverInputData is not None
-        assert SolverResultData is not None
-        assert VerifyInput is not None
-        assert VerifyResult is not None
+        # 旧スキーマ（BoundaryData / FluidProperties / FlowFieldData / SolverInputData /
+        # SolverResultData / VerifyInput / VerifyResult）は 2026-09-06 に削除。境界条件・物性・
+        # 入出力は方程式ファミリーごとの dataclass（fvm.PatchBC、incompressible.NavierStokesFVMInput 等）
+        import xkep_cae_fluid.core.data as data
+
+        for old in ("BoundaryData", "SolverInputData", "SolverResultData", "FlowFieldData"):
+            assert not hasattr(data, old)
 
     def test_registry(self):
         reg = ProcessRegistry.default()

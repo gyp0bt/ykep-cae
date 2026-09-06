@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from enum import Enum
 
 import numpy as np
 
@@ -55,6 +56,11 @@ class FlowPatchBC:
     def symmetry() -> FlowPatchBC:
         return FlowPatchBC(VelocityPatchBC.slip(), None)
 
+    @staticmethod
+    def outflow(temperature: float | None = None) -> FlowPatchBC:
+        """対流流出（速度・圧力ゼロ勾配、流束を他の境界の流入と釣り合わせる。圧力の基準は持たない）."""
+        return FlowPatchBC(VelocityPatchBC.outflow(), _thermal(temperature, None, None))
+
 
 def _thermal(
     temperature: float | None, heat_flux: float | None, film: tuple[float, float] | None
@@ -66,6 +72,84 @@ def _thermal(
     if film is not None:
         return PatchBC.robin(film[0], film[1])
     return None
+
+
+class InternalCellBCKind(Enum):
+    """内部セル境界条件の種別（構造格子版 ``InternalFaceBCKind`` と同じ意味）."""
+
+    INLET = "inlet"  # 吐出: 速度（任意で温度）を固定、p' = 0 ピン留め
+    OUTLET = "outlet"  # 吸入: p' = 0 ピン留め（圧力基準、速度はそのまま）
+
+
+@dataclass(frozen=True)
+class InternalCellBC:
+    """領域内部のセル集合に課す吐出（INLET）/ 吸入（OUTLET）.
+
+    外部フィルターの吐出口・吸込口のように、境界面ではなく領域内部のセルに流れの
+    湧き出し・吸い込みを置く。INLET セルは運動量行を速度固定に、エネルギー行を
+    ``temperature`` 固定に（None なら拘束しない）置き換え、圧力補正は p' = 0 に固定する
+    （質量の湧き出しを許す）。OUTLET セルは圧力補正だけ p' = 0 に固定する。
+
+    Parameters
+    ----------
+    kind : InternalCellBCKind
+    mask : np.ndarray
+        (n_cells,) bool。True のセルに適用
+    velocity : tuple[float, float, float]
+        INLET の速度 [m/s]
+    temperature : float | None
+        INLET の温度 [K]
+    label : str
+        識別子（ログ用）
+    """
+
+    kind: InternalCellBCKind
+    mask: np.ndarray
+    velocity: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    temperature: float | None = None
+    label: str = ""
+
+    @staticmethod
+    def inlet(
+        mask: np.ndarray,
+        velocity: tuple[float, float, float],
+        temperature: float | None = None,
+        label: str = "",
+    ) -> InternalCellBC:
+        return InternalCellBC(InternalCellBCKind.INLET, mask, velocity, temperature, label)
+
+    @staticmethod
+    def outlet(mask: np.ndarray, label: str = "") -> InternalCellBC:
+        return InternalCellBC(InternalCellBCKind.OUTLET, mask, label=label)
+
+
+@dataclass(frozen=True)
+class ScalarSpec:
+    """流れと同じ面質量流束で輸送する追加スカラー（トレーサ、溶存 CO₂ など）.
+
+    ∂φ/∂t + ∇·(u φ) = ∇·(Γ∇φ) + S（時間項の係数 1。密度で重み付けしたければ Γ・S を換算する）
+
+    Parameters
+    ----------
+    name : str
+    diffusivity : float | np.ndarray
+        拡散係数 Γ（スカラーかセル配列）
+    phi0 : float | np.ndarray
+        初期値
+    source : np.ndarray | None
+        体積ソース (n_cells,)
+    bcs : Mapping[str, PatchBC]
+        パッチ名 → 境界条件（未指定はゼロ勾配。流入面は Dirichlet を与えると流入値になる）
+    alpha : float
+        陰的緩和係数
+    """
+
+    name: str
+    diffusivity: float | np.ndarray
+    phi0: float | np.ndarray = 0.0
+    source: np.ndarray | None = None
+    bcs: Mapping[str, PatchBC] = field(default_factory=dict)
+    alpha: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -105,7 +189,18 @@ class NavierStokesFVMInput:
     alpha_u, alpha_p, alpha_T : float
         緩和係数
     coupling : str
-        ``simple`` / ``simplec``
+        ``simple`` / ``simplec`` / ``piso``（PISO は α_p = 1 で ``n_piso_correctors`` 回の圧力補正）
+    n_piso_correctors : int
+        PISO の圧力補正回数（既定 2）
+    convection, limiter : str
+        対流スキーム ``upwind``（既定）/ ``tvd`` と TVD リミッタ ``van_leer`` / ``superbee``
+        （運動量・エネルギー・追加スカラーに共通、遅延補正）
+    time_scheme : str
+        ``euler``（陰的 1 次）/ ``bdf2``（2 次。最初のステップは Euler）
+    scalars : tuple[ScalarSpec, ...]
+        追加スカラー（収束判定には含めない）
+    internal_bcs : tuple[InternalCellBC, ...]
+        領域内部の吐出・吸入セル
     linear_solver, pressure_solver : str
         運動量 / 圧力補正の線形ソルバー（direct / bicgstab / amg）
     tol_inner, max_inner_iter :
@@ -137,6 +232,12 @@ class NavierStokesFVMInput:
     alpha_p: float = 0.3
     alpha_T: float = 0.9
     coupling: str = "simple"
+    n_piso_correctors: int = 2
+    convection: str = "upwind"
+    limiter: str = "van_leer"
+    time_scheme: str = "euler"
+    scalars: tuple[ScalarSpec, ...] = ()
+    internal_bcs: tuple[InternalCellBC, ...] = ()
     linear_solver: str = "bicgstab"
     pressure_solver: str = "bicgstab"
     tol_inner: float = 1e-8
@@ -165,9 +266,11 @@ class NavierStokesFVMResult:
         実行した SIMPLE 反復の総数
     n_timesteps : int
     residual_history : dict[str, list[float]]
-        u / v / w / T / mass の履歴
+        u / v / w / T / mass（と追加スカラー名）の履歴
     residual_fields : dict[str, np.ndarray]
-        最終反復のセル別残差 res_u / res_v / res_w / res_T / res_mass
+        最終反復のセル別残差 res_u / res_v / res_w / res_T / res_mass（/ res_<スカラー名>）
+    scalars : dict[str, np.ndarray]
+        追加スカラーの最終場（``ScalarSpec.name`` → (n_cells,)）
     elapsed_seconds : float
     """
 
@@ -182,3 +285,4 @@ class NavierStokesFVMResult:
     residual_fields: dict[str, np.ndarray] = field(default_factory=dict)
     elapsed_seconds: float = 0.0
     time_history: tuple[float, ...] = ()
+    scalars: dict[str, np.ndarray] = field(default_factory=dict)

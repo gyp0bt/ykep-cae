@@ -4,7 +4,7 @@ step: Steady
 procedure: NAVIER STOKES
 steady: true
 turbulence: LAMINAR
-commit: fcf973a
+commit: 75abcf2
 parameters:
   L: 0.1
   T_hot: 310.0
@@ -46,20 +46,20 @@ solver:
   dt: 0.0
   t_end: 0.0
 converged: true
-n_outer_iterations: 165
+n_outer_iterations: 75
 n_timesteps: 0
 final_residuals:
-  u: 9.652541977435171e-05
-  v: 9.739732410937378e-05
+  u: 9.326238882797065e-05
+  v: 9.715086857535958e-05
   w: 0.0
-  T: 1.2992301338098353e-09
-  mass: 1.2156769564263273e-05
-elapsed_seconds: 2.4478700410036254
-max_abs_velocity: 0.037689617500343255
+  T: 6.322712717485683e-07
+  mass: 3.218764082702721e-05
+elapsed_seconds: 1.0585191799998483
+max_abs_velocity: 0.037872821624700716
 temperature_range:
-  - 290.51731192208274
-  - 309.4826853806037
-wall_seconds: 2.4566223159999936
+  - 290.51791423188433
+  - 309.48208308028427
+wall_seconds: 1.0673203039998498
 output_files:
   - cavity-nc-2.npz
   - cavity-nc-2.vtk

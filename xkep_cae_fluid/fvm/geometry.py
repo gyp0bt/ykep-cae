@@ -43,6 +43,35 @@ def face_interpolation_weights(mesh: MeshData) -> np.ndarray:
     return w
 
 
+def face_skewness(mesh: MeshData) -> tuple[np.ndarray, np.ndarray]:
+    """内部面のスキュー: セル中心を結ぶ直線と面平面の交点 x'_f と、面中心からのずれ.
+
+    Returns
+    -------
+    t : np.ndarray
+        交点の直線パラメータ x'_f = x_P + t (x_N − x_P) (n_internal_faces,)
+    skew : np.ndarray
+        x_f − x'_f (n_internal_faces, ndim)。直交・非スキューなメッシュではゼロ。
+        四面体など面中心が P–N 直線から外れるメッシュで、面値の補間を x'_f で行い
+        ∇φ_f·skew を足す（スキュー補正）ために使う
+    """
+    _require_faces(mesh)
+    n_int = mesh.n_internal_faces
+    nd = mesh.face_normals.shape[1]
+    owner = mesh.face_owner[:n_int]
+    nb = mesh.face_neighbour
+    xp = mesh.cell_centers[owner, :nd]
+    d = mesh.cell_centers[nb, :nd] - xp
+    n_f = mesh.face_normals[:n_int, :nd]
+    xf = mesh.face_centers[:n_int, :nd]
+    denom = np.sum(n_f * d, axis=1)
+    safe = np.where(np.abs(denom) > 1e-300, denom, 1.0)
+    t = np.where(np.abs(denom) > 1e-300, np.sum(n_f * (xf - xp), axis=1) / safe, 0.5)
+    t = np.clip(t, 0.0, 1.0)
+    skew = xf - (xp + t[:, None] * d)
+    return t, skew
+
+
 def face_decomposition(mesh: MeshData) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """内部面の over-relaxed 分解 S_f = E_f + T_f.
 
@@ -213,19 +242,25 @@ def cell_gradient(
     phi: np.ndarray,
     bfaces: BoundaryFaces,
     gamma: float | np.ndarray | None = None,
-    n_iter: int = 2,
+    n_iter: int = 30,
+    tol: float = 1e-10,
 ) -> np.ndarray:
     """Green–Gauss のセル勾配 ∇φ_P = (1/V_P) Σ_f φ_f S_f (n_cells, ndim).
 
-    内部面は距離重み付き線形補間、境界面は :func:`boundary_face_values`。
-    Dirichlet 以外の境界面では φ_b に接線方向の外挿 ∇φ_P·t_b（t_b は面中心へのベクトルの
-    接線成分）を加える。これは勾配自身に依存するので ``n_iter`` 回反復する
-    （非直交メッシュの境界セルで線形場の勾配が改善する。直交メッシュでは t_b = 0）。
+    内部面は P–N 直線と面平面の交点 x'_f での線形補間にスキュー補正 ∇φ_f·(x_f − x'_f) を
+    加えた値（:func:`face_skewness`。六面体の箱格子・せん断格子ではゼロ、四面体では効く）、
+    境界面は :func:`boundary_face_values`。Dirichlet 以外の境界面では φ_b に接線方向の外挿
+    ∇φ_P·t_b（t_b は面中心へのベクトルの接線成分）を加える。どちらも勾配自身に依存するので
+    変化が ``tol``（相対）を切るまで最大 ``n_iter`` 回反復する（線形場では反復ごとにスキュー比
+    だけ誤差が縮む。Kuhn 分割の四面体で 1 回あたり約 0.15 倍。直交メッシュでは 1 回）。
     """
     _require_faces(mesh)
     n_int = mesh.n_internal_faces
     nd = mesh.face_normals.shape[1]
-    phi_int = internal_face_values(mesh, phi)
+    owner = mesh.face_owner[:n_int]
+    nb = mesh.face_neighbour
+    t_line, skew = face_skewness(mesh)
+    phi_int0 = (1.0 - t_line) * phi[owner] + t_line * phi[nb]
     gamma_owner: np.ndarray | None = None
     if gamma is not None:
         g = np.full(mesh.n_cells, float(gamma)) if np.isscalar(gamma) else np.asarray(gamma)
@@ -237,23 +272,33 @@ def cell_gradient(
     n_b = mesh.face_normals[bfaces.faces, :nd]
     t_b = r_b - np.sum(r_b * n_b, axis=1)[:, None] * n_b
     extrapolate = ~bfaces.is_dirichlet
-    needs_iter = bool(np.any(np.abs(t_b[extrapolate]) > 1e-14)) if np.any(extrapolate) else False
+    needs_b = bool(np.any(np.abs(t_b[extrapolate]) > 1e-14)) if np.any(extrapolate) else False
+    needs_skew = bool(np.any(np.abs(skew) > 1e-14))
 
-    def gauss(phi_b: np.ndarray) -> np.ndarray:
+    def gauss(phi_int: np.ndarray, phi_b: np.ndarray) -> np.ndarray:
         phi_f = np.concatenate([phi_int, phi_b])
         contrib = phi_f[:, None] * s_f
         grad = np.zeros((mesh.n_cells, nd))
         np.add.at(grad, mesh.face_owner, contrib)
-        np.add.at(grad, mesh.face_neighbour, -contrib[:n_int])
+        np.add.at(grad, nb, -contrib[:n_int])
         return grad / mesh.cell_volumes[:, None]
 
-    grad = gauss(phi_b0)
-    if not needs_iter:
+    grad = gauss(phi_int0, phi_b0)
+    if not (needs_b or needs_skew):
         return grad
     for _ in range(max(int(n_iter) - 1, 0)):
+        phi_int = phi_int0
+        if needs_skew:
+            g_f = (1.0 - t_line)[:, None] * grad[owner] + t_line[:, None] * grad[nb]
+            phi_int = phi_int0 + np.sum(g_f * skew, axis=1)
         phi_b = phi_b0.copy()
-        phi_b[extrapolate] += np.sum(grad[bfaces.owner[extrapolate]] * t_b[extrapolate], axis=1)
-        grad = gauss(phi_b)
+        if needs_b:
+            phi_b[extrapolate] += np.sum(grad[bfaces.owner[extrapolate]] * t_b[extrapolate], axis=1)
+        new = gauss(phi_int, phi_b)
+        change = float(np.linalg.norm(new - grad))
+        grad = new
+        if change <= tol * max(float(np.linalg.norm(grad)), 1e-300):
+            break
     return grad
 
 

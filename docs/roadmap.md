@@ -190,8 +190,8 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] 例題: Ra=1000 キャビティ（Nu=1.169）、`*INCLUDE` メッシュの平板伝熱 — status-33
 - [x] `*DARCY` の実行対応（`DarcyFlowProcess` 新設、面ベース FVM、`InpMeshProcess` の非構造メッシュ経由）— Phase 11
 - [ ] `HEAT TRANSFER=NONE` でエネルギー方程式をスキップ（`solve_energy`）— status-33 TODO
-- [ ] SYMMETRY / SLIP 面の既定緩和での発散の切り分け — status-33 TODO
-- [ ] 部分面境界・`InternalFaceBC` の .inp 表現 — status-33 TODO
+- [ ] SYMMETRY / SLIP 面の既定緩和での発散の切り分け — status-33 TODO（非構造 NS は対称面を陰的に組んだので対象外）
+- [x] 部分面境界・`InternalFaceBC` の .inp 表現 — 部分面は `*SURFACE`、内部の吐出・吸入は要素集合 target の `*BOUNDARY`（非構造 NS）— Phase 11
 - [x] 格子の次段の方針決定 → 非構造格子（面ベース FVM）。`InpMeshProcess` を追加 — Phase 11
 - [ ] OpenFOAM / Fluent 書き出し Process
 
@@ -228,10 +228,14 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] 非直交補正（over-relaxed 分解 + 傾いた境界面の接線補正 + `solve_corrected`）を fvm 層に追加し Darcy / スカラー輸送 / 伝熱に接続 — Phase 11
 - [x] `nsb/{data,assembly}.py` をコミット 1647839 時点のスナップショットとして切り離し（同期スクリプト・乖離テスト削除）— Phase 11
 - [x] `NavierStokesFVMProcess`（面リストの SIMPLE/SIMPLEC + Rhie–Chow、Boussinesq、Brinkman 抵抗、固体マスク、エネルギー）: `BrinkmanFlowFVMProcess` と `NaturalConvectionFDMProcess` を 1 ファミリーに。`*NAVIER STOKES` の非構造経路、例題 cavity-nc-2 — Phase 11
-- [ ] 構造格子版に残る機能を非構造 NS へ（TVD 遅延補正、BDF2、PISO、`InternalFaceBC`、追加スカラー、対流流出）
-- [ ] 四面体・楔の `InpMeshProcess` 対応、`core/strategies/CorrectedDiffusionScheme` の整理（fvm 層に統合済みの機能と重複）
-- [ ] 内部面の `*SURFACE`（`InternalFaceBC` 相当）、Darcy の Forchheimer / Brinkman 項、非定常
-- [ ] `core/data.BoundaryData` / `SolverInputData` 等の死んだスキーマの整理
+- [x] 構造格子版に残る機能を非構造 NS へ（TVD 遅延補正、BDF2、PISO（Issa の H(u) 再評価）、`InternalCellBC`、追加スカラー `ScalarSpec`、対流流出 OUTFLOW、`.inp` の `CONVECTION` / `LIMITER` / `TIME` / `PRESSURE_VELOCITY` / `TYPE=OUTLET`）。対称面を陰的にして cavity-nc-2 が 165 → 75 反復 — Phase 11（2026-09-06）
+- [x] 四面体・楔の `InpMeshProcess` 対応（C3D4 / C3D6 / CPS3、種別混在、-1 詰め接続、mirador も C3D4 / C3D6）、
+  fvm 層の Green–Gauss にスキュー補正（四面体で線形場 1e-7）— Phase 11（2026-09-06）
+- [x] `core/strategies/CorrectedDiffusionScheme` を fvm 層（`assemble_diffusion` / `nonorthogonal_correction` / `diffusive_face_flux`）の薄い包みに — Phase 11（2026-09-06）
+- [x] Darcy の Forchheimer（Picard）と非定常（比貯留 `*SPECIFIC STORAGE`）。Brinkman 粘性項は NS ファミリーの抵抗で扱う — Phase 11（2026-09-06）
+- [x] 内部の吐出・吸入: 非構造 NS では要素集合を target にした `*BOUNDARY` → `InternalCellBC`（内部面 `*SURFACE` 単位の指定は保留） — Phase 11（2026-09-06）
+- [x] `core/data.BoundaryData` / `FluidProperties` / `FlowFieldData` / `SolverInputData` / `SolverResultData` / `VerifyInput` / `VerifyResult` を削除（未使用） — Phase 11（2026-09-06）
+- [ ] 圧力補正への非直交補正、`ADAPTIVE` 緩和の非構造版、2 次要素・角錐の `InpMeshProcess`、内部面 `*SURFACE` の境界条件
 
 ## 将来構想
 

@@ -106,7 +106,9 @@ class MaterialDefinition:
     reference_temperature : float | None
         ``*EXPANSION, ZERO=`` 基準温度 [K]
     permeability : float | None
-        ``*PERMEABILITY`` [m²]（Darcy 用、現状は保持のみ）
+        ``*PERMEABILITY`` [m²]（Darcy 用）
+    forchheimer, specific_storage : float | None
+        ``*FORCHHEIMER`` β [1/m] / ``*SPECIFIC STORAGE`` S_s [1/Pa]（Darcy 用）
     """
 
     name: str
@@ -117,6 +119,8 @@ class MaterialDefinition:
     expansion: float | None = None
     reference_temperature: float | None = None
     permeability: float | None = None
+    forchheimer: float | None = None  # ``*FORCHHEIMER`` β [1/m]（Darcy の慣性補正）
+    specific_storage: float | None = None  # ``*SPECIFIC STORAGE`` S_s [1/Pa]（非定常 Darcy）
 
     def require(self, attr: str) -> float:
         value = getattr(self, attr)

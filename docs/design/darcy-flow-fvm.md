@@ -21,11 +21,15 @@ OpenFOAM polyMesh（`PolyMeshReaderProcess`）のどの `MeshData` でも同じ�
 
 ## 入出力
 
-- `DarcyFlowInput(mesh, permeability, viscosity, density=1000, bcs={patch: DarcyPatchBC}, source=None, p0=None, linear_solver="direct", tol, max_iter)`
+- `DarcyFlowInput(mesh, permeability, viscosity, density=1000, bcs={patch: DarcyPatchBC}, source=None, p0=None, linear_solver="direct", tol, max_iter, max_nonorthogonal_iter, forchheimer=0, max_picard_iter, picard_tol, specific_storage=0, dt=0, t_end=0, output_interval)`
+  - `forchheimer` β [1/m]（スカラーかセル配列）: −∇p = (μ/K) u + β ρ |u| u。実効移動度 Γ = (K/μ)/(1 + β ρ K |u|/μ) を
+    セル速度 |u| で更新する Picard 反復（速度の相対変化 < `picard_tol`）
+  - `specific_storage` S_s [1/Pa] と `dt > 0` で非定常 S_s ∂p/∂t + ∇·u = S（陰的 Euler）。閉じた領域でも
+    時間項があれば圧力基準は不要
   - `permeability` K [m²]: スカラーかセル配列（正の値。不透過は極小値か WALL 境界）
   - `DarcyPatchBC`: `PRESSURE`（p 固定）/ `VELOCITY`（法線流入速度 u_n、正 = 流入）/ `WALL`（不透過、未指定パッチの既定）
   - 圧力の基準として PRESSURE パッチが 1 つ以上必要（無ければ `ValueError`）
-- `DarcyFlowResult(p, velocity (n_cells,3), face_flux (n_faces,), mass_residual (n_cells,), converged, residual, inflow, outflow)`
+- `DarcyFlowResult(p, velocity (n_cells,3), face_flux (n_faces,), mass_residual (n_cells,), converged, residual, inflow, outflow, n_nonorthogonal_iter, n_picard_iter, n_timesteps, time_history, p_history)`
 
 ## 離散化
 
@@ -41,7 +45,9 @@ OpenFOAM polyMesh（`PolyMeshReaderProcess`）のどの `MeshData` でも同じ�
 
 - API: メタ情報、戻り値の形、K ≤ 0 / 圧力基準なし / パッチ名不正の拒否
 - 物理: 1D 圧力差の一様流 u = K Δp/(μ L)（構造格子・せん断メッシュ）、流入速度指定の線形圧力分布、
-  2 層透過率の直列則、質量保存（各セルの不整合が丸め誤差、流入 = 流出）、ソース項の総流出
+  2 層透過率の直列則、質量保存（各セルの不整合が丸め誤差、流入 = 流出）、ソース項の総流出、
+  Forchheimer の圧力勾配 μu/K + βρu²（Picard 収束）、閉領域 + 一様ソースの非定常 p = S t/S_s、
+  非定常が定常解へ緩和
 
 ## `.inp` からの実行
 
@@ -63,6 +69,10 @@ OpenFOAM polyMesh（`PolyMeshReaderProcess`）のどの `MeshData` でも同じ�
 *END STEP
 ```
 
+材料に `*FORCHHEIMER`（β [1/m]）を書くと慣性補正、`*SPECIFIC STORAGE`（S_s [1/Pa]）と
+`*DARCY` のデータ行 `dt, time_period`（`STEADY STATE` なし）で非定常。`*CONTROLS, PARAMETERS=SOLVER` に
+`MAX_PICARD` / `PICARD_TOL`、`PARAMETERS=TIME INCREMENTATION` に `OUTPUT_INTERVAL`。
+
 `InpCaseRunnerProcess` は `*DARCY` ステップでは `StructuredGridRecoveryProcess` の代わりに
 `InpMeshProcess` でメッシュを組み、`InpToDarcyProcess` が `DarcyFlowInput` に写す。
 出力は非構造版（NPZ に `node_coords` / `connectivity`、VTK は `UNSTRUCTURED_GRID`、HTML は
@@ -70,6 +80,7 @@ OpenFOAM polyMesh（`PolyMeshReaderProcess`）のどの `MeshData` でも同じ�
 
 ## 制限 / 今後
 
-- 定常のみ（圧縮性・貯留項なし）。Forchheimer 慣性補正、Brinkman 粘性項は未実装
-  （`experiments/coldplate/darcy.py` の Picard 実装を参照）
+- ~~定常のみ。Forchheimer 慣性補正は未実装~~ → 比貯留項の非定常と Forchheimer の Picard 反復を追加（2026-09-06）。
+  Brinkman 粘性項（速度が未知数になる）はこのファミリーには入れず、`NavierStokesFVMProcess(permeability=)` の
+  Brinkman 抵抗で扱う
 - ~~非直交補正なし~~ → over-relaxed 分解の遅延補正を `solve_corrected` で反復（[fvm-layer.md](fvm-layer.md)）。`DarcyFlowInput.max_nonorthogonal_iter`、`DarcyFlowResult.n_nonorthogonal_iter`。質量不整合は tol × 流量のオーダー

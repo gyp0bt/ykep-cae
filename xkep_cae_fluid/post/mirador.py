@@ -107,7 +107,7 @@ class MiradorExportInput:
     verbose : bool
         messi の概要表示
     mesh : MeshData | None
-        **非構造格子**の入力。六面体（8 節点、``connectivity`` に -1 なし）の ``MeshData``
+        **非構造格子**の入力。六面体 / 楔 / 四面体（``connectivity`` は -1 詰め可）の ``MeshData``
         を与えると格子線（``x_lines`` 等は ``None`` で可）の代わりにその要素をそのまま描く。
         場は ``(n_cells,)`` / ``(n_cells, 3)``、``mask`` は ``(n_cells,)``。断面スラブ
         （``slices`` / ``auto_slices``）は使えない（``cut_plane`` は使える）
@@ -157,17 +157,36 @@ class StructuredHexMesh:
     nodes : np.ndarray
         ``(n_nodes, 4)``: ラベル, x, y, z。節点添字は i が最速
     elements : np.ndarray
-        ``(n_cells, 9)``: ラベル + 8 節点（Abaqus C3D8 順 = VTK_HEXAHEDRON 順）
+        ``(n_cells, 1 + w)``: ラベル + 節点（Abaqus C3D8 順 = VTK_HEXAHEDRON 順）。非構造入力で
+        楔・四面体が混ざるときは幅 w を最大節点数にして 0 詰め
     cell_labels : np.ndarray
         ``(nx, ny, nz)`` のセルラベル（mask で除いたセルは 0）。非構造入力では ``(n_cells,)``
     elsets : Mapping[str, np.ndarray]
         elset 名 → 要素ラベル配列（``domain`` + 断面スラブ）
+    element_types : np.ndarray | None
+        行ごとの messi 要素タイプ（``C3D4`` / ``C3D6`` / ``C3D8``）。None なら全て ``C3D8``
     """
 
     nodes: np.ndarray
     elements: np.ndarray
     cell_labels: np.ndarray
     elsets: Mapping[str, np.ndarray] = field(default_factory=dict)
+    element_types: np.ndarray | None = None
+
+    def element_rows_by_type(self, labels: np.ndarray) -> list[tuple[str, np.ndarray]]:
+        """``labels`` の要素行を messi のタイプごとに（``(type, rows)``、節点列はタイプの幅に切る）."""
+        sel = np.isin(self.elements[:, 0], labels)
+        if self.element_types is None:
+            return [("C3D8", self.elements[sel])]
+        out: list[tuple[str, np.ndarray]] = []
+        for etype, n_nodes in _MESSI_TYPES.items():
+            rows = self.elements[sel & (self.element_types == etype)]
+            if rows.shape[0]:
+                out.append((etype, rows[:, : 1 + n_nodes]))
+        return out
+
+
+_MESSI_TYPES: dict[str, int] = {"C3D4": 4, "C3D6": 6, "C3D8": 8}
 
 
 # ---------------------------------------------------------------------------
@@ -329,11 +348,20 @@ def build_structured_hex_mesh(
 def build_hex_mesh_from_meshdata(
     mesh: MeshData, mask: np.ndarray | None = None, domain_name: str = "domain"
 ) -> StructuredHexMesh:
-    """非構造 ``MeshData``（六面体）→ messi 用六面体メッシュ（ラベルはセル順 1..n）."""
+    """非構造 ``MeshData``（六面体 / 楔 / 四面体）→ messi 用メッシュ（ラベルはセル順 1..n）.
+
+    ``connectivity`` は -1 詰めで幅が違ってよい。行ごとの節点数（4 / 6 / 8）から messi の
+    要素タイプ（C3D4 / C3D6 / C3D8）を決める。
+    """
     conn = np.asarray(mesh.connectivity)
-    if conn.ndim != 2 or conn.shape[1] != 8 or np.any(conn < 0):
+    if conn.ndim != 2 or conn.shape[1] < 4 or conn.shape[1] > 8:
+        raise ValueError("mesh 入力の connectivity は (n_cells, 4..8)（-1 詰め可）が必要です")
+    counts = np.sum(conn >= 0, axis=1)
+    valid = np.array([c in _MESSI_TYPES.values() for c in counts.tolist()])
+    if not np.all(valid):
+        bad = sorted(set(counts[~valid].tolist()))
         raise ValueError(
-            "mesh 入力は 8 節点六面体（connectivity (n_cells, 8)、-1 なし）のみ対応です"
+            f"mesh 入力は四面体（4）/ 楔（6）/ 六面体（8）節点のセルのみ対応です（節点数 {bad} を含む）"
         )
     coords = np.asarray(mesh.node_coords, dtype=float)
     if coords.shape[1] == 2:
@@ -342,7 +370,11 @@ def build_hex_mesh_from_meshdata(
     n_cells = conn.shape[0]
     nodes = np.column_stack([np.arange(1, n_nodes + 1, dtype=float), coords])
     labels = np.arange(1, n_cells + 1, dtype=np.int64)
-    elements = np.column_stack([labels, conn.astype(np.int64) + 1])
+    elements = np.column_stack([labels, np.where(conn >= 0, conn.astype(np.int64) + 1, 0)])
+    types_by_count = {v: k for k, v in _MESSI_TYPES.items()}
+    element_types: np.ndarray | None = None
+    if not (conn.shape[1] == 8 and np.all(counts == 8)):
+        element_types = np.array([types_by_count[int(c)] for c in counts.tolist()])
     keep = np.ones(n_cells, dtype=bool)
     if mask is not None:
         m = np.asarray(mask, dtype=bool).reshape(-1)
@@ -355,6 +387,7 @@ def build_hex_mesh_from_meshdata(
         elements=elements[keep],
         cell_labels=cell_labels,
         elsets={domain_name: labels[keep]},
+        element_types=None if element_types is None else element_types[keep],
     )
 
 
@@ -558,8 +591,8 @@ def export_mirador(inp: MiradorExportInput) -> MiradorExportResult:
     for name, elset_labels in hexmesh.elsets.items():
         if elset_labels.size == 0:
             continue
-        rows = hexmesh.elements[np.isin(hexmesh.elements[:, 0], elset_labels)]
-        mesh.add_elements(name=name, type="C3D8", arr=rows)
+        for etype, rows in hexmesh.element_rows_by_type(elset_labels):
+            mesh.add_elements(name=name, type=etype, arr=rows)
 
     for name, vals in flat_fields.items():
         if vals.ndim == 1:

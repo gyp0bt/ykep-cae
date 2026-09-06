@@ -9,12 +9,14 @@ import pytest
 
 from xkep_cae_fluid.core.mesh import StructuredMeshInput, StructuredMeshProcess
 from xkep_cae_fluid.core.testing import binds_to
-from xkep_cae_fluid.fvm import diffusive_face_flux, resolve_boundary
+from xkep_cae_fluid.fvm import PatchBC, diffusive_face_flux, resolve_boundary
 from xkep_cae_fluid.incompressible import (
     FlowPatchBC,
+    InternalCellBC,
     NavierStokesFVMInput,
     NavierStokesFVMProcess,
     NavierStokesFVMResult,
+    ScalarSpec,
 )
 from xkep_cae_fluid.inp.builder import build_case
 from xkep_cae_fluid.inp.mesh import build_inp_mesh
@@ -104,7 +106,16 @@ class TestNavierStokesFVMAPI:
         with pytest.raises(ValueError, match="rho"):
             _run(mesh, {}, rho=-1.0, max_outer_iter=1)
         with pytest.raises(ValueError, match="coupling"):
-            _run(mesh, {}, coupling="piso", max_outer_iter=1)
+            _run(mesh, {}, coupling="coupled", max_outer_iter=1)
+        with pytest.raises(ValueError, match="convection"):
+            _run(mesh, {}, convection="quick", max_outer_iter=1)
+        with pytest.raises(ValueError, match="limiter"):
+            _run(mesh, {}, convection="tvd", limiter="minmod", max_outer_iter=1)
+        with pytest.raises(ValueError, match="time_scheme"):
+            _run(mesh, {}, time_scheme="rk2", max_outer_iter=1)
+        with pytest.raises(ValueError, match="重複"):
+            specs = (ScalarSpec("c", 1e-3), ScalarSpec("c", 1e-3))
+            _run(mesh, {}, scalars=specs, max_outer_iter=1)
         with pytest.raises(KeyError, match="LID"):
             _run(mesh, {"LID": FlowPatchBC.wall()}, max_outer_iter=1)
 
@@ -123,6 +134,43 @@ class TestNavierStokesFVMAPI:
         res = _run(mesh, _channel_bcs(), dt=0.5, t_end=1.0, max_outer_iter=50, tol=1e-6)
         assert res.n_timesteps == 2 and res.converged
         assert res.time_history == (0.5, 1.0)
+
+    def test_options_run_and_report(self):
+        """TVD / BDF2 / PISO / 対流流出 / 追加スカラー / 内部セル BC が API として通る."""
+        mesh = _box(6, 3, 1, 0.6, 0.1, 0.1)
+        bcs = _channel_bcs()
+        bcs["XP"] = FlowPatchBC.outflow()
+        inl = np.zeros(mesh.n_cells, dtype=bool)
+        inl[4] = True
+        out = np.zeros(mesh.n_cells, dtype=bool)
+        out[13] = True
+        res = _run(
+            mesh,
+            bcs,
+            dt=0.5,
+            t_end=1.5,
+            max_outer_iter=20,
+            tol=1e-6,
+            convection="tvd",
+            limiter="superbee",
+            time_scheme="bdf2",
+            coupling="piso",
+            n_piso_correctors=3,
+            scalars=(ScalarSpec("c", 1e-3, 1.0, bcs={"XM": PatchBC.dirichlet(2.0)}),),
+            internal_bcs=(
+                InternalCellBC.inlet(inl, (0.02, 0.0, 0.0), temperature=310.0, label="pump"),
+                InternalCellBC.outlet(out),
+            ),
+            solve_energy=True,
+        )
+        assert res.n_timesteps == 3
+        assert set(res.scalars) == {"c"} and res.scalars["c"].shape == (mesh.n_cells,)
+        assert "c" in res.residual_history and "res_c" in res.residual_fields
+        np.testing.assert_allclose(res.velocity[4], [0.02, 0.0, 0.0])
+        assert res.T[4] == pytest.approx(310.0)
+        assert np.isfinite(res.velocity).all() and np.isfinite(res.p).all()
+        with pytest.raises(ValueError, match="mask"):
+            _run(mesh, {}, internal_bcs=(InternalCellBC.outlet(np.zeros(3, dtype=bool)),))
 
 
 class TestNavierStokesFVMPhysics:
@@ -186,7 +234,7 @@ class TestNavierStokesFVMPhysics:
         nx, ny = 20, 4
         mesh = _box(nx, ny, 1, LX, H, 0.02)
         K = 1.0e-6
-        res = _run(mesh, _channel_bcs("slip"), permeability=np.full(mesh.n_cells, K))
+        res = _run(mesh, _channel_bcs("slip"), permeability=np.full(mesh.n_cells, K), tol=1e-8)
         assert res.converged
         np.testing.assert_allclose(res.velocity[:, 0], U_IN, rtol=1e-6)
         np.testing.assert_allclose(res.velocity[:, 1:], 0.0, atol=1e-8 * U_IN)
@@ -271,3 +319,175 @@ class TestNavierStokesFVMPhysics:
         # 高温壁側で上昇流（v > 0）、低温壁側で下降流
         x = mesh.cell_centers[:, 0]
         assert res.velocity[x < L / 4, 1].mean() > 0.0 > res.velocity[x > 3 * L / 4, 1].mean()
+
+    def test_poiseuille_outflow_boundary(self):
+        """対流流出（速度・圧力ゼロ勾配、流束を流入と釣り合わせる）でも Poiseuille 分布と圧力勾配が出る."""
+        nx, ny = 30, 10
+        mesh = _box(nx, ny, 1, LX, H, 0.02)
+        bcs = _channel_bcs()
+        bcs["XP"] = FlowPatchBC.outflow()
+        res = _run(mesh, bcs)
+        self._check_poiseuille(mesh, res, ny, rtol_profile=0.04, rtol_dp=0.03)
+        # 圧力の基準はセル 0（OUTLET が無い）
+        assert res.p[0] == pytest.approx(0.0, abs=1e-12 * abs(res.p).max())
+
+    def test_lid_driven_cavity_tvd_matches_ghia_closely(self):
+        """蓋駆動キャビティ Re=100 を TVD（van Leer）で: 中心線 u の極小値が Ghia (1982) の −0.2109 に近い.
+
+        1 次風上（24×24）は −0.185 で 12% 低く出るが、TVD は −0.211（コミット時の実測値）
+        """
+        n = 24
+        mesh = _box(n, n, 1, 1.0, 1.0, 1.0 / n)
+        bcs = {
+            "YP": FlowPatchBC.wall(velocity=(1.0, 0.0, 0.0)),
+            "ZM": FlowPatchBC.symmetry(),
+            "ZP": FlowPatchBC.symmetry(),
+        }
+        res = _run(mesh, bcs, mu=0.01, max_outer_iter=3000, tol=1e-5, convection="tvd")
+        assert res.converged
+        x = mesh.cell_centers[:, 0]
+        vert = np.abs(x - 0.5) < 1.0 / n
+        u_min = float(res.velocity[vert, 0].min())
+        assert abs(u_min + 0.2109) < 0.02, f"u_min={u_min:.4f}"
+
+    def test_piso_correctors_reduce_splitting_error(self):
+        """外部反復 1 回の非定常ステップで、PISO の追加補正が連成解（外部反復収束）との差を減らす.
+
+        Stokes 的な蓋駆動キャビティ（μ = 1、1 ステップ）: 補正 1 回（SIMPLE 相当）→ 2 回 → 3 回で誤差が単調に減る。
+        残る差は遅延評価の面質量流束による
+        """
+        n = 16
+        mesh = _box(n, n, 1, 1.0, 1.0, 1.0 / n)
+        bcs = {
+            "YP": FlowPatchBC.wall(velocity=(1.0, 0.0, 0.0)),
+            "ZM": FlowPatchBC.symmetry(),
+            "ZP": FlowPatchBC.symmetry(),
+        }
+        kw = dict(mu=1.0, dt=0.002, t_end=0.002)
+        ref = _run(mesh, bcs, max_outer_iter=500, tol=1e-11, alpha_u=0.8, alpha_p=0.5, **kw)
+        assert ref.converged
+        scale = np.abs(ref.velocity).max()
+        errs = []
+        for nc in (1, 2, 3):
+            res = _run(
+                mesh,
+                bcs,
+                max_outer_iter=1,
+                tol=1e-12,
+                coupling="piso",
+                n_piso_correctors=nc,
+                alpha_u=1.0,
+                alpha_p=1.0,
+                **kw,
+            )
+            errs.append(float(np.abs(res.velocity - ref.velocity).max() / scale))
+        assert errs[1] < errs[0] / 3.0 and errs[2] < errs[1], f"errs={errs}"
+        assert errs[2] < 0.01
+
+    def test_bdf2_conduction_more_accurate_than_euler(self):
+        """静止流体の 1D 熱伝導（sin(πx) の減衰）: BDF2 の誤差が Euler の 1/5 未満."""
+        n = 20
+        mesh = _box(n, 1, 1, 1.0, 0.1, 0.1)
+        x = mesh.cell_centers[:, 0]
+        bcs = {"XM": FlowPatchBC.wall(temperature=0.0), "XP": FlowPatchBC.wall(temperature=0.0)}
+        errs = {}
+        for scheme in ("euler", "bdf2"):
+            res = _run(
+                mesh,
+                bcs,
+                rho=1.0,
+                mu=0.01,
+                solve_energy=True,
+                Cp=1.0,
+                k_fluid=1.0,
+                T0=np.sin(np.pi * x),
+                T_ref=0.0,
+                dt=0.01,
+                t_end=0.1,
+                max_outer_iter=50,
+                tol=1e-10,
+                time_scheme=scheme,
+                alpha_T=1.0,
+            )
+            assert res.converged and res.n_timesteps == 10
+            exact = np.sin(np.pi * x) * np.exp(-(np.pi**2) * 0.1)
+            errs[scheme] = float(np.abs(res.T - exact).max() / exact.max())
+        assert errs["bdf2"] < errs["euler"] / 5.0, errs
+
+    def test_internal_cell_inlet_outlet(self):
+        """閉じた箱の内部に吐出セル（u = 0.1、T = 350）と吸入セル: 湧き出し・吸い込み以外は質量保存."""
+        n = 16
+        mesh = _box(n, n, 1, 1.0, 1.0, 1.0 / n)
+        x = mesh.cell_centers[:, 0]
+        y = mesh.cell_centers[:, 1]
+        inl = np.zeros(mesh.n_cells, dtype=bool)
+        inl[np.argmin((x - 0.2) ** 2 + (y - 0.5) ** 2)] = True
+        out = np.zeros(mesh.n_cells, dtype=bool)
+        out[np.argmin((x - 0.8) ** 2 + (y - 0.5) ** 2)] = True
+        bcs = {"ZM": FlowPatchBC.symmetry(), "ZP": FlowPatchBC.symmetry()}
+        res = _run(
+            mesh,
+            bcs,
+            mu=0.01,
+            max_outer_iter=2000,
+            tol=1e-5,
+            internal_bcs=(
+                InternalCellBC.inlet(inl, (0.1, 0.0, 0.0), temperature=350.0),
+                InternalCellBC.outlet(out),
+            ),
+            solve_energy=True,
+            T0=np.full(mesh.n_cells, 300.0),
+            k_fluid=0.01,
+            Cp=1.0,
+        )
+        assert res.converged
+        np.testing.assert_allclose(res.velocity[inl], [[0.1, 0.0, 0.0]])
+        assert res.T[inl] == pytest.approx(350.0)
+        mf = res.mass_flux
+        imb = np.zeros(mesh.n_cells)
+        np.add.at(imb, mesh.face_owner, mf)
+        np.add.at(imb, mesh.face_neighbour, -mf[: mesh.n_internal_faces])
+        free = ~(inl | out)
+        assert np.abs(imb[free]).max() < 1e-12 * np.abs(mf).max()
+        assert imb[inl][0] > 0.0 and imb[out][0] == pytest.approx(-imb[inl][0], rel=1e-9)
+        # 吐出 → 吸入へ向かう流れ、温度は有界（有界形の対流）
+        line = (np.abs(y - y[inl][0]) < 1e-9) & (x > x[inl][0]) & (x < x[out][0])
+        assert res.velocity[line, 0].min() > 0.0
+        assert 300.0 - 1e-9 <= res.T.min() and res.T.max() <= 350.0 + 1e-9
+
+    def test_scalar_transported_with_flow(self):
+        """流路の追加スカラー: 流入 Dirichlet 2.0 が定常で全域に運ばれる（境界流出はゼロ勾配）."""
+        mesh = _box(20, 6, 1, LX, H, 0.02)
+        spec = ScalarSpec("c", 1e-4, 0.0, bcs={"XM": PatchBC.dirichlet(2.0)})
+        res = _run(mesh, _channel_bcs(), scalars=(spec,))
+        assert res.converged
+        np.testing.assert_allclose(res.scalars["c"], 2.0, rtol=1e-9)
+
+    def test_scalar_closed_domain_conserved_and_bounded(self):
+        """蓋駆動キャビティのトレーサ（非定常、TVD）: 総量保存、0 ≤ c ≤ 1."""
+        n = 10
+        mesh = _box(n, n, 1, 1.0, 1.0, 1.0 / n)
+        x = mesh.cell_centers[:, 0]
+        c0 = np.where(x < 0.5, 1.0, 0.0)
+        bcs = {
+            "YP": FlowPatchBC.wall(velocity=(1.0, 0.0, 0.0)),
+            "ZM": FlowPatchBC.symmetry(),
+            "ZP": FlowPatchBC.symmetry(),
+        }
+        res = _run(
+            mesh,
+            bcs,
+            mu=0.01,
+            scalars=(ScalarSpec("c", 1e-3, c0),),
+            dt=0.1,
+            t_end=1.0,
+            max_outer_iter=100,
+            tol=1e-6,
+            convection="tvd",
+        )
+        assert res.converged
+        c = res.scalars["c"]
+        total0 = float((c0 * mesh.cell_volumes).sum())
+        assert float((c * mesh.cell_volumes).sum()) == pytest.approx(total0, rel=1e-10)
+        assert c.min() >= -1e-9 and c.max() <= 1.0 + 1e-9
+        assert 0.05 < c[x > 0.5].mean() < 0.95  # 流れで再分配されている

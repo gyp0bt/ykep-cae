@@ -26,7 +26,7 @@ StructuredGridRecoveryProcess
                          （軸平行の完全な箱格子であることを検証、要素→(i,j,k)、*SURFACE→領域面）
                          *NAVIER STOKES / *HEAT TRANSFER のステップがあり、mesh_mode が unstructured でないとき。
                          箱格子でなければ（mesh_mode=auto）非構造経路へ落ちる
-InpMeshProcess           *NODE/*ELEMENT → 面ベースの非構造 MeshData（任意の六面体 / 四辺形、
+InpMeshProcess           *NODE/*ELEMENT → 面ベースの非構造 MeshData（任意の六面体 / 楔 / 四面体、2D 四辺形 / 三角形、
                          *SURFACE → 境界パッチ、*ELSET → セル集合）。*DARCY、または構造格子に
                          復元しない *HEAT TRANSFER のステップがあるとき（設計: unstructured-inp-mesh.md）
 InpToNaturalConvectionProcess   *NAVIER STOKES → NaturalConvectionInput（構造格子）
@@ -73,7 +73,7 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 | `*PARAMETER` | – | `name = 式`（Python 式。`sqrt`, `pi` 等の数学関数のみ許可） | 以降の行の `<name>` / `<式>` を置換 |
 | `*INCLUDE` | `INPUT=file` | – | 呼び出し元からの相対パスで展開（循環・深さ 16 超はエラー） |
 | `*NODE` | `NSET=` | `id, x, y[, z]` | 2D は z=0 を補う |
-| `*ELEMENT` | `TYPE=, ELSET=` | `id, n1, …` | `C3D8` 系（8 節点）と `CPS4/CPE4` 系（4 節点）のみ。四面体・二次要素はエラー |
+| `*ELEMENT` | `TYPE=, ELSET=` | `id, n1, …` | 3D は `C3D8` 系（8 節点）/ `C3D6` 系（楔 6 節点）/ `C3D4` 系（四面体 4 節点）、2D は `CPS4/CPE4` 系（4 節点）/ `CPS3` 系（3 節点）。種別の混在可（箱格子として復元できるのは C3D8 / CPS4 だけで、他は非構造経路）。二次要素はエラー |
 | `*GRID`（ykep 拡張） | `NX=, NY=, NZ=, LX=, LY=, LZ=, ORIGIN="x y z", ELSET=` | – | 等間隔直交格子の節点・C3D8 要素を生成。要素集合 `ALL`、節点集合 `ALL`、面 `XM..ZP` を自動定義 |
 | `*NSET` / `*ELSET` | `NSET=` / `ELSET=`, `GENERATE` | ID、既存集合名、または `first, last, inc` | 名前は大文字正規化 |
 | `*SURFACE` | `NAME=, TYPE=ELEMENT` | `elset_or_id, S#` | 面ラベルは要素の幾何から外向き方向を判定（節点順序の回転に依存しない） |
@@ -81,6 +81,7 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 | `*DENSITY` `*VISCOSITY` `*CONDUCTIVITY` `*SPECIFIC HEAT` | – | 値 1 つ | ρ, μ, k, Cp |
 | `*EXPANSION` | `ZERO=T_ref` | β | Boussinesq 体膨張係数と基準温度 |
 | `*PERMEABILITY` | – | K [m²] | `*DARCY` の透過率（セクションごと。固体セクションにも指定可） |
+| `*FORCHHEIMER` / `*SPECIFIC STORAGE` | – | β [1/m] / S_s [1/Pa] | `*DARCY` の慣性補正（Picard）/ 非定常の比貯留（非定常 `*DARCY` には必須） |
 | `*FLUID SECTION` / `*SOLID SECTION` | `ELSET=, MATERIAL=` | – | 流体 / 固体（`solid_mask` + `k_solid`）。全セルを重複なく覆う必要あり |
 | `*INITIAL CONDITIONS` | `TYPE=TEMPERATURE` | `target, 値` | 節点ベース（nset / 節点 ID / `ALL`）は要素節点平均でセル値に。elset / 要素 ID はセル直接指定（ykep 拡張）。後勝ち |
 | `*BOUNDARY` `*SFILM` `*DFLUX` `*DLOAD` | – | – | `*STEP` の外に書くと全ステップに適用 |
@@ -100,9 +101,9 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 
 | キーワード | パラメータ | データ行（非定常） | ykep ソルバー |
 |---|---|---|---|
-| `*NAVIER STOKES` | `TURBULENCE=LAMINAR`, `STEADY STATE`, `HEAT TRANSFER=NONE\|COUPLED` | `dt, time_period` | `NaturalConvectionFDMProcess`（SIMPLE 系、箱格子）/ [`NavierStokesFVMProcess`](navier-stokes-fvm.md)（非箱格子または `--mesh=unstructured`。1 次風上・SIMPLE/SIMPLEC のみ、出口は `TYPE=PRESSURE`、`*SFILM` 可）。`NONE` は β=0・温度一様・温度境界無視 |
+| `*NAVIER STOKES` | `TURBULENCE=LAMINAR`, `STEADY STATE`, `HEAT TRANSFER=NONE\|COUPLED` | `dt, time_period` | `NaturalConvectionFDMProcess`（SIMPLE 系、箱格子）/ [`NavierStokesFVMProcess`](navier-stokes-fvm.md)（非箱格子または `--mesh=unstructured`。`CONVECTION` / `LIMITER` / `TIME` / `PRESSURE_VELOCITY` / `PISO_CORRECTORS` は構造格子版と同じ、`TYPE=OUTLET` は対流流出、`*SFILM` 可、`ADAPTIVE` は不可）。`NONE` は β=0・温度一様・温度境界無視 |
 | `*HEAT TRANSFER` | `STEADY STATE` | `dt, time_period` | `HeatTransferFDMProcess`（箱格子）/ [`HeatTransferFVMProcess`](heat-transfer-fvm.md)（非箱格子または `--mesh=unstructured`。境界は `*SURFACE` 名 / 予約面名のパッチ、`*SFILM` / `*DFLUX` S・BF 可） |
-| `*DARCY` | `STEADY STATE` | – | `DarcyFlowProcess`（面ベース FVM、非構造六面体メッシュ可）。境界は `TYPE=PRESSURE` / `VELOCITY`（1 成分なら法線流入速度、3 成分なら内向き法線成分）/ `WALL` / `SYMMETRY`（不透過）。`*SFILM` / `*DFLUX` / `*DLOAD` は不可 |
+| `*DARCY` | `STEADY STATE` | `dt, time_period`（`*SPECIFIC STORAGE` 必須） | `DarcyFlowProcess`（面ベース FVM、非構造メッシュ可、Forchheimer 可）。境界は `TYPE=PRESSURE` / `VELOCITY`（1 成分なら法線流入速度、3 成分なら内向き法線成分）/ `WALL` / `SYMMETRY`（不透過）。`*SFILM` / `*DFLUX` / `*DLOAD` は不可 |
 
 `TURBULENCE` は `LAMINAR` 以外を明示エラーにする（乱流モデルは Phase 5）。
 
@@ -110,16 +111,16 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 
 | PARAMETERS | KEY | 値 | 対応先 |
 |---|---|---|---|
-| `DISCRETIZATION` | `CONVECTION` | `UPWIND`（既定）, `VAN LEER`, `SUPERBEE` | `convection_scheme` |
+| `DISCRETIZATION` | `CONVECTION` | `UPWIND`（既定）, `VAN LEER`, `SUPERBEE`（非構造 NS は `TVD` も: リミッタは `LIMITER=`、既定 van Leer） | `convection_scheme` / `NavierStokesFVMInput.convection` + `limiter` |
 | | `TIME` | `EULER`（既定）, `BDF2` | `time_scheme` |
-| | `PRESSURE_VELOCITY` | `SIMPLE`（既定）, `SIMPLEC`, `PISO` | `coupling_method` |
+| | `PRESSURE_VELOCITY` | `SIMPLE`（既定）, `SIMPLEC`, `PISO` | `coupling_method` / `coupling` |
 | | `PISO_CORRECTORS` | 整数（既定 2） | `n_piso_correctors` |
-| | `LIMITER` | （予約。NaturalConvection ではエラー。Brinkman の Venkatakrishnan 用） | – |
+| | `LIMITER` | `VAN_LEER`, `SUPERBEE`（非構造 NS で `CONVECTION=TVD` と組み合わせる。NaturalConvection ではエラー） | `NavierStokesFVMInput.limiter` |
 | `RELAXATION` | `VELOCITY` `PRESSURE` `TEMPERATURE` | 0〜1（既定 0.7 / 0.3 / 0.9） | `alpha_u`, `alpha_p`, `alpha_T` |
 | | `ADAPTIVE` | `YES` / `NO` | `adaptive_relaxation` |
 | `SOLVER` | `PRESSURE` | `BICGSTAB`（既定）, `AMG`（非構造経路は `DIRECT` も） | `pressure_solver` |
 | `SOLVER`（非構造 NS） | `MOMENTUM` | `DIRECT`, `BICGSTAB`（既定）, `AMG` | `NavierStokesFVMInput.linear_solver` |
-| `SOLVER`（`*DARCY`） | `METHOD` `TOL` `MAX_ITER` | `DIRECT`（既定）, `BICGSTAB`, `AMG` | `DarcyFlowInput.linear_solver` 等 |
+| `SOLVER`（`*DARCY`） | `METHOD` `TOL` `MAX_ITER` `MAX_PICARD` `PICARD_TOL` | `DIRECT`（既定）, `BICGSTAB`, `AMG` | `DarcyFlowInput.linear_solver` / `max_picard_iter` / `picard_tol` 等 |
 | | `MAX_OUTER` `MAX_INNER` `MAX_PRESSURE_ITER` | 整数 | `max_simple_iter` 等 |
 | | `TOL` `TOL_INNER` | 実数 | `tol_simple`, `tol_inner` |
 | | `METHOD`（`*HEAT TRANSFER`） | `JACOBI`, `DIRECT`, `BICGSTAB`（既定）, `AMG`, `NUMBA`（非構造経路は `DIRECT` / `BICGSTAB` / `AMG` のみ） | `HeatTransferFDMProcess(method=)` / `HeatTransferFVMInput.linear_solver` |
@@ -139,9 +140,10 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 | `*BOUNDARY, TYPE=WALL` + `target[, SLIP]` | no-slip（`SLIP` ですべり壁） |
 | `*BOUNDARY, TYPE=VELOCITY` + `target, ux, uy, uz` | 速度流入（全成分 0 なら WALL） |
 | `*BOUNDARY, TYPE=PRESSURE` + `target, p` | 圧力流出（ゼロ勾配） |
-| `*BOUNDARY, TYPE=OUTLET` + `target` | 対流流出（非反射） |
+| `*BOUNDARY, TYPE=OUTLET` + `target` | 対流流出（構造格子版は非反射、非構造 NS は流出流束を流入と釣り合わせる `FlowPatchBC.outflow`） |
 | `*BOUNDARY, TYPE=SYMMETRY` + `target` | 対称面 |
 | `*BOUNDARY, TYPE=TEMPERATURE` + `target, T` | 温度固定 |
+| `*BOUNDARY, TYPE=VELOCITY / PRESSURE / TEMPERATURE` + **elset**（非構造 NS） | 領域内部の吐出セル（速度 + 温度固定、`InternalCellBC.inlet`）/ 吸入セル（p' = 0 の圧力基準、値は 0 のみ、`InternalCellBC.outlet`）。外部フィルターの吐出口・吸込口を要素集合で置く |
 | `*BOUNDARY` + `target, dof1, dof2, 値`（Abaqus 自由度番号） | 1-3: 速度成分、8: 圧力、11: 温度。`1, 3, 0.` は WALL |
 | `*DFLUX` + `surface, S, q` | 面熱流束 [W/m²]（正 = 流入） |
 | `*DFLUX` + `elset, BF, q` | 体積発熱 [W/m³]（`q_vol` / `q`） |
@@ -185,17 +187,18 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 |---|---|---|
 | [`cavity-nc-1.inp`](../../examples/inp/cavity-nc-1.inp) | `*GRID` + `*PARAMETER` で Ra=1000 差分加熱キャビティ（12×12×3、z 対称面、α_u/α_p/α_T = 0.2/0.05/0.5） | 226 反復で収束、Nu = 1.169（de Vahl Davis 1.118、+4.6%） |
 | [`plate-ht-1.inp`](../../examples/inp/plate-ht-1.inp) + [`plate-mesh.inp`](../../examples/inp/plate-mesh.inp) | `*NODE/*ELEMENT` を `*INCLUDE`、`*SURFACE`（S2/S4/S6）、`*SFILM`、`*DFLUX` S/BF、自由度番号形式の `*BOUNDARY` | 直接法で 1 回、T ∈ [355.6, 373.3] K |
-| [`cavity-nc-2.inp`](../../examples/inp/cavity-nc-2.inp) + [`cavity-skew-mesh.inp`](../../examples/inp/cavity-skew-mesh.inp) | cavity-nc-1 と同じ物性・Ra ~ 10³ を平行四辺形（せん断 0.25、最大非直交角 14°）の 12×12×1 メッシュで（`InpMeshProcess` + `NavierStokesFVMProcess`、`MOMENTUM=DIRECT`） | 165 反復で収束（2.5 s）、max\|U\| = 0.0377 m/s、T ∈ [290, 310] K（コミット fcf973a で実行）。参考: cavity-nc-1 を `--mesh=unstructured` で解くと 333 反復、max\|U\| = 0.0379（FDM 版 226 反復、0.0357） |
+| [`cavity-nc-2.inp`](../../examples/inp/cavity-nc-2.inp) + [`cavity-skew-mesh.inp`](../../examples/inp/cavity-skew-mesh.inp) | cavity-nc-1 と同じ物性・Ra ~ 10³ を平行四辺形（せん断 0.25、最大非直交角 14°）の 12×12×1 メッシュで（`InpMeshProcess` + `NavierStokesFVMProcess`、`MOMENTUM=DIRECT`） | 75 反復で収束（1.1 s）、max\|U\| = 0.0379 m/s、T ∈ [290, 310] K（2026-09-06、対称面を陰的にしてから。コミット fcf973a では 165 反復）。参考: cavity-nc-1 を `--mesh=unstructured` で解くと 274 反復、max\|U\| = 0.0380（FDM 版 226 反復、0.0357） |
 | [`plate-ht-2.inp`](../../examples/inp/plate-ht-2.inp) + [`plate-skew-mesh.inp`](../../examples/inp/plate-skew-mesh.inp) | plate-ht-1 と同じ物理を、せん断 0.3 の 8×4×1 六面体メッシュ（最大非直交角 16.7°、箱格子ではないので `InpMeshProcess` + `HeatTransferFVMProcess`）で解く | 直接法 + 非直交補正で収束、T ∈ [350.7, 359.1] K（コミット 04b0e70 で実行） |
 | [`darcy-1.inp`](../../examples/inp/darcy-1.inp) + [`darcy-mesh.inp`](../../examples/inp/darcy-mesh.inp) | `*DARCY`: せん断で歪んだ 12×6×2 六面体メッシュ（箱格子ではないので `InpMeshProcess` 経由）、低透過率ブロック `CLAY`（`*SOLID SECTION` + `*PERMEABILITY`）、`*SURFACE` の INLET/OUTLET に圧力 1 kPa / 0 | 直接法 + 非直交補正で収束、流入 = 流出 2.518e-6 m³/s（相対差 3e-11）、p ∈ [18.7, 981.3] Pa、質量不整合 2e-17（補正前は 2.564e-6 m³/s） |
 
 ## 制限（現状）と次の段階
 
-- 3 ファミリーとも `InpMeshProcess` の面ベース非構造メッシュで解ける（任意の六面体 / 四辺形、部分面の
-  `*SURFACE` 可、非直交補正あり）。非構造 NS は 1 次風上・陰的 Euler・SIMPLE/SIMPLEC のみで、
-  TVD / BDF2 / PISO / `ADAPTIVE` / `TYPE=OUTLET`（対流流出）/ `InternalFaceBC` は構造格子版だけ。
-  内部面の `*SURFACE` は未対応
-- `*DARCY` は定常のみ（Forchheimer / Brinkman 項なし）
+- 3 ファミリーとも `InpMeshProcess` の面ベース非構造メッシュで解ける（六面体 / 楔 / 四面体、2D 四辺形 / 三角形、
+  部分面の `*SURFACE` 可、非直交補正 + スキュー補正あり）。非構造 NS は TVD / BDF2 / PISO / `TYPE=OUTLET`（対流流出）にも対応した。
+  `ADAPTIVE`（適応緩和）は構造格子版だけ。内部セル境界（`InternalCellBC`）は要素集合を target にした
+  `*BOUNDARY` で、追加スカラーは API のみ。内部面の `*SURFACE` は未対応
+- `*DARCY` は Brinkman 粘性項なし（Brinkman は `*NAVIER STOKES` + `*PERMEABILITY` の抵抗で）。内部面の `*SURFACE` は
+  境界条件に使えない（内部の吐出・吸入は要素集合を target にした `*BOUNDARY` で）
 - `*NAVIER STOKES, HEAT TRANSFER=NONE` はエネルギー方程式を **スキップせず** 温度一様で解いている
   （`NaturalConvectionInput` に `solve_energy` フラグを足せば計算量を減らせる）
 - `*INITIAL CONDITIONS, TYPE=VELOCITY|PRESSURE`: 解析されるがソルバーに初期速度入力が無いため無視
@@ -216,8 +219,8 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 | `tests/test_inp_mapping.py::TestInpToHeatTransferAPI` | k/C/q/T0（節点平均）、Dirichlet/Neumann/Robin、不等間隔、非定常の必須物性、未対応 4 種 |
 | `tests/test_inp_mesh.py::TestInpMeshAPI` / `TestInpMeshPhysics` | `InpMeshProcess`: 箱格子で `StructuredMeshProcess` と体積・面積・隣接・パッチが一致、せん断メッシュ、2D 押し出し、`*SURFACE`（plate-mesh.inp）、内部面拒否 |
 | `tests/test_inp_mapping.py::TestInpToHeatTransferFVMAPI` | 非構造経路の k/C/q/T0、パッチ境界条件（Dirichlet/Neumann/Robin）、SOLVER、未対応 5 種、非定常の必須物性 |
-| `tests/test_inp_mapping.py::TestInpToNavierStokesFVMAPI` | 非構造 NS の物性・固体セクション・パッチ境界（VELOCITY/PRESSURE/SYMMETRY/TEMPERATURE/DFLUX/SFILM）、SIMPLEC、等温、未対応 7 種 |
-| `tests/test_inp_mapping.py::TestInpToDarcyAPI` | 透過率のセクション割当、PRESSURE / VELOCITY（ベクトル → 内向き法線成分）/ SYMMETRY、初期圧力、SOLVER、未対応 6 種 |
+| `tests/test_inp_mapping.py::TestInpToNavierStokesFVMAPI` | 非構造 NS の物性・固体セクション・パッチ境界（VELOCITY/PRESSURE/SYMMETRY/TEMPERATURE/DFLUX/SFILM）、SIMPLEC、等温、`CONVECTION` / `LIMITER` / `TIME=BDF2` / `PISO` の対応、`TYPE=OUTLET` → 対流流出、要素集合 target の内部吐出・吸入セル、未対応 9 種 |
+| `tests/test_inp_mapping.py::TestInpToDarcyAPI` | 透過率のセクション割当、PRESSURE / VELOCITY（ベクトル → 内向き法線成分）/ SYMMETRY、初期圧力、SOLVER、非定常 + Forchheimer（`*SPECIFIC STORAGE` 必須）、未対応 6 種 |
 | `tests/test_inp_runner.py::TestInpOutputWriterAPI` | NPZ/YAML/VTK、変数選択・別名、YAML 往復 |
 | `tests/test_inp_runner.py::TestInpCaseRunnerAPI` | 伝熱例題の収束、`--mesh=unstructured` で箱格子の伝熱が FDM と一致、plate-ht-2（せん断）の auto 経路と structured 拒否、NS の非構造パイプライン（TINY_NS を `unstructured` で、cavity-nc-2）、NS パイプライン、`--check`、`*DARCY` パイプライン（非構造 NPZ / VTK、`view --cut`）、パラメータ上書き |
 | `tests/test_inp_runner.py::TestYkepCli` / `TestInpPhysics` | 引数解釈・終了コード・ログファイル、1D 熱伝導の線形分布、darcy-1.inp の質量保存と低透過率ブロック |

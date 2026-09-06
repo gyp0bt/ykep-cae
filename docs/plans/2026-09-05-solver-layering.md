@@ -69,9 +69,13 @@ Process クラスを定義している実験モジュールはゼロ。
    - [x] 非直交補正（over-relaxed 分解 + 境界接線補正 + `solve_corrected`）を fvm 層に追加、Darcy / スカラー輸送 / 伝熱に接続
    - [x] 非構造 NS `NavierStokesFVMProcess`（SIMPLE/SIMPLEC + Rhie–Chow を面リストで、Brinkman 抵抗・Boussinesq・
      エネルギー・固体マスクを 1 ファミリーに。`*NAVIER STOKES` の非箱格子 / `--mesh=unstructured` 経路、例題 cavity-nc-2）
-   - [ ] 構造格子版に残る機能の移植（TVD 遅延補正、BDF2、PISO、`InternalFaceBC`、追加スカラー）
+   - [x] 構造格子版に残る機能の移植（TVD 遅延補正、BDF2、PISO、`InternalFaceBC` → `InternalCellBC`、追加スカラー、
+     対流流出 OUTFLOW、`.inp` の `CONVECTION` / `LIMITER` / `TIME=BDF2` / `PRESSURE_VELOCITY=PISO` / `TYPE=OUTLET`）— 2026-09-06
 5. [x] 出力層: 非構造 NPZ / VTK `UNSTRUCTURED_GRID` / mirador の `mesh=` 入力
 6. [x] `internal_face_bcs` 欠落バグの修正（分離とは独立）
+7. [x] 残件の消化（2026-09-06）: 四面体・楔・混在の `InpMeshProcess`（スキュー補正付き勾配）、
+   `CorrectedDiffusionScheme` を fvm 層の包みに、Darcy の Forchheimer / 非定常、要素集合 target の内部吐出・吸入、
+   死んだ汎用スキーマの削除
 
 ## 4. findings メモ（status の代わり）
 
@@ -118,3 +122,29 @@ Process クラスを定義している実験モジュールはゼロ。
 - cavity-nc-1（箱格子）を `--mesh=unstructured` で解くと 333 反復・max|U| 0.0379（FDM 版 226 反復・0.0357）。
   壁セルの圧力勾配や境界フラックスの評価が違うため 6% ほど差がある。粗い 12×12 での差で、
   Nu はどちらも de Vahl Davis の 20% 以内
+- PISO の第 2 補正を「修正済み速度・圧力で Rhie–Chow 流束を作り直して p'' を解く」だけにすると、修正済みの面流束は
+  既に保存的なので p'' ≈ 0 で何も変わらない（構造格子版はこの形）。Issa の通り、修正済み速度で隣接項
+  H(u) = b − A_off u を再評価し、新しい圧力勾配で u** = H/a_P を作ってから p'' を解く必要がある。運動量行列を
+  成分ごとに保持して実装した（`_State.iterate`）
+- 上を検証しようとして「外部反復 1 回の非定常ステップ」を連成解と比べたら、補正回数によらず速度が 27–48% ずれた。
+  原因は SLIP（対称面）の遅延評価: 接線成分の Dirichlet 値を owner 速度から作るので、初期の静止場では
+  z 対称面が no-slip 壁として効いていた。軸に平行な面では法線成分 Dirichlet 0・接線成分ゼロ勾配を陰的に組む
+  ように変えた（傾いた対称面だけ遅延評価が残る）。副作用で cavity-nc-2 が 165 → 75 反復、cavity-nc-1 の
+  非構造経路が 333 → 274 反復で収束するようになった。PISO の分離誤差は補正 1 → 2 → 3 回で 6% → 1.5% → 0.8%
+- 内部吸入セル（`InternalCellBC.outlet`、p' = 0 固定で質量を吸い込む）では発散形 ∇·(ṁT) の対角が流出分だけに
+  なり、流入 > 流出のセルで T が流入値を超えた（350 K の吐出で 377 K）。対流を有界形 ∇·(ṁφ) − φ∇·ṁ
+  （`assemble_convection(bounded=True)`）にして解消。運動量・エネルギー・追加スカラーとも有界形にした
+  （収束した保存的な流束では発散形と同じ）。質量残差からは吐出・吸入セルを除く（湧き出しは設計どおり）
+- TVD（van Leer）の蓋駆動キャビティ Re=100（24×24）は中心線 u の極小値が −0.2113（Ghia −0.2109）。1 次風上は
+  −0.185。1D 対流拡散（Pe=10、20 セル）では最大誤差 0.069 → 0.022
+- 24×24 の 1 次風上キャビティは 322 反復・7 s、TVD は 378 反復・10 s（直接法）。テストの物理ケースは合計 15 s ほど
+- 四面体では面中心が P–N 直線から外れる（スキュー）ので、距離重みの Green–Gauss 勾配は線形場でも 2 割以上外れ、
+  熱伝導の線形分布が 4% ずれた。P–N 直線と面平面の交点で補間し ∇φ_f·(x_f − x'_f) を反復して足す
+  スキュー補正（`face_skewness` / `cell_gradient`、Kuhn 四面体で 1 反復あたり 0.15〜0.3 倍）で線形場が
+  1e-8 になった。反復回数は変化が 1e-10 を切るまで（最大 30）
+- `InpMeshProcess` の要素向き正規化は出力の接続だけに使い、面ラベル S1.. は元の節点順で解決する。
+  以前は時計回りの四辺形を反転していたので、`*SURFACE` の辺ラベルがずれる可能性があった（テスト追加）
+- `.inp` の `*MATERIAL` サブキーワード追加で、`_handle_material_property` が dataclass を全フィールド手書きで
+  再構築していて新フィールドが落ちた（`internal_face_bcs` のときと同じ罠）。`dataclasses.replace` に統一
+- PISO 第 2 補正を検証するテストは、非定常ステップの外部反復 1 回と連成解を比べる形が分かりやすい
+  （質量残差の履歴は「修正前の流束の不整合」なので PISO でも減らない）

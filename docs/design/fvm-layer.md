@@ -43,15 +43,24 @@ ykep のソルバーを 3 層に分ける。
 - `face_mass_flux(mesh, velocity, rho, blocked_cells=, boundary_normal_velocity=)`:
   ṁ_f = ρ (u_f·n_f) A_f（全面）。固体セルに接する面はゼロ
 - `internal_face_values` / `boundary_face_values`: 面の φ
-- `cell_gradient(mesh, phi, bfaces, gamma=)`: Green–Gauss 勾配（線形場で厳密）
+- `face_skewness(mesh)`: 内部面のスキュー（P–N 直線と面平面の交点 x'_f のパラメータ t と x_f − x'_f）
+- `cell_gradient(mesh, phi, bfaces, gamma=, n_iter=30, tol=1e-10)`: Green–Gauss 勾配。内部面は交点 x'_f での線形補間 +
+  スキュー補正 ∇φ_f·(x_f − x'_f)、非 Dirichlet 境界面は接線外挿 ∇φ_P·t_b を、変化が tol を切るまで反復
+  （直交メッシュは 1 回、Kuhn 四面体で 1 反復あたり 0.15 倍。線形場で厳密）
+- `cell_gradient_lsq(mesh, phi, bfaces=, gamma=)`: 重み付き最小二乗勾配（内部隣接 + Dirichlet 面。線形場で厳密、
+  圧力・圧力補正の勾配に使う）
 
 ### `fvm/assembly.py` — 係数行列
 
 体積積分形（行 = Σ_f F_f − S V_P）で組む。
 
 - `assemble_diffusion(mesh, gamma, bfaces) -> (A, b)`: 内部面 a_f = Γ_f A_f / d_PN（`core/strategies` の中心差分と同じ）+ 境界
-- `assemble_convection(mesh, mass_flux, bfaces) -> (A, b)`: 1 次風上。境界は流出 → φ_P、流入 → Dirichlet なら φ_b（右辺）、それ以外は φ_P
-- `assemble_scalar_transport(mesh, gamma=, bfaces=, mass_flux=, source=, rho=, dt=, phi_old=)`: 上 2 つ + ソース S V_P + 陰的 Euler ρ V_P / dt
+- `assemble_convection(mesh, mass_flux, bfaces, bounded=False) -> (A, b)`: 1 次風上。境界は流出 → φ_P、流入 → Dirichlet なら φ_b（右辺）、それ以外は φ_P。
+  `bounded=True` は有界形 ∇·(ṁφ) − φ∇·ṁ（対角からセルの質量不整合を引く。非保存的な途中反復や湧き出し・吸い込みセルで φ が流入値の範囲を超えない）
+- `tvd_deferred_correction(mesh, phi, mass_flux, grad, limiter)`: TVD（van Leer / Superbee）の高次部分 ṁ_f ½ψ(r)(φ_D − φ_U) を右辺へ（遅延補正、
+  r は Darwish–Moukalled の 2∇φ_U·d_UD/(φ_D − φ_U) − 1）。`convection_correction(...)` が `upwind` / `tvd` を振り分ける
+- `time_derivative_terms(mesh, rho, dt, phi_old, phi_old2=None)`: 陰的 Euler、`phi_old2` を与えると BDF2（3/2, −2, 1/2）
+- `assemble_scalar_transport(mesh, gamma=, bfaces=, mass_flux=, source=, rho=, dt=, phi_old=, phi_correction=, phi_old2=, convection=, limiter=, bounded=)`: 上の組み合わせ + ソース S V_P
 
 ### 非直交補正（`geometry.face_decomposition` / `assembly.nonorthogonal_correction`）
 
@@ -76,11 +85,12 @@ ykep のソルバーを 3 層に分ける。
 
 ### `fvm/momentum.py` — 運動量・圧力連成カーネル
 
-`VelocityPatchBC`（WALL / INLET / OUTLET / SLIP）→ `resolve_velocity_boundary`、成分ごとの運動量行列
-`assemble_momentum`（対流・拡散 + 非直交補正・時間項・圧力勾配・抵抗・陰的緩和）、Rhie–Chow 面質量流束
-`rhie_chow_mass_flux`、圧力補正 `pressure_correction_coefficients` / `assemble_pressure_correction` /
-`correct_mass_flux`。圧力勾配には最小二乗勾配 `geometry.cell_gradient_lsq`（境界セルでも線形場で厳密）を使う。
-詳細は [navier-stokes-fvm.md](navier-stokes-fvm.md)。
+`VelocityPatchBC`（WALL / INLET / OUTLET / SLIP / OUTFLOW）→ `resolve_velocity_boundary`、成分ごとの運動量行列
+`assemble_momentum`（有界形の風上対流 + TVD 遅延補正・拡散 + 非直交補正・時間項 Euler / BDF2・圧力勾配・抵抗・陰的緩和、
+固体セルと速度固定セル `fixed_mask` の行置換 `fix_rows`）、Rhie–Chow 面質量流束 `rhie_chow_mass_flux`
+（OUTFLOW 面は流入と釣り合うスケーリング）、圧力補正 `pressure_correction_coefficients` /
+`assemble_pressure_correction(pinned=)` / `correct_mass_flux`。圧力勾配には最小二乗勾配
+`geometry.cell_gradient_lsq`（境界セルでも線形場で厳密）を使う。詳細は [navier-stokes-fvm.md](navier-stokes-fvm.md)。
 
 ### `fvm/linear.py` — 線形ソルバー Strategy
 
@@ -125,16 +135,18 @@ FVM 側（境界流出入を含む）とは一致しない。
    `*HEAT TRANSFER` の非箱格子 / `--mesh=unstructured` 経路）— 済
 4. `NavierStokesFVMProcess`（[navier-stokes-fvm.md](navier-stokes-fvm.md)）— `BrinkmanFlowFVMProcess` の
    Brinkman 抵抗と `NaturalConvectionFDMProcess` の SIMPLE + Rhie–Chow + Boussinesq + 固体マスクを
-   1 ファミリーに。運動量・圧力連成カーネルは `fvm/momentum.py` — 済（1 次風上、SIMPLE/SIMPLEC）
-5. 構造格子版に残る機能（TVD 遅延補正、BDF2、PISO、`InternalFaceBC`、追加スカラー）の移植
+   1 ファミリーに。運動量・圧力連成カーネルは `fvm/momentum.py` — 済
+5. 構造格子版に残る機能（TVD 遅延補正、BDF2、PISO、`InternalFaceBC` → `InternalCellBC`、追加スカラー、
+   対流流出 OUTFLOW）の移植 — 済（2026-09-06）
 
 ## テスト
 
 - `tests/test_fvm_layer.py`: 1D 拡散の線形解（等間隔・不等間隔）、Neumann の勾配、Robin の平衡と
   既存 FDM 係数との一致、2 領域物性の直列抵抗、風上の一様流輸送、対流拡散の単調性、時間項・ソース項、
   Green–Gauss 勾配の厳密性、線形ソルバー 3 種の一致、非直交分解（直交で退化、せん断で角度）、
-  せん断メッシュの線形場と面フラックスの厳密性
+  せん断メッシュの線形場と面フラックスの厳密性、TVD（1D 対流拡散で風上の 1/2.5 未満の誤差・単調・保存、
+  有界形の吸い込みセル）、BDF2（sin(πx) の減衰で Euler の 1/5 未満の誤差）
 - `tests/test_scalar_transport_fvm.py`: `ScalarTransportFVMProcess` の API と構造格子 FDM との回帰
 - `tests/test_heat_transfer_fvm.py`: `HeatTransferFVMProcess` の API、FDM との回帰、せん断メッシュの線形場・熱収支
-- `tests/test_navier_stokes_fvm.py`: `NavierStokesFVMProcess` の API、Poiseuille（箱 / せん断）、Brinkman 流路、
-  蓋駆動キャビティ Re=100、差分加熱キャビティ Ra=10³
+- `tests/test_navier_stokes_fvm.py`: `NavierStokesFVMProcess` の API、Poiseuille（箱 / せん断 / 対流流出）、Brinkman 流路、
+  蓋駆動キャビティ Re=100（風上 / TVD）、差分加熱キャビティ Ra=10³、PISO の分離誤差、BDF2、内部セル吐出・吸入、追加スカラー

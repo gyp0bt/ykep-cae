@@ -6,9 +6,13 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from conftest import kuhn_tet_text
 
+from xkep_cae_fluid.core.data import CELL_TYPE_HEX, CELL_TYPE_TET, CELL_TYPE_WEDGE
 from xkep_cae_fluid.core.mesh import StructuredMeshInput, StructuredMeshProcess
 from xkep_cae_fluid.core.testing import binds_to
+from xkep_cae_fluid.fvm import PatchBC, diffusive_face_flux, resolve_boundary
+from xkep_cae_fluid.heat_transfer import HeatTransferFVMInput, HeatTransferFVMProcess
 from xkep_cae_fluid.inp.builder import build_case
 from xkep_cae_fluid.inp.grid import (
     StructuredGridInput,
@@ -19,6 +23,64 @@ from xkep_cae_fluid.inp.mesh import InpMeshInput, InpMeshProcess, InpMeshResult,
 from xkep_cae_fluid.inp.parser import parse_inp_file, parse_inp_text
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples" / "inp"
+
+MIXED_TEXT = """\
+*NODE
+1,0,0,0
+2,1,0,0
+3,2,0,0
+4,0,1,0
+5,1,1,0
+6,2,1,0
+7,0,0,1
+8,1,0,1
+9,2,0,1
+10,0,1,1
+11,1,1,1
+12,2,1,1
+*ELEMENT, TYPE=C3D8, ELSET=HEX
+1, 1,2,5,4,7,8,11,10
+*ELEMENT, TYPE=C3D6, ELSET=WEDGE
+2, 2,3,6,8,9,12
+3, 2,6,5,8,12,11
+*SURFACE, NAME=RIGHT, TYPE=ELEMENT
+2, S4
+*SURFACE, NAME=BOTTOM, TYPE=ELEMENT
+HEX, S1
+WEDGE, S1
+"""
+
+
+def _closure(m) -> float:
+    av = m.face_normals * m.face_areas[:, None]
+    closure = np.zeros((m.n_cells, 3))
+    np.add.at(closure, m.face_owner, av)
+    np.add.at(closure, m.face_neighbour, -av[: m.n_internal_faces])
+    return float(np.abs(closure).max())
+
+
+def _tri_sheet_text(nx: int, ny: int) -> str:
+    """矩形を三角形 2 個 / 升目で割った CPS3 メッシュ + 左辺の *SURFACE LEFT."""
+
+    def nid(i: int, j: int) -> int:
+        return 1 + i + (nx + 1) * j
+
+    lines = ["*NODE"]
+    for j in range(ny + 1):
+        for i in range(nx + 1):
+            lines.append(f" {nid(i, j)}, {i / nx}, {j / ny}")
+    lines.append("*ELEMENT, TYPE=CPS3, ELSET=TRI")
+    e = 0
+    for j in range(ny):
+        for i in range(nx):
+            e += 1
+            lines.append(f" {e}, {nid(i, j)}, {nid(i + 1, j)}, {nid(i + 1, j + 1)}")
+            e += 1
+            lines.append(f" {e}, {nid(i, j)}, {nid(i + 1, j + 1)}, {nid(i, j + 1)}")
+    lines.append("*SURFACE, NAME=LEFT, TYPE=ELEMENT")
+    for j in range(ny):
+        lines.append(f" {2 * (j * nx) + 2}, S3")  # 升目 i=0 の 2 個目: 辺 (i, j+1) → (i, j)
+    return "\n".join(lines) + "\n"
 
 
 def _hex_mesh_text(
@@ -102,6 +164,14 @@ class TestInpMeshAPI:
         )
         with pytest.raises(UnsupportedMeshError, match="混在"):
             build_inp_mesh(build_case(parse_inp_text(text)))
+
+    def test_rejects_quadratic_and_unknown_face_labels(self):
+        text = MIXED_TEXT.replace("2, S4", "2, S6")  # 楔に S6 は無い
+        with pytest.raises(UnsupportedMeshError, match="S6"):
+            build_inp_mesh(build_case(parse_inp_text(text)))
+        tri = _tri_sheet_text(2, 1).replace("S3\n", "S4\n")  # 三角形の辺は S1..S3
+        with pytest.raises(UnsupportedMeshError, match="S4"):
+            build_inp_mesh(build_case(parse_inp_text(tri)))
 
     def test_surface_with_internal_face_rejected(self):
         text = _hex_mesh_text(2, 1, 1) + "*SURFACE, NAME=MID, TYPE=ELEMENT\n11, S4\n"
@@ -223,3 +293,119 @@ class TestInpMeshPhysics:
         # 節点値 → セル値（全節点同じ値なら全セルその値）
         vals = res.node_values_to_cells(case.nodes.ids, np.full(case.nodes.n_nodes, 3.0))
         np.testing.assert_allclose(vals, 3.0)
+
+    def test_tet_mesh_kuhn_cube(self):
+        """Kuhn 分割の四面体（4×4×4 の立方体 → 384 個）: 体積・閉包・予約パッチ・セル種別."""
+        res = build_inp_mesh(build_case(parse_inp_text(kuhn_tet_text(4, 4, 4))))
+        m = res.mesh
+        assert m.n_cells == 384 and m.connectivity.shape == (384, 4)
+        assert np.all(m.cell_types == CELL_TYPE_TET) and np.all(m.connectivity >= 0)
+        assert m.cell_volumes.sum() == pytest.approx(1.0, rel=1e-12)
+        assert m.n_internal_faces == 672 and m.n_boundary_faces == 192
+        assert _closure(m) < 1e-12
+        for name in ("XM", "XP", "YM", "YP", "ZM", "ZP"):
+            assert len(m.patch_faces(name)) == 32
+        # 四面体は右手系（節点 0 から見て 1,2,3 が正の体積）に正規化されている
+        p = m.node_coords[m.connectivity]
+        triple = np.einsum(
+            "ij,ij->i", np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0]), p[:, 3] - p[:, 0]
+        )
+        assert np.all(triple > 0)
+        assert len(res.cell_sets["TETS"]) == 384
+
+    def test_tet_mesh_heat_conduction_linear(self):
+        """四面体メッシュの熱伝導（両端 Dirichlet、側面断熱）: 線形分布と熱流束 kA ΔT/L."""
+        m = build_inp_mesh(build_case(parse_inp_text(kuhn_tet_text(4, 4, 4)))).mesh
+        bcs = {"XM": PatchBC.dirichlet(0.0), "XP": PatchBC.dirichlet(1.0)}
+        res = HeatTransferFVMProcess().execute(
+            HeatTransferFVMInput(
+                mesh=m,
+                conductivity=2.0,
+                T0=np.zeros(m.n_cells),
+                bcs=bcs,
+                linear_solver="direct",
+                max_nonorthogonal_iter=50,
+            )
+        )
+        assert res.converged
+        np.testing.assert_allclose(res.T, m.cell_centers[:, 0], atol=1e-5)
+        flux = diffusive_face_flux(m, res.T, 2.0, resolve_boundary(m, bcs))
+        q_in = float(flux[m.patch_faces("XP")].sum())  # T_b > T_P なので owner へ流入（負）
+        assert -q_in == pytest.approx(2.0, rel=1e-5)
+        # 流入 = 流出（遅延補正の収束判定 1e-8 のオーダーで一致）
+        assert float(flux[m.patch_faces("XM")].sum()) == pytest.approx(-q_in, rel=1e-6)
+
+    def test_tet_mesh_all_dirichlet_linear_field_exact(self):
+        """全面 Dirichlet の線形場は四面体でも 1e-7 で再現（スキュー補正 + 非直交補正）."""
+        m = build_inp_mesh(build_case(parse_inp_text(kuhn_tet_text(3, 3, 3)))).mesh
+
+        def lin(pts):
+            return 1.0 + 2.0 * pts[:, 0] - 0.5 * pts[:, 1] + 3.0 * pts[:, 2]
+
+        bcs = {
+            nm: PatchBC.dirichlet(lin(m.face_centers[m.patch_faces(nm)]))
+            for nm in ("XM", "XP", "YM", "YP", "ZM", "ZP")
+        }
+        res = HeatTransferFVMProcess().execute(
+            HeatTransferFVMInput(
+                mesh=m,
+                conductivity=1.0,
+                T0=np.zeros(m.n_cells),
+                bcs=bcs,
+                linear_solver="direct",
+                max_nonorthogonal_iter=50,
+            )
+        )
+        np.testing.assert_allclose(res.T, lin(m.cell_centers), atol=1e-7)
+
+    def test_wedge_mesh_from_triangles(self):
+        """三角形（CPS3）は楔に押し出され、辺の *SURFACE が側面になる。熱伝導の線形分布は厳密."""
+        res = build_inp_mesh(build_case(parse_inp_text(_tri_sheet_text(4, 3))), depth_2d=0.5)
+        m = res.mesh
+        assert res.ndim == 2 and m.n_cells == 24 and m.connectivity.shape == (24, 6)
+        assert np.all(m.cell_types == CELL_TYPE_WEDGE)
+        assert m.cell_volumes.sum() == pytest.approx(0.5, rel=1e-12)
+        assert _closure(m) < 1e-12
+        assert len(m.patch_faces("ZM")) == 24 and len(m.patch_faces("ZP")) == 24
+        left = m.patch_faces("LEFT")
+        assert len(left) == 3
+        np.testing.assert_allclose(m.face_normals[left], [[-1.0, 0.0, 0.0]] * 3, atol=1e-12)
+        bcs = {"LEFT": PatchBC.dirichlet(0.0), "XP": PatchBC.dirichlet(1.0)}
+        out = HeatTransferFVMProcess().execute(
+            HeatTransferFVMInput(
+                mesh=m, conductivity=1.0, T0=np.zeros(24), bcs=bcs, linear_solver="direct"
+            )
+        )
+        np.testing.assert_allclose(out.T, m.cell_centers[:, 0], atol=1e-8)
+
+    def test_mixed_hex_and_wedges(self):
+        """六面体 1 個 + 楔 2 個（2 個目の升目を対角で割る）: 種別ごとの体積・-1 詰め・面ラベル."""
+        res = build_inp_mesh(build_case(parse_inp_text(MIXED_TEXT)))
+        m = res.mesh
+        np.testing.assert_allclose(m.cell_volumes, [1.0, 0.5, 0.5])
+        assert m.cell_types.tolist() == [CELL_TYPE_HEX, CELL_TYPE_WEDGE, CELL_TYPE_WEDGE]
+        assert m.connectivity.shape == (3, 8)
+        assert np.all(m.connectivity[0] >= 0) and np.all(m.connectivity[1:, 6:] == -1)
+        assert m.n_internal_faces == 2  # 六面体–楔 1 面、楔–楔（対角面）1 面
+        right = m.patch_faces("RIGHT")
+        np.testing.assert_allclose(m.face_normals[right], [[1.0, 0.0, 0.0]])
+        assert len(m.patch_faces("BOTTOM")) == 3 and len(m.patch_faces("XP")) == 1
+        assert res.cell_sets["WEDGE"].tolist() == [1, 2]
+        assert _closure(m) < 1e-12
+
+    def test_inverted_elements_keep_face_labels(self):
+        """節点順が左手系の要素（底面と上面が逆）でも S1 は元の節点順で定義した面を指す."""
+        text = MIXED_TEXT.replace("1, 1,2,5,4,7,8,11,10", "1, 7,8,11,10,1,2,5,4").replace(
+            "2, 2,3,6,8,9,12", "2, 8,9,12,2,3,6"
+        )
+        res = build_inp_mesh(build_case(parse_inp_text(text)))
+        m = res.mesh
+        np.testing.assert_allclose(m.cell_volumes, [1.0, 0.5, 0.5])
+        bottom = m.patch_faces("BOTTOM")
+        assert len(bottom) == 3
+        # 反転した要素 1・2 の S1 は z = 1 の面（元の節点順の「底面」）
+        z = m.face_centers[bottom, 2]
+        assert sorted(np.round(z, 12).tolist()) == [0.0, 1.0, 1.0]
+        # 出力の接続は右手系に正規化されている（六面体: (n1−n0)×(n3−n0)·(n4−n0) > 0）
+        p = m.node_coords[m.connectivity[0]]
+        assert np.dot(np.cross(p[1] - p[0], p[3] - p[0]), p[4] - p[0]) > 0

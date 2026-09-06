@@ -289,7 +289,8 @@ class TestInpCaseBuildAPI:
             ("*GRID, NX=2, LX=1\n*STEP\n*HEAT TRANSFER\n*END STEP\n", "非定常"),
             ("*GRID, NX=2, LX=1\n*BOUNDARY, TYPE=MAGIC\n XM\n", "未対応"),
             ("*GRID, NX=2, LX=1\n*NODE\n 1, 0, 0, 0\n", "併用"),
-            ("*ELEMENT, TYPE=C3D4\n 1, 1, 2, 3, 4\n", "未対応"),
+            ("*ELEMENT, TYPE=C3D10\n 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10\n", "未対応"),
+            ("*ELEMENT, TYPE=CPS6\n 1, 1, 2, 3, 4, 5, 6\n", "未対応"),
             ("*GRID, NX=2, LX=1\n*FLUID SECTION, ELSET=NOPE, MATERIAL=M\n", "未定義"),
             (
                 "*GRID, NX=2, LX=1\n*STEP\n*NAVIER STOKES, STEADY STATE\n*CONTROLS, PARAMETERS=FOO\n*END STEP\n",

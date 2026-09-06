@@ -11,7 +11,7 @@ from xkep_cae_fluid.core.testing import binds_to
 from xkep_cae_fluid.inp.builder import build_case
 from xkep_cae_fluid.inp.case import EquationFamily, OutputFormat, OutputRequest
 from xkep_cae_fluid.inp.cli import main, parse_args
-from xkep_cae_fluid.inp.grid import recover_structured_grid
+from xkep_cae_fluid.inp.grid import UnsupportedMeshError, recover_structured_grid
 from xkep_cae_fluid.inp.output import FieldOutputInput, InpOutputWriterProcess, dump_yaml
 from xkep_cae_fluid.inp.parser import parse_inp_text
 from xkep_cae_fluid.inp.runner import InpCaseRunnerProcess, InpJobInput
@@ -266,6 +266,36 @@ class TestInpCaseRunnerAPI:
         assert step.summary["parameters"]["T_left"] == 350.0
         T = np.load(tmp_path / "plate-ht-1.npz")["T"]
         assert T.shape == (4, 2, 2) and T.min() > 350.0
+
+    def test_heat_transfer_on_tet_mesh(self, tmp_path: Path):
+        """四面体メッシュの *HEAT TRANSFER は auto で非構造経路に落ち、VTK に四面体（10）で出る."""
+        from conftest import kuhn_tet_text
+
+        text = (
+            "*HEADING\n tet plate\n"
+            + kuhn_tet_text(3, 2, 2, lx=0.3, ly=0.2, lz=0.2)
+            + "*MATERIAL, NAME=STEEL\n*CONDUCTIVITY\n 50.\n"
+            "*SOLID SECTION, ELSET=TETS, MATERIAL=STEEL\n"
+            "*BOUNDARY, TYPE=TEMPERATURE\n XM, 300.\n XP, 400.\n"
+            "*STEP\n*HEAT TRANSFER, STEADY STATE\n"
+            "*CONTROLS, PARAMETERS=SOLVER\n METHOD=DIRECT\n"
+            "*OUTPUT, FIELD, FORMAT=VTK\n T\n*END STEP\n"
+        )
+        inp = tmp_path / "tet.inp"
+        inp.write_text(text, encoding="utf-8")
+        res = InpCaseRunnerProcess().execute(InpJobInput(path=str(inp), output_dir=str(tmp_path)))
+        assert res.grid is None and res.mesh is not None and res.mesh.n_cells == 72
+        step = res.steps[0]
+        assert step.converged and step.summary["solver"]["process"] == "HeatTransferFVMProcess"
+        T = np.load(tmp_path / "tet.npz")["T"]
+        x = res.mesh.mesh.cell_centers[:, 0]
+        np.testing.assert_allclose(T, 300.0 + 100.0 * x / 0.3, atol=1e-3)
+        vtk = (tmp_path / "tet.vtk").read_text(encoding="ascii")
+        assert "CELL_TYPES 72" in vtk and "\n10\n" in vtk
+        with pytest.raises(UnsupportedMeshError, match="四面体"):
+            InpCaseRunnerProcess().execute(
+                InpJobInput(path=str(inp), output_dir=str(tmp_path), mesh_mode="structured")
+            )
 
     def test_heat_transfer_unstructured_matches_structured(self, tmp_path: Path):
         """箱格子の plate-ht-1 を mesh_mode=unstructured で解くと FDM 版と同じ温度場（非構造出力）."""

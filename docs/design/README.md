@@ -17,7 +17,7 @@
 | 文書 | 配置先 | 内容 | 状態 |
 |------|--------|------|------|
 | [inp-format.md](inp-format.md) | `docs/design/` | ykep .inp 入力フォーマット（Abaqus 風キーワード構文、`ykep -j=<job>.inp int`、`*PARAMETER`、`*CONTROLS`） | 完了（NS / 伝熱 / Darcy） |
-| [unstructured-inp-mesh.md](unstructured-inp-mesh.md) | `docs/design/` | InpMeshProcess（`*NODE/*ELEMENT` → 面ベース非構造 MeshData、`*SURFACE` → 境界パッチ） | 完了（experimental） |
+| [unstructured-inp-mesh.md](unstructured-inp-mesh.md) | `docs/design/` | InpMeshProcess（`*NODE/*ELEMENT` → 面ベース非構造 MeshData、六面体 / 楔 / 四面体・2D 四辺形 / 三角形の混在可、`*SURFACE` → 境界パッチ） | 完了（experimental） |
 
 ## 伝熱モジュール設計文書
 
@@ -34,7 +34,7 @@
 |------|--------|------|------|
 | [structured-mesh.md](structured-mesh.md) | `docs/design/` | StructuredMeshProcess（不等間隔直交格子） | 完了 |
 | [polymesh-reader.md](polymesh-reader.md) | `docs/design/` | PolyMeshReaderProcess（OpenFOAM互換） | 完了 |
-| [fvm-layer.md](fvm-layer.md) | `docs/design/` | 面ベース FVM 共通低レイヤー `xkep_cae_fluid.fvm`（境界パッチ条件・面演算・係数組み立て・線形ソルバー Strategy）と 3 層分離の方針 | 完了（experimental） |
+| [fvm-layer.md](fvm-layer.md) | `docs/design/` | 面ベース FVM 共通低レイヤー `xkep_cae_fluid.fvm`（境界パッチ条件・面演算・非直交 / スキュー補正・風上 + TVD・Euler / BDF2・線形ソルバー Strategy）と 3 層分離の方針 | 完了（experimental） |
 
 ## 流体モジュール設計文書
 
@@ -42,8 +42,8 @@
 |------|--------|------|------|
 | [natural-convection-fdm.md](natural-convection-fdm.md) | `docs/design/` | 3D自然対流ソルバー (SIMPLE法+Boussinesq+練成) | 完了 |
 | [scalar-transport-fdm.md](scalar-transport-fdm.md) | `docs/design/` | 汎用スカラー輸送ソルバー (Phase 6.1a 水槽 CAE 基盤) | 完了 |
-| [darcy-flow-fvm.md](darcy-flow-fvm.md) | `docs/design/` | DarcyFlowProcess（`*DARCY`、面ベース FVM、非構造六面体メッシュ可、非直交補正） | 完了（experimental） |
-| [navier-stokes-fvm.md](navier-stokes-fvm.md) | `docs/design/` | NavierStokesFVMProcess（面ベース FVM の非圧縮 NS: SIMPLE/SIMPLEC + Rhie–Chow、Boussinesq、Brinkman 抵抗、エネルギー、非構造メッシュ可） | 完了（experimental） |
+| [darcy-flow-fvm.md](darcy-flow-fvm.md) | `docs/design/` | DarcyFlowProcess（`*DARCY`、面ベース FVM、非構造メッシュ可、非直交補正、Forchheimer、非定常） | 完了（experimental） |
+| [navier-stokes-fvm.md](navier-stokes-fvm.md) | `docs/design/` | NavierStokesFVMProcess（面ベース FVM の非圧縮 NS: SIMPLE/SIMPLEC/PISO + Rhie–Chow、TVD、BDF2、Boussinesq、Brinkman 抵抗、エネルギー、追加スカラー、内部吐出・吸入、対流流出、非構造メッシュ可） | 完了（experimental） |
 | [heat-transfer-fvm.md](heat-transfer-fvm.md) | `docs/design/` | HeatTransferFVMProcess（面ベース FVM 版の伝熱、構造格子 FDM と一致、`*HEAT TRANSFER` の非構造経路） | 完了（experimental） |
 | [brinkman-flow-fvm.md](brinkman-flow-fvm.md) | `docs/design/` | 2D Brinkman 補正 NS (FVM, Newton–Krylov) と U ターン収束性再現実験 | 実験中 |
 | (未作成) | - | 乱流モデル Strategy 設計 | 予定 |

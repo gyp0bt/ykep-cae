@@ -213,3 +213,77 @@ def _lattice_text(nx: int, ny: int, nz: int, dx: float, dy: float, dz: float) ->
                 ]
                 lines.append(f" {e}, " + ", ".join(map(str, c)))
     return "\n".join(lines) + "\n"
+
+    def test_forchheimer_pressure_drop(self):
+        """Forchheimer 補正: 流入速度 u の 1D 流れで Δp/L = μ u/K + β ρ u²（Picard で収束）."""
+        mesh = _box(nx=8, Lx=2.0)
+        u_in, beta, rho = 1.5e-3, 5.0e4, 1000.0
+        res = DarcyFlowProcess().execute(
+            DarcyFlowInput(
+                mesh=mesh,
+                permeability=K,
+                viscosity=MU,
+                density=rho,
+                forchheimer=beta,
+                bcs={"XM": DarcyPatchBC.velocity_bc(u_in), "XP": DarcyPatchBC.pressure_bc(0.0)},
+            )
+        )
+        assert res.converged and res.n_picard_iter > 1
+        slope = MU * u_in / K + beta * rho * u_in**2
+        assert beta * rho * u_in**2 > 0.1 * MU * u_in / K  # 慣性項が効く条件
+        np.testing.assert_allclose(res.p, slope * (2.0 - mesh.cell_centers[:, 0]), rtol=1e-7)
+        np.testing.assert_allclose(res.velocity[:, 0], u_in, rtol=1e-7)
+        with pytest.raises(ValueError, match="forchheimer"):
+            DarcyFlowProcess().execute(
+                DarcyFlowInput(mesh=mesh, permeability=K, viscosity=MU, forchheimer=-1.0)
+            )
+
+    def test_transient_uniform_source_fills_closed_domain(self):
+        """閉じた領域（全面不透過）+ 一様ソース S + 比貯留 S_s: p(t) = S t / S_s（陰的 Euler で厳密）."""
+        mesh = _box(nx=4, ny=2, nz=2)
+        S_s, S = 1e-6, 2e-7
+        res = DarcyFlowProcess().execute(
+            DarcyFlowInput(
+                mesh=mesh,
+                permeability=K,
+                viscosity=MU,
+                bcs={},
+                source=np.full(mesh.n_cells, S),
+                specific_storage=S_s,
+                dt=0.5,
+                t_end=2.0,
+                output_interval=2,
+            )
+        )
+        assert res.converged and res.n_timesteps == 4
+        assert res.time_history == (1.0, 2.0) and len(res.p_history) == 2
+        np.testing.assert_allclose(res.p, S * 2.0 / S_s, rtol=1e-10)
+        np.testing.assert_allclose(res.p_history[0], S * 1.0 / S_s, rtol=1e-10)
+        np.testing.assert_allclose(res.velocity, 0.0, atol=1e-12)
+        # 定常で圧力の基準が無いのは拒否、非定常で S_s = 0 も拒否
+        with pytest.raises(ValueError, match="基準"):
+            DarcyFlowProcess().execute(DarcyFlowInput(mesh=mesh, permeability=K, viscosity=MU))
+        with pytest.raises(ValueError, match="specific_storage"):
+            DarcyFlowProcess().execute(
+                DarcyFlowInput(mesh=mesh, permeability=K, viscosity=MU, dt=0.1, t_end=0.2)
+            )
+
+    def test_transient_relaxes_to_steady(self):
+        """圧力差 Δp の 1D 流れを初期圧 0 から時間発展させると定常解（線形分布）に収束する."""
+        mesh = _box(nx=10)
+        dp = 500.0
+        common = dict(
+            mesh=mesh,
+            permeability=K,
+            viscosity=MU,
+            bcs={"XM": DarcyPatchBC.pressure_bc(dp), "XP": DarcyPatchBC.pressure_bc(0.0)},
+        )
+        steady = DarcyFlowProcess().execute(DarcyFlowInput(**common))
+        # 拡散時間 L² S_s μ / K = 1 s に対して 20 s まで進める
+        S_s = K / MU
+        trans = DarcyFlowProcess().execute(
+            DarcyFlowInput(**common, specific_storage=S_s, dt=0.5, t_end=20.0)
+        )
+        assert trans.converged and trans.n_timesteps == 40
+        np.testing.assert_allclose(trans.p, steady.p, rtol=1e-6)
+        assert trans.inflow == pytest.approx(steady.inflow, rel=1e-6)

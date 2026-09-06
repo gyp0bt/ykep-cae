@@ -1,5 +1,11 @@
-2026-09-05 13:44:44,654 INFO ykep: ykep -j=examples/inp/cavity-nc-2.inp int -o=examples/inp/results
-2026-09-05 13:44:44,701 INFO xkep_cae_fluid.inp.runner: 箱格子として復元できないため非構造メッシュで解きます: 節点数 338 が箱格子の 1586 と一致しません（非構造・欠損・非直交メッシュは未対応）
-2026-09-05 13:44:44,876 INFO xkep_cae_fluid.inp.runner: ジョブ cavity-nc-2: Differentially heated parallelogram cavity, Ra ~ 1e3 (unstructured FVM path) / 非構造メッシュ セル 144・面 600（境界 336、パッチ XM, XP, YM, YP, ZM, ZP、最大非直交角 14.0°）/ ステップ 1
-2026-09-05 13:44:44,884 INFO xkep_cae_fluid.inp.runner: ステップ Steady: *NAVIER STOKES → NavierStokesFVMProcess（非構造）
-2026-09-05 13:44:47,783 INFO xkep_cae_fluid.inp.runner: ステップ Steady 完了: converged=True, 反復 165, 2.45 s → cavity-nc-2.npz, cavity-nc-2.vtk, cavity-nc-2.html, cavity-nc-2.yaml
+INFO ykep: ykep -j=examples/inp/cavity-nc-2.inp int -o=examples/inp/results
+INFO xkep_cae_fluid.inp.runner: 箱格子として復元できないため非構造メッシュで解きます: 節点数 338 が箱格子の 1586 と一致しません（非構造・欠損・非直交メッシュは未対応）
+INFO xkep_cae_fluid.inp.runner: ジョブ cavity-nc-2: Differentially heated parallelogram cavity, Ra ~ 1e3 (unstructured FVM path) / 非構造メッシュ セル 144・面 600（境界 336、パッチ XM, XP, YM, YP, ZM, ZP、最大非直交角 14.0°）/ ステップ 1
+INFO xkep_cae_fluid.inp.runner: ステップ Steady: *NAVIER STOKES → NavierStokesFVMProcess（非構造）
+INFO xkep_cae_fluid.inp.runner: ステップ Steady 完了: converged=True, 反復 75, 1.06 s → cavity-nc-2.npz, cavity-nc-2.vtk, cavity-nc-2.html, cavity-nc-2.yaml
+CONVERGED: step Steady (NAVIER STOKES), 75 iterations, 1.06 s
+  -> examples/inp/results/cavity-nc-2.npz
+  -> examples/inp/results/cavity-nc-2.vtk
+  -> examples/inp/results/cavity-nc-2.html
+  -> examples/inp/results/cavity-nc-2.yaml
+[ProcessDiagnostics] レポート出力: /home/user/ykep-cae/docs/generated/process_usage_report.md

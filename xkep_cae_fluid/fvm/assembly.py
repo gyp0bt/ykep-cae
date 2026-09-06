@@ -6,6 +6,9 @@
 拡散項は over-relaxed 分解（:func:`~xkep_cae_fluid.fvm.geometry.face_decomposition`）で
 E_f 成分を陰的に、T_f 成分を :func:`nonorthogonal_correction` の遅延補正（右辺）として扱う。
 非直交メッシュでは :func:`solve_corrected` で補正を数回反復して収束させる。
+
+対流項は 1 次風上を陰的に、TVD（van Leer / Superbee）は :func:`tvd_deferred_correction` の
+遅延補正（右辺）として扱う。時間項は陰的 Euler と BDF2（``phi_old2`` を与える）。
 """
 
 from __future__ import annotations
@@ -207,6 +210,7 @@ def assemble_convection(
     mesh: MeshData,
     mass_flux: np.ndarray,
     bfaces: BoundaryFaces,
+    bounded: bool = False,
 ) -> tuple[sparse.csr_matrix, np.ndarray]:
     """∇·(ṁ φ) の 1 次風上の係数行列と境界寄与の右辺を返す.
 
@@ -214,6 +218,10 @@ def assemble_convection(
     ----------
     mass_flux : np.ndarray
         全面の質量流束 (n_faces,)。内部面は owner → neighbour 向き、境界面は外向きが正
+    bounded : bool
+        True なら有界形 ∇·(ṁφ) − φ ∇·ṁ（対角からセルの質量不整合 Σ_f ṁ_f を引く）。
+        面流束が保存的でない途中反復や、質量の湧き出し・吸い込みセル（内部の吐出・吸入）で
+        φ が流入値の範囲を超えないようにする。収束した保存的な流束では両者は一致する
 
     境界面: 流出（ṁ_b > 0）は φ_P、流入は Dirichlet なら φ_b（右辺）、それ以外は φ_P。
     """
@@ -241,12 +249,134 @@ def assemble_convection(
     fixed_in = inflow & bfaces.is_dirichlet
     np.add.at(rhs, bfaces.owner, np.where(fixed_in, -mf_b * bfaces.value, 0.0))
     np.add.at(diag, bfaces.owner, np.where(inflow & ~bfaces.is_dirichlet, mf_b, 0.0))
+    if bounded:
+        div = np.zeros(n)
+        np.add.at(div, mesh.face_owner, mf)
+        np.add.at(div, neighbour, -mf_int)
+        diag -= div
 
     rows = np.concatenate([owner, neighbour, np.arange(n)])
     cols = np.concatenate([neighbour, owner, np.arange(n)])
     vals = np.concatenate([mf_neg, -mf_pos, diag])
     A = sparse.coo_matrix((vals, (rows, cols)), shape=(n, n)).tocsr()
     return A, rhs
+
+
+# ---------------------------------------------------------------------------
+# TVD 対流（遅延補正）
+# ---------------------------------------------------------------------------
+
+
+def _limiter_van_leer(r: np.ndarray) -> np.ndarray:
+    """van Leer リミッタ ψ(r) = (r + |r|) / (1 + |r|)."""
+    ar = np.abs(r)
+    return (r + ar) / (1.0 + ar)
+
+
+def _limiter_superbee(r: np.ndarray) -> np.ndarray:
+    """Superbee リミッタ ψ(r) = max(0, min(2r, 1), min(r, 2))."""
+    return np.maximum(0.0, np.maximum(np.minimum(2.0 * r, 1.0), np.minimum(r, 2.0)))
+
+
+TVD_LIMITERS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
+    "van_leer": _limiter_van_leer,
+    "superbee": _limiter_superbee,
+}
+
+CONVECTION_SCHEMES = ("upwind", "tvd")
+
+
+def tvd_deferred_correction(
+    mesh: MeshData,
+    phi: np.ndarray,
+    mass_flux: np.ndarray,
+    grad: np.ndarray,
+    limiter: str = "van_leer",
+) -> np.ndarray:
+    """TVD 対流スキームの遅延補正の右辺寄与 (n_cells,).
+
+    1 次風上を行列（:func:`assemble_convection`）に残し、面値の高次部分
+    ṁ_f · ½ ψ(r) (φ_D − φ_U) を陽的に右辺へ移す（owner に −、neighbour に +）。
+    勾配比は Darwish–Moukalled の r = 2 (∇φ)_U·d_UD / (φ_D − φ_U) − 1（U: 上流セル、D: 下流セル、
+    d_UD: セル中心間ベクトル）。内部面のみ（境界面は風上のまま）。
+
+    Parameters
+    ----------
+    phi : np.ndarray
+        現在の場 (n_cells,)
+    mass_flux : np.ndarray
+        面質量流束 (n_faces,)（内部面は owner → neighbour が正）
+    grad : np.ndarray
+        セル勾配 (n_cells, ndim)（:func:`~xkep_cae_fluid.fvm.geometry.cell_gradient` 等）
+    limiter : str
+        ``van_leer`` / ``superbee``
+    """
+    _require_faces(mesh)
+    key = limiter.lower()
+    if key not in TVD_LIMITERS:
+        raise ValueError(f"limiter は {sorted(TVD_LIMITERS)} のいずれか: {limiter!r}")
+    psi_fn = TVD_LIMITERS[key]
+    n_int = mesh.n_internal_faces
+    rhs = np.zeros(mesh.n_cells)
+    if n_int == 0:
+        return rhs
+    owner = mesh.face_owner[:n_int]
+    nb = mesh.face_neighbour
+    mf = np.asarray(mass_flux, dtype=np.float64)[:n_int]
+    nd = mesh.cell_centers.shape[1]
+    pos = mf >= 0.0
+    up = np.where(pos, owner, nb)
+    down = np.where(pos, nb, owner)
+    d_ud = mesh.cell_centers[down, :nd] - mesh.cell_centers[up, :nd]
+    delta = phi[down] - phi[up]
+    g = np.sum(np.asarray(grad, dtype=np.float64)[up, :nd] * d_ud, axis=1)
+    eps = 1e-30
+    safe = np.where(np.abs(delta) > eps, delta, 1.0)
+    r = np.where(np.abs(delta) > eps, 2.0 * g / safe - 1.0, 0.0)
+    corr = mf * 0.5 * psi_fn(r) * delta  # 上流セルから見た流出の増分
+    np.add.at(rhs, owner, -corr)
+    np.add.at(rhs, nb, corr)
+    return rhs
+
+
+def convection_correction(
+    mesh: MeshData,
+    phi: np.ndarray,
+    mass_flux: np.ndarray,
+    bfaces: BoundaryFaces,
+    convection: str = "upwind",
+    limiter: str = "van_leer",
+    grad: np.ndarray | None = None,
+) -> np.ndarray:
+    """対流スキームの遅延補正（``upwind`` はゼロ、``tvd`` は :func:`tvd_deferred_correction`）."""
+    key = convection.lower()
+    if key not in CONVECTION_SCHEMES:
+        raise ValueError(f"convection は {CONVECTION_SCHEMES} のいずれか: {convection!r}")
+    if key == "upwind":
+        return np.zeros(mesh.n_cells)
+    if grad is None:
+        grad = cell_gradient(mesh, phi, bfaces)
+    return tvd_deferred_correction(mesh, phi, mass_flux, grad, limiter)
+
+
+def time_derivative_terms(
+    mesh: MeshData,
+    rho: float | np.ndarray,
+    dt: float,
+    phi_old: np.ndarray,
+    phi_old2: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """時間項の対角係数と右辺 (n_cells,) を返す（陰的 Euler / BDF2）.
+
+    Euler: (ρV/dt) φ − (ρV/dt) φⁿ
+    BDF2:  (3ρV/2dt) φ − (ρV/dt)(2 φⁿ − ½ φⁿ⁻¹)（``phi_old2`` を与えたとき。最初のステップは Euler）
+    """
+    coeff = np.asarray(rho, dtype=np.float64) * mesh.cell_volumes / dt
+    old = np.asarray(phi_old, dtype=np.float64)
+    if phi_old2 is None:
+        return coeff, coeff * old
+    old2 = np.asarray(phi_old2, dtype=np.float64)
+    return 1.5 * coeff, coeff * (2.0 * old - 0.5 * old2)
 
 
 def assemble_scalar_transport(
@@ -260,8 +390,12 @@ def assemble_scalar_transport(
     dt: float = 0.0,
     phi_old: np.ndarray | None = None,
     phi_correction: np.ndarray | None = None,
+    phi_old2: np.ndarray | None = None,
+    convection: str = "upwind",
+    limiter: str = "van_leer",
+    bounded: bool = False,
 ) -> tuple[sparse.csr_matrix, np.ndarray]:
-    """∂(ρφ)/∂t + ∇·(ṁφ) − ∇·(Γ∇φ) = S の陰的 Euler 系 (A, b) を組む.
+    """∂(ρφ)/∂t + ∇·(ṁφ) − ∇·(Γ∇φ) = S の陰的な線形系 (A, b) を組む.
 
     Parameters
     ----------
@@ -271,21 +405,33 @@ def assemble_scalar_transport(
         時間項の係数（スカラーかセル配列。伝熱なら ρC）
     dt, phi_old : 非定常なら dt > 0 と前ステップ値を与える
     phi_correction : np.ndarray | None
-        非直交補正を評価する現在の φ（与えなければ補正なし）。:func:`solve_corrected` が使う
+        非直交補正・TVD 遅延補正を評価する現在の φ（与えなければ補正なし）。:func:`solve_corrected` が使う
+    phi_old2 : np.ndarray | None
+        前々ステップの値。与えると時間項が BDF2（:func:`time_derivative_terms`）
+    convection, limiter :
+        ``upwind``（既定）/ ``tvd``（``phi_correction`` が必要）と TVD リミッタ
+    bounded : bool
+        対流項を有界形にする（:func:`assemble_convection`）
     """
     A, b = assemble_diffusion(mesh, gamma, bfaces)
     if phi_correction is not None:
         b = b + nonorthogonal_correction(mesh, phi_correction, gamma, bfaces)
     if mass_flux is not None:
-        A_c, b_c = assemble_convection(mesh, mass_flux, bfaces)
+        A_c, b_c = assemble_convection(mesh, mass_flux, bfaces, bounded=bounded)
         A = (A + A_c).tocsr()
         b = b + b_c
+        if convection.lower() != "upwind":
+            if phi_correction is None:
+                raise ValueError("convection='tvd' には phi_correction（現在の φ）が必要")
+            b = b + convection_correction(
+                mesh, phi_correction, mass_flux, bfaces, convection, limiter
+            )
     if source is not None:
         b = b + np.asarray(source, dtype=np.float64) * mesh.cell_volumes
     if dt > 0.0 and phi_old is not None:
-        coeff = np.asarray(rho, dtype=np.float64) * mesh.cell_volumes / dt
+        coeff, rhs_t = time_derivative_terms(mesh, rho, dt, phi_old, phi_old2)
         A = (A + sparse.diags(coeff)).tocsr()
-        b = b + coeff * np.asarray(phi_old, dtype=np.float64)
+        b = b + rhs_t
     return A, b
 
 

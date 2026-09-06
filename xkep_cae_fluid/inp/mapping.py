@@ -37,7 +37,11 @@ from xkep_cae_fluid.heat_transfer.data import (
     HeatTransferInput,
 )
 from xkep_cae_fluid.heat_transfer.fvm import HeatTransferFVMInput
-from xkep_cae_fluid.incompressible.data import FlowPatchBC, NavierStokesFVMInput
+from xkep_cae_fluid.incompressible.data import (
+    FlowPatchBC,
+    InternalCellBC,
+    NavierStokesFVMInput,
+)
 from xkep_cae_fluid.inp.case import (
     BoundaryCondition,
     BoundaryKind,
@@ -863,8 +867,23 @@ class InpToHeatTransferFVMProcess(PreProcess["InpMeshMappingInput", "HeatTransfe
 # Navier–Stokes（NavierStokesFVMProcess、非構造メッシュ経由）
 # ---------------------------------------------------------------------------
 
-_COUPLING_FVM: dict[str, str] = {"SIMPLE": "simple", "SIMPLEC": "simplec"}
+_COUPLING_FVM: dict[str, str] = {"SIMPLE": "simple", "SIMPLEC": "simplec", "PISO": "piso"}
+_DARCY_SOLVER_KEYS = _HT_SOLVER_KEYS | {"MAX_PICARD", "PICARD_TOL"}
 _NS_FVM_SOLVER_KEYS = _NC_SOLVER_KEYS | {"MOMENTUM"}
+# CONVECTION= の値 → (対流スキーム, リミッタ)。TVD は LIMITER= で既定 van Leer を上書きできる
+_CONVECTION_FVM: dict[str, tuple[str, str | None]] = {
+    "UPWIND": ("upwind", None),
+    "FIRST_ORDER_UPWIND": ("upwind", None),
+    "TVD": ("tvd", None),
+    "VAN_LEER": ("tvd", "van_leer"),
+    "VANLEER": ("tvd", "van_leer"),
+    "SUPERBEE": ("tvd", "superbee"),
+}
+_LIMITER_FVM: dict[str, str] = {
+    "VAN_LEER": "van_leer",
+    "VANLEER": "van_leer",
+    "SUPERBEE": "superbee",
+}
 
 
 def _ns_fvm_patch_bc(
@@ -893,9 +912,7 @@ def _ns_fvm_patch_bc(
         elif bc.kind == BoundaryKind.PRESSURE:
             velocity = VelocityPatchBC.outlet(float(bc.values[0]) if bc.values else 0.0)
         elif bc.kind == BoundaryKind.OUTLET:
-            raise UnsupportedFeatureError(
-                f"面 {name} の TYPE=OUTLET（対流流出）は非構造 NS では未対応（TYPE=PRESSURE を使う）"
-            )
+            velocity = VelocityPatchBC.outflow()
         elif bc.kind == BoundaryKind.TEMPERATURE:
             if not coupled:
                 logger.warning("面 %s の温度境界は HEAT TRANSFER=NONE のため無視します", name)
@@ -968,9 +985,14 @@ def map_navier_stokes_fvm(
     heat_source = _body_flux_unstructured(case, step, mesh) if coupled else None
     p0 = _initial_cell_field_unstructured(case, mesh, InitialConditionKind.PRESSURE, 0.0)
 
-    # 境界: パッチごとに集約（未指定は静止壁、2D 要素の ZM/ZP は対称面）
+    # 境界: パッチごとに集約（未指定は静止壁、2D 要素の ZM/ZP は対称面）。
+    # target が要素集合（パッチ名ではない elset）なら領域内部の吐出・吸入セル（InternalCellBC）
     bcs_by: dict[str, list[BoundaryCondition]] = {}
+    internal_bcs = _internal_cell_bcs(case, mesh, case.boundaries + step.boundaries, coupled)
+    patches = md.boundary_patches or {}
     for bc in case.boundaries + step.boundaries:
+        if bc.target.strip().upper() in case.elsets and bc.target.strip().upper() not in patches:
+            continue
         bcs_by.setdefault(_resolve_patch_name(bc.target, mesh), []).append(bc)
     flux: dict[str, float] = {}
     for fl in case.fluxes + step.fluxes:
@@ -1001,25 +1023,44 @@ def map_navier_stokes_fvm(
     # --- *CONTROLS ---
     disc = step.control_values(ControlCategory.DISCRETIZATION)
     _check_keys(disc, _NC_DISCRETIZATION_KEYS, "DISCRETIZATION")
-    if "CONVECTION" in disc and _norm_value(disc["CONVECTION"]) not in (
-        "UPWIND",
-        "FIRST_ORDER_UPWIND",
-    ):
-        raise UnsupportedFeatureError(
-            f"CONVECTION={disc['CONVECTION']} は非構造 NS では未対応（1 次風上のみ）"
-        )
-    if "TIME" in disc and _norm_value(disc["TIME"]) not in ("EULER", "BACKWARD_EULER"):
-        raise UnsupportedFeatureError(f"TIME={disc['TIME']} は非構造 NS では未対応（EULER のみ）")
-    if "LIMITER" in disc or "PISO_CORRECTORS" in disc:
-        raise UnsupportedFeatureError("LIMITER= / PISO_CORRECTORS= は非構造 NS では未対応")
+    convection, limiter = "upwind", "van_leer"
+    if "CONVECTION" in disc:
+        key = _norm_value(disc["CONVECTION"])
+        if key not in _CONVECTION_FVM:
+            raise UnsupportedFeatureError(
+                f"CONVECTION={disc['CONVECTION']} は未対応（{sorted(_CONVECTION_FVM)}）"
+            )
+        convection, lim = _CONVECTION_FVM[key]
+        if lim is not None:
+            limiter = lim
+    if "LIMITER" in disc:
+        key = _norm_value(disc["LIMITER"])
+        if key not in _LIMITER_FVM:
+            raise UnsupportedFeatureError(
+                f"LIMITER={disc['LIMITER']} は未対応（{sorted(_LIMITER_FVM)}）"
+            )
+        if convection != "tvd":
+            raise UnsupportedFeatureError(
+                "LIMITER= は CONVECTION=TVD / VAN_LEER / SUPERBEE と組み合わせる"
+            )
+        limiter = _LIMITER_FVM[key]
+    time_scheme = "euler"
+    if "TIME" in disc:
+        key = _norm_value(disc["TIME"])
+        if key not in _TIME_NC:
+            raise UnsupportedFeatureError(f"TIME={disc['TIME']} は未対応（EULER / BDF2）")
+        time_scheme = _TIME_NC[key]
     coupling = "simple"
     if "PRESSURE_VELOCITY" in disc:
         key = _norm_value(disc["PRESSURE_VELOCITY"])
         if key not in _COUPLING_FVM:
             raise UnsupportedFeatureError(
-                f"PRESSURE_VELOCITY={disc['PRESSURE_VELOCITY']} は非構造 NS では SIMPLE / SIMPLEC のみ"
+                f"PRESSURE_VELOCITY={disc['PRESSURE_VELOCITY']} は未対応（SIMPLE / SIMPLEC / PISO）"
             )
         coupling = _COUPLING_FVM[key]
+    piso_correctors = _as_int(disc.get("PISO_CORRECTORS", "2"), "PISO_CORRECTORS")
+    if piso_correctors < 1:
+        raise UnsupportedFeatureError("PISO_CORRECTORS は 1 以上")
     relax = step.control_values(ControlCategory.RELAXATION)
     _check_keys(relax, _NC_RELAXATION_KEYS, "RELAXATION")
     alpha_u = _as_float(relax.get("VELOCITY", "0.7"), "VELOCITY")
@@ -1084,12 +1125,81 @@ def map_navier_stokes_fvm(
         alpha_p=alpha_p,
         alpha_T=alpha_T,
         coupling=coupling,
+        internal_bcs=internal_bcs,
+        n_piso_correctors=piso_correctors,
+        convection=convection,
+        limiter=limiter,
+        time_scheme=time_scheme,
         linear_solver=momentum_solver,
         pressure_solver=pressure_solver,
         tol_inner=tol_inner,
         max_inner_iter=max_inner,
         output_interval=output_interval,
     )
+
+
+def _internal_cell_bcs(
+    case: CaseDefinition,
+    mesh: InpMeshResult,
+    boundaries: list[BoundaryCondition],
+    coupled: bool,
+) -> tuple[InternalCellBC, ...]:
+    """要素集合を target にした ``*BOUNDARY`` を領域内部の吐出・吸入セルに写す.
+
+    - ``TYPE=VELOCITY`` + elset → :meth:`InternalCellBC.inlet`（速度固定、p' = 0）
+    - ``TYPE=PRESSURE`` + elset → :meth:`InternalCellBC.outlet`（p' = 0 の圧力基準。値は 0 のみ）
+    - ``TYPE=TEMPERATURE`` + elset → 同じ elset の吐出セルの温度（吐出が無ければエラー）
+    """
+    patches = mesh.mesh.boundary_patches or {}
+    by_set: dict[str, dict[str, BoundaryCondition]] = {}
+    for bc in boundaries:
+        name = bc.target.strip().upper()
+        if name not in case.elsets or name in patches:
+            continue
+        if bc.kind not in (BoundaryKind.VELOCITY, BoundaryKind.PRESSURE, BoundaryKind.TEMPERATURE):
+            raise UnsupportedFeatureError(
+                f"要素集合 {name} への *BOUNDARY は TYPE=VELOCITY / PRESSURE / TEMPERATURE のみ"
+                f"（{bc.kind.value}）"
+            )
+        by_set.setdefault(name, {})[bc.kind.value] = bc
+    out: list[InternalCellBC] = []
+    for name, kinds in by_set.items():
+        mask = mesh.mask_for_elements(case.elsets[name].ids)
+        vel_bc = kinds.get(BoundaryKind.VELOCITY.value)
+        p_bc = kinds.get(BoundaryKind.PRESSURE.value)
+        t_bc = kinds.get(BoundaryKind.TEMPERATURE.value)
+        if vel_bc is not None and p_bc is not None:
+            raise UnsupportedFeatureError(
+                f"要素集合 {name} に速度固定と圧力基準が同時に指定されています"
+            )
+        temperature: float | None = None
+        if t_bc is not None:
+            if vel_bc is None:
+                raise UnsupportedFeatureError(
+                    f"要素集合 {name} の温度固定は TYPE=VELOCITY（吐出）と組み合わせる"
+                )
+            if not t_bc.values:
+                raise UnsupportedFeatureError(
+                    f"要素集合 {name} の TYPE=TEMPERATURE に値がありません"
+                )
+            if coupled:
+                temperature = float(t_bc.values[0])
+            else:
+                logger.warning("要素集合 %s の温度固定は HEAT TRANSFER=NONE のため無視します", name)
+        if vel_bc is not None:
+            vel = list(vel_bc.values) + [0.0] * (3 - len(vel_bc.values))
+            out.append(
+                InternalCellBC.inlet(
+                    mask, (float(vel[0]), float(vel[1]), float(vel[2])), temperature, label=name
+                )
+            )
+        elif p_bc is not None:
+            if p_bc.values and p_bc.values[0] != 0.0:
+                raise UnsupportedFeatureError(
+                    f"要素集合 {name} の圧力基準は 0 のみ（p' = 0 のピン留め。相対圧で解く）"
+                )
+            out.append(InternalCellBC.outlet(mask, label=name))
+    return tuple(out)
 
 
 class InpToNavierStokesFVMProcess(PreProcess["InpMeshMappingInput", "NavierStokesFVMInput"]):
@@ -1213,28 +1323,38 @@ def _darcy_patch_bcs(
 def map_darcy(case: CaseDefinition, mesh: InpMeshResult, step: StepDefinition) -> DarcyFlowInput:
     """``*DARCY`` ステップを :class:`DarcyFlowInput` に変換する."""
     _check_procedure_common(step, EquationFamily.DARCY)
-    if not step.procedure.steady:
-        raise UnsupportedFeatureError("*DARCY は定常（STEADY STATE）のみ対応")
+    proc = step.procedure
     fluid = _fluid_material(case)
     mu = fluid.require("viscosity")
     rho = fluid.density if fluid.density is not None else 1000.0
     permeability = np.zeros(mesh.n_cells)
+    forchheimer = np.zeros(mesh.n_cells)
+    storage = np.zeros(mesh.n_cells)
     for mask, mat, _kind in _mesh_section_coverage(case, mesh):
         permeability[mask] = mat.require("permeability")
+        forchheimer[mask] = mat.forchheimer if mat.forchheimer is not None else 0.0
+        storage[mask] = mat.specific_storage if mat.specific_storage is not None else 0.0
+    if not proc.steady and not np.any(storage > 0.0):
+        raise UnsupportedFeatureError(
+            "非定常の *DARCY には *SPECIFIC STORAGE（比貯留係数 S_s > 0）が必要"
+        )
     if case.films + step.films or case.fluxes + step.fluxes or case.loads + step.loads:
         raise UnsupportedFeatureError("*SFILM / *DFLUX / *DLOAD は *DARCY では未対応")
     bcs = _darcy_patch_bcs(case, step, mesh)
     p0 = _initial_cell_field_unstructured(case, mesh, InitialConditionKind.PRESSURE, 0.0)
 
-    for cat in (
-        ControlCategory.DISCRETIZATION,
-        ControlCategory.RELAXATION,
-        ControlCategory.TIME_INCREMENTATION,
-    ):
+    for cat in (ControlCategory.DISCRETIZATION, ControlCategory.RELAXATION):
         if step.control_values(cat):
             raise UnsupportedFeatureError(f"*CONTROLS, PARAMETERS={cat.value} は *DARCY では未対応")
+    tinc = step.control_values(ControlCategory.TIME_INCREMENTATION)
+    _check_keys(tinc, _TIME_INC_KEYS, "TIME INCREMENTATION")
+    output_interval = _as_int(tinc.get("OUTPUT_INTERVAL", "0"), "OUTPUT_INTERVAL")
+    if output_interval <= 0:
+        output_interval = max((o.frequency for o in step.outputs), default=1)
     solver = step.control_values(ControlCategory.SOLVER)
-    _check_keys(solver, _HT_SOLVER_KEYS, "SOLVER")
+    _check_keys(solver, _DARCY_SOLVER_KEYS, "SOLVER")
+    max_picard = _as_int(solver.get("MAX_PICARD", "50"), "MAX_PICARD")
+    picard_tol = _as_float(solver.get("PICARD_TOL", "1e-8"), "PICARD_TOL")
     method = "direct"
     if "METHOD" in solver:
         key = _norm_value(solver["METHOD"])
@@ -1255,6 +1375,13 @@ def map_darcy(case: CaseDefinition, mesh: InpMeshResult, step: StepDefinition) -
         linear_solver=method,
         tol=tol,
         max_iter=max_iter,
+        forchheimer=forchheimer,
+        max_picard_iter=max_picard,
+        picard_tol=picard_tol,
+        specific_storage=storage,
+        dt=proc.dt,
+        t_end=proc.time_period,
+        output_interval=output_interval,
     )
 
 

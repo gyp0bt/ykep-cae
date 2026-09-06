@@ -20,15 +20,19 @@ from xkep_cae_fluid.fvm import (
     assemble_diffusion,
     assemble_scalar_transport,
     cell_gradient,
+    cell_gradient_lsq,
     diffusive_face_flux,
     face_decomposition,
     face_mass_flux,
+    face_skewness,
     is_orthogonal,
     make_linear_solver,
     max_nonorthogonality_deg,
     relative_residual,
     resolve_boundary,
     solve_corrected,
+    time_derivative_terms,
+    tvd_deferred_correction,
 )
 
 
@@ -169,6 +173,117 @@ class TestConvection:
         assert phi[0] < 0.05 and phi[-1] > 0.5
 
 
+class TestTVDConvectionPhysics:
+    """TVD 遅延補正（van Leer / Superbee）: 1D 対流拡散で風上より高精度、単調、保存."""
+
+    def _peclet_case(self, n: int = 20):
+        mesh = _box(n)
+        rho, u_val, gamma = 1.0, 1.0, 0.1
+        u = np.zeros((mesh.n_cells, 3))
+        u[:, 0] = u_val
+        mf = face_mass_flux(mesh, u, rho=rho)
+        bf = resolve_boundary(mesh, {"XM": PatchBC.dirichlet(0.0), "XP": PatchBC.dirichlet(1.0)})
+        x = mesh.cell_centers[:, 0]
+        pe = rho * u_val / gamma
+        exact = (np.exp(pe * x) - 1.0) / (np.exp(pe) - 1.0)
+        return mesh, mf, bf, gamma, exact
+
+    @pytest.mark.parametrize("limiter", ["van_leer", "superbee"])
+    def test_tvd_more_accurate_than_upwind_and_monotone(self, limiter: str):
+        mesh, mf, bf, gamma, exact = self._peclet_case()
+        A, b = assemble_scalar_transport(mesh, gamma=gamma, bfaces=bf, mass_flux=mf)
+        phi_up = DirectSolver().solve(A, b)
+        phi = phi_up.copy()
+        for _ in range(100):
+            A2, b2 = assemble_scalar_transport(
+                mesh,
+                gamma=gamma,
+                bfaces=bf,
+                mass_flux=mf,
+                phi_correction=phi,
+                convection="tvd",
+                limiter=limiter,
+            )
+            new = DirectSolver().solve(A2, b2)
+            done = np.linalg.norm(new - phi) < 1e-12
+            phi = new
+            if done:
+                break
+        err_up = np.abs(phi_up - exact).max()
+        err_tvd = np.abs(phi - exact).max()
+        assert err_tvd < err_up / 2.5, f"upwind {err_up:.3e}, tvd {err_tvd:.3e}"
+        assert np.all(np.diff(phi) >= -1e-12)
+
+    def test_correction_is_conservative_and_zero_for_upwind(self):
+        mesh, mf, bf, _gamma, _exact = self._peclet_case(12)
+        phi = np.sin(3.0 * mesh.cell_centers[:, 0])
+        grad = cell_gradient(mesh, phi, bf)
+        corr = tvd_deferred_correction(mesh, phi, mf, grad, "van_leer")
+        assert abs(corr.sum()) < 1e-14  # 内部面の補正は owner/neighbour で相殺
+        assert np.any(np.abs(corr) > 1e-6)
+        with pytest.raises(ValueError, match="limiter"):
+            tvd_deferred_correction(mesh, phi, mf, grad, "minmod")
+        with pytest.raises(ValueError, match="phi_correction"):
+            assemble_scalar_transport(mesh, gamma=1.0, bfaces=bf, mass_flux=mf, convection="tvd")
+
+    def test_bounded_form_keeps_sink_cell_within_inflow_values(self):
+        """面流束が保存的でない（セル 1 が吸い込み）とき、有界形なら流入値を超えない."""
+        mesh = _box(4)
+        mf = np.zeros(mesh.n_faces)
+        mf[:3] = [1.0, 0.5, 0.25]  # 内部面 0-1, 1-2, 2-3（owner → neighbour）
+        mf[mesh.patch_faces("XP")] = 0.25
+        mf[mesh.patch_faces("XM")] = -1.0
+        bf = resolve_boundary(mesh, {"XM": PatchBC.dirichlet(3.0)})
+        A, b = assemble_convection(mesh, mf, bf)
+        phi = DirectSolver().solve(A, b)
+        assert phi[1] > 3.0 + 1e-9  # 非保存的な流束で発散形はオーバーシュートする
+        A_b, b_b = assemble_convection(mesh, mf, bf, bounded=True)
+        phi_b = DirectSolver().solve(A_b, b_b)
+        np.testing.assert_allclose(phi_b, 3.0, rtol=1e-12)
+
+
+class TestTimeSchemesPhysics:
+    """時間項: 陰的 Euler と BDF2（sin(πx) e^{−π²t} の減衰）."""
+
+    def _run(self, scheme: str, n: int = 40, dt: float = 0.01, t_end: float = 0.1) -> float:
+        mesh = _box(n)
+        x = mesh.cell_centers[:, 0]
+        bf = resolve_boundary(mesh, {"XM": PatchBC.dirichlet(0.0), "XP": PatchBC.dirichlet(0.0)})
+        phi_old = np.sin(np.pi * x)
+        phi_old2 = None
+        t = 0.0
+        while t < t_end - 1e-12:
+            t += dt
+            A, b = assemble_scalar_transport(
+                mesh,
+                gamma=1.0,
+                bfaces=bf,
+                rho=1.0,
+                dt=dt,
+                phi_old=phi_old,
+                phi_old2=phi_old2 if scheme == "bdf2" else None,
+            )
+            phi_old2, phi_old = phi_old, DirectSolver().solve(A, b)
+        exact = np.sin(np.pi * x) * np.exp(-(np.pi**2) * t_end)
+        return float(np.abs(phi_old - exact).max() / exact.max())
+
+    def test_bdf2_is_more_accurate_than_euler(self):
+        err_euler = self._run("euler")
+        err_bdf2 = self._run("bdf2")
+        assert err_bdf2 < err_euler / 5.0, f"euler {err_euler:.3e}, bdf2 {err_bdf2:.3e}"
+
+    def test_time_terms_formulas(self):
+        mesh = _box(2)
+        old = np.array([1.0, 2.0])
+        old2 = np.array([0.5, 0.5])
+        c, r = time_derivative_terms(mesh, 2.0, 0.5, old)
+        np.testing.assert_allclose(c, 2.0 * mesh.cell_volumes / 0.5)
+        np.testing.assert_allclose(r, c * old)
+        c2, r2 = time_derivative_terms(mesh, 2.0, 0.5, old, old2)
+        np.testing.assert_allclose(c2, 1.5 * c)
+        np.testing.assert_allclose(r2, c * (2.0 * old - 0.5 * old2))
+
+
 class TestTransientAndSource:
     def test_no_flux_holds_initial(self):
         mesh = _box(3, 3, 3)
@@ -197,6 +312,35 @@ class TestTransientAndSource:
 
 
 class TestGradient:
+    def test_skew_corrected_green_gauss_on_tets(self, kuhn_tets):
+        """四面体（面中心が P–N 直線から外れる）でも反復スキュー補正で線形場の勾配が出る."""
+        mesh = kuhn_tets(3, 3, 3)
+        _t, skew = face_skewness(mesh)
+        assert np.abs(skew).max() > 0.02  # 実際にスキューがある（セル幅 1/3 に対して 8%）
+        phi = (
+            1.0
+            + 2.0 * mesh.cell_centers[:, 0]
+            - 0.5 * mesh.cell_centers[:, 1]
+            + 3.0 * mesh.cell_centers[:, 2]
+        )
+        bcs = {
+            nm: PatchBC.dirichlet(
+                1.0
+                + 2.0 * mesh.face_centers[mesh.patch_faces(nm), 0]
+                - 0.5 * mesh.face_centers[mesh.patch_faces(nm), 1]
+                + 3.0 * mesh.face_centers[mesh.patch_faces(nm), 2]
+            )
+            for nm in ("XM", "XP", "YM", "YP", "ZM", "ZP")
+        }
+        bf = resolve_boundary(mesh, bcs)
+        g1 = cell_gradient(mesh, phi, bf, n_iter=1)
+        g = cell_gradient(mesh, phi, bf)
+        exact = np.array([2.0, -0.5, 3.0])
+        assert np.abs(g1 - exact).max() > 0.5  # 補正なしの Green–Gauss は大きく外す
+        exact_all = np.broadcast_to(exact, g.shape)
+        np.testing.assert_allclose(g, exact_all, atol=1e-8)
+        np.testing.assert_allclose(cell_gradient_lsq(mesh, phi, bf), exact_all, atol=1e-10)
+
     def test_green_gauss_linear_field_exact(self):
         mesh = _box(4, 3, 2)
         g = np.array([1.0, -2.0, 0.5])

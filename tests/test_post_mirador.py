@@ -191,6 +191,50 @@ class TestMiradorExportAPI:
                 MiradorExportInput(None, None, None, {"P": np.zeros(4)}, "/dev/null/x.html")
             )
 
+    def test_mesh_input_tets_and_wedges(self, kuhn_tets):
+        """四面体 / 楔を含む MeshData は messi の C3D4 / C3D6 / C3D8 に分けて渡す."""
+        from xkep_cae_fluid.core.data import MeshData
+        from xkep_cae_fluid.post.mirador import build_hex_mesh_from_meshdata
+
+        tets = kuhn_tets(1, 1, 1)
+        hm = build_hex_mesh_from_meshdata(tets)
+        assert hm.elements.shape == (6, 5) and hm.element_types.tolist() == ["C3D4"] * 6
+        rows = hm.element_rows_by_type(hm.elsets["domain"])
+        assert [(t, r.shape) for t, r in rows] == [("C3D4", (6, 5))]
+        # 混在（-1 詰め）: 幅はタイプごとに切る
+        conn = np.full((2, 8), -1, dtype=np.int64)
+        conn[0] = np.arange(8)
+        conn[1, :6] = np.arange(6)
+        mixed = MeshData(
+            node_coords=np.random.default_rng(0).random((8, 3)),
+            connectivity=conn,
+            cell_volumes=np.ones(2),
+        )
+        hm2 = build_hex_mesh_from_meshdata(mixed)
+        assert hm2.element_types.tolist() == ["C3D8", "C3D6"]
+        by_type = dict(hm2.element_rows_by_type(hm2.elsets["domain"]))
+        assert by_type["C3D8"].shape == (1, 9) and by_type["C3D6"].shape == (1, 7)
+        assert by_type["C3D6"][0].tolist() == [2, 1, 2, 3, 4, 5, 6]
+        bad = MeshData(
+            node_coords=mixed.node_coords, connectivity=conn[:, :5], cell_volumes=np.ones(2)
+        )
+        with pytest.raises(ValueError, match="節点数"):
+            build_hex_mesh_from_meshdata(bad)
+
+    @needs_messi
+    def test_mesh_input_export_tets(self, tmp_path: Path, kuhn_tets):
+        """四面体メッシュの HTML 書き出し: 要素数とセル値の対応."""
+        mesh = kuhn_tets(2, 2, 1)
+        P = np.arange(mesh.n_cells, dtype=float)
+        out = tmp_path / "tet.html"
+        res = MiradorExportProcess().execute(
+            MiradorExportInput(None, None, None, {"P": P}, str(out), mesh=mesh)
+        )
+        assert res.n_cells == 24 and res.n_nodes == 18
+        d = _embedded(out)
+        for t, owner in enumerate(d["triElement"]):
+            assert d["metrics"]["P"][t] == P[owner - 1]
+
     @needs_messi
     def test_mesh_input_export(self, tmp_path: Path):
         """非構造 MeshData 入力: セル値がそのまま要素場になり、view cut も使える."""

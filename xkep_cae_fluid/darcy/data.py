@@ -53,7 +53,9 @@ class DarcyPatchBC:
 class DarcyFlowInput:
     """Darcy 流れの入力.
 
-    支配方程式: ∇·u = S, u = −(K/μ) ∇p（K: 透過率 [m²]、μ: 粘度 [Pa·s]）
+    支配方程式: S_s ∂p/∂t + ∇·u = S、−∇p = (μ/K) u + β ρ |u| u
+    （K: 透過率 [m²]、μ: 粘度 [Pa·s]、β: Forchheimer 係数 [1/m]、S_s: 比貯留係数 [1/Pa]）。
+    β = 0 なら線形 Darcy、S_s = 0 か dt = 0 なら定常。
 
     Parameters
     ----------
@@ -76,6 +78,17 @@ class DarcyFlowInput:
     tol, max_iter : 反復解法の設定
     max_nonorthogonal_iter : int
         非直交メッシュでの遅延補正の最大反復回数（直交メッシュでは 1 回で終わる）
+    forchheimer : float | np.ndarray
+        Forchheimer 係数 β [1/m]（スカラーかセル配列）。0 で線形 Darcy。非ゼロなら実効移動度
+        Γ = (K/μ) / (1 + β ρ K |u| / μ) を Picard 反復で更新する
+    max_picard_iter, picard_tol :
+        Picard 反復の上限と収束判定（速度の相対変化）
+    specific_storage : float | np.ndarray
+        比貯留係数 S_s [1/Pa]（スカラーかセル配列）。``dt > 0`` のとき時間項 S_s ∂p/∂t
+    dt, t_end : float
+        非定常なら dt > 0（S_s > 0 が必要）。定常は dt = 0
+    output_interval : int
+        圧力履歴を残すステップ間隔
     """
 
     mesh: MeshData
@@ -89,6 +102,17 @@ class DarcyFlowInput:
     tol: float = 1e-10
     max_iter: int = 1000
     max_nonorthogonal_iter: int = 20
+    forchheimer: float | np.ndarray = 0.0
+    max_picard_iter: int = 50
+    picard_tol: float = 1e-8
+    specific_storage: float | np.ndarray = 0.0
+    dt: float = 0.0
+    t_end: float = 0.0
+    output_interval: int = 1
+
+    @property
+    def is_transient(self) -> bool:
+        return self.dt > 0.0
 
 
 @dataclass(frozen=True)
@@ -111,6 +135,10 @@ class DarcyFlowResult:
     elapsed_seconds : float
     inflow, outflow : float
         境界からの流入・流出体積流量 [m³/s]（流入は正、流出は正で報告）
+    n_picard_iter : int
+        最終ステップの Picard 反復回数（線形 Darcy は 1）
+    n_timesteps, time_history, p_history :
+        非定常の履歴（定常は 0 / 空）
     """
 
     p: np.ndarray
@@ -123,3 +151,7 @@ class DarcyFlowResult:
     inflow: float = 0.0
     outflow: float = 0.0
     n_nonorthogonal_iter: int = 1  # 非直交補正の反復回数（直交メッシュは 1）
+    n_picard_iter: int = 1
+    n_timesteps: int = 0
+    time_history: tuple[float, ...] = ()
+    p_history: tuple[np.ndarray, ...] = ()

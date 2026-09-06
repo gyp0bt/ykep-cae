@@ -8,7 +8,9 @@ import pytest
 from xkep_cae_fluid.core.testing import binds_to
 from xkep_cae_fluid.darcy.data import DarcyBCKind
 from xkep_cae_fluid.fvm import BCKind
+from xkep_cae_fluid.fvm.momentum import VelocityBCKind
 from xkep_cae_fluid.heat_transfer.data import BoundaryCondition as HTBC
+from xkep_cae_fluid.incompressible import InternalCellBCKind
 from xkep_cae_fluid.inp.builder import build_case
 from xkep_cae_fluid.inp.grid import recover_structured_grid
 from xkep_cae_fluid.inp.mapping import (
@@ -367,6 +369,31 @@ def _darcy_input(text: str) -> InpMeshMappingInput:
 
 @binds_to(InpToDarcyProcess)
 class TestInpToDarcyAPI:
+    def test_transient_and_forchheimer(self):
+        text = (
+            DARCY_TEXT.replace(
+                "*PERMEABILITY\n 1e-10\n",
+                "*PERMEABILITY\n 1e-10\n*FORCHHEIMER\n 2e4\n*SPECIFIC STORAGE\n 1e-6\n",
+            )
+            .replace(
+                "*DARCY, STEADY STATE\n",
+                "*DARCY\n 0.5, 5.\n*CONTROLS, PARAMETERS=TIME INCREMENTATION\n OUTPUT_INTERVAL=2\n",
+            )
+            .replace("MAX_ITER=50", "MAX_ITER=50, MAX_PICARD=7, PICARD_TOL=1e-6")
+        )
+        inp = InpToDarcyProcess().execute(_darcy_input(text))
+        beta = np.asarray(inp.forchheimer)
+        assert np.sum(beta == 2e4) == 14 and np.sum(beta == 0.0) == 2  # CLAY には無い
+        storage = np.asarray(inp.specific_storage)
+        assert np.sum(storage == 1e-6) == 14
+        assert (inp.dt, inp.t_end, inp.output_interval) == (0.5, 5.0, 2)
+        assert (inp.max_picard_iter, inp.picard_tol) == (7, 1e-6)
+        # 非定常には比貯留が必要
+        with pytest.raises(UnsupportedFeatureError, match="SPECIFIC STORAGE"):
+            InpToDarcyProcess().execute(
+                _darcy_input(DARCY_TEXT.replace("*DARCY, STEADY STATE\n", "*DARCY\n 0.5, 5.\n"))
+            )
+
     def test_full_mapping(self):
         inp = InpToDarcyProcess().execute(_darcy_input(DARCY_TEXT))
         assert inp.mesh.n_cells == 16 and inp.viscosity == 1e-3 and inp.density == 998.0
@@ -539,7 +566,6 @@ NS_FVM_TEXT = """\
 @binds_to(InpToNavierStokesFVMProcess)
 class TestInpToNavierStokesFVMAPI:
     def test_full_mapping(self):
-        from xkep_cae_fluid.fvm.momentum import VelocityBCKind
 
         inp = InpToNavierStokesFVMProcess().execute(_darcy_input(NS_FVM_TEXT))
         assert inp.mesh.n_cells == 8 and inp.rho == 1.0 and inp.mu == 0.01
@@ -585,9 +611,15 @@ class TestInpToNavierStokesFVMAPI:
     @pytest.mark.parametrize(
         "old,new,match",
         [
-            ("*BOUNDARY, TYPE=SYMMETRY\n YP", "*BOUNDARY, TYPE=OUTLET\n YP", "OUTLET"),
-            ("CONVECTION=UPWIND", "CONVECTION=VAN LEER", "CONVECTION"),
-            ("PRESSURE_VELOCITY=SIMPLEC", "PRESSURE_VELOCITY=PISO", "PISO"),
+            ("CONVECTION=UPWIND", "CONVECTION=QUICK", "CONVECTION"),
+            ("CONVECTION=UPWIND", "CONVECTION=UPWIND, LIMITER=VAN_LEER", "LIMITER"),
+            ("CONVECTION=UPWIND", "CONVECTION=TVD, LIMITER=MINMOD", "LIMITER"),
+            ("PRESSURE_VELOCITY=SIMPLEC", "PRESSURE_VELOCITY=COUPLED", "PRESSURE_VELOCITY"),
+            (
+                "PRESSURE_VELOCITY=SIMPLEC",
+                "PRESSURE_VELOCITY=PISO, PISO_CORRECTORS=0",
+                "PISO_CORRECTORS",
+            ),
             ("TEMPERATURE=0.8", "TEMPERATURE=0.8, ADAPTIVE=YES", "ADAPTIVE"),
             ("PRESSURE=DIRECT", "PRESSURE=JACOBI", "PRESSURE"),
             ("*BOUNDARY, TYPE=SYMMETRY\n YP", "*BOUNDARY, TYPE=SYMMETRY\n LID", "予約面名"),
@@ -598,3 +630,77 @@ class TestInpToNavierStokesFVMAPI:
         assert old in NS_FVM_TEXT
         with pytest.raises(UnsupportedFeatureError, match=match):
             InpToNavierStokesFVMProcess().execute(_darcy_input(NS_FVM_TEXT.replace(old, new)))
+
+    @pytest.mark.parametrize(
+        "old,new,expect",
+        [
+            (
+                "CONVECTION=UPWIND",
+                "CONVECTION=VAN LEER",
+                {"convection": "tvd", "limiter": "van_leer"},
+            ),
+            (
+                "CONVECTION=UPWIND",
+                "CONVECTION=SUPERBEE",
+                {"convection": "tvd", "limiter": "superbee"},
+            ),
+            (
+                "CONVECTION=UPWIND",
+                "CONVECTION=TVD, LIMITER=SUPERBEE",
+                {"convection": "tvd", "limiter": "superbee"},
+            ),
+            (
+                "PRESSURE_VELOCITY=SIMPLEC",
+                "PRESSURE_VELOCITY=PISO, PISO_CORRECTORS=3",
+                {"coupling": "piso", "n_piso_correctors": 3},
+            ),
+            ("CONVECTION=UPWIND", "CONVECTION=UPWIND, TIME=BDF2", {"time_scheme": "bdf2"}),
+        ],
+    )
+    def test_discretization_options(self, old: str, new: str, expect: dict[str, object]):
+        assert old in NS_FVM_TEXT
+        inp = InpToNavierStokesFVMProcess().execute(_darcy_input(NS_FVM_TEXT.replace(old, new)))
+        for k, v in expect.items():
+            assert getattr(inp, k) == v, k
+
+    def test_elset_boundary_becomes_internal_cell_bc(self):
+        """要素集合を target にした *BOUNDARY は領域内部の吐出・吸入セルになる."""
+        text = NS_FVM_TEXT.replace(
+            "*ELSET, ELSET=FLUID\n",
+            "*ELSET, ELSET=PUMP\n 5\n*ELSET, ELSET=DRAIN\n 8\n*ELSET, ELSET=FLUID\n",
+        ).replace(
+            "*BOUNDARY, TYPE=SYMMETRY\n YP\n",
+            "*BOUNDARY, TYPE=SYMMETRY\n YP\n*BOUNDARY, TYPE=VELOCITY\n PUMP, 0.05, 0., 0.\n"
+            "*BOUNDARY, TYPE=TEMPERATURE\n PUMP, 320.\n*BOUNDARY, TYPE=PRESSURE\n DRAIN, 0.\n",
+        )
+        inp = InpToNavierStokesFVMProcess().execute(_darcy_input(text))
+        assert "PUMP" not in inp.bcs and "DRAIN" not in inp.bcs
+        assert len(inp.internal_bcs) == 2
+        pump = next(b for b in inp.internal_bcs if b.label == "PUMP")
+        drain = next(b for b in inp.internal_bcs if b.label == "DRAIN")
+        assert pump.kind == InternalCellBCKind.INLET and pump.velocity == (0.05, 0.0, 0.0)
+        assert pump.temperature == 320.0 and pump.mask.sum() == 1
+        assert drain.kind == InternalCellBCKind.OUTLET and drain.mask.sum() == 1
+        with pytest.raises(UnsupportedFeatureError, match="圧力基準は 0"):
+            InpToNavierStokesFVMProcess().execute(
+                _darcy_input(text.replace("DRAIN, 0.", "DRAIN, 5."))
+            )
+        with pytest.raises(UnsupportedFeatureError, match="TYPE=VELOCITY"):
+            InpToNavierStokesFVMProcess().execute(
+                _darcy_input(text.replace("*BOUNDARY, TYPE=VELOCITY\n PUMP, 0.05, 0., 0.\n", ""))
+            )
+        with pytest.raises(UnsupportedFeatureError, match="のみ"):
+            InpToNavierStokesFVMProcess().execute(
+                _darcy_input(
+                    text.replace(
+                        "*BOUNDARY, TYPE=PRESSURE\n DRAIN, 0.\n", "*BOUNDARY, TYPE=WALL\n DRAIN\n"
+                    )
+                )
+            )
+
+    def test_outlet_is_convective_outflow(self):
+        old = "*BOUNDARY, TYPE=SYMMETRY\n YP"
+        assert old in NS_FVM_TEXT
+        text = NS_FVM_TEXT.replace(old, "*BOUNDARY, TYPE=OUTLET\n YP")
+        inp = InpToNavierStokesFVMProcess().execute(_darcy_input(text))
+        assert inp.bcs["YP"].velocity.kind == VelocityBCKind.OUTFLOW

@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import ClassVar
 
 import numpy as np
@@ -85,6 +85,8 @@ _MATERIAL_SUBKEYWORDS: dict[str, str] = {
     "SPECIFIC HEAT": "specific_heat",
     "EXPANSION": "expansion",
     "PERMEABILITY": "permeability",
+    "FORCHHEIMER": "forchheimer",
+    "SPECIFIC STORAGE": "specific_storage",
 }
 
 _IGNORED_KEYWORDS: frozenset[str] = frozenset(
@@ -266,11 +268,12 @@ def _handle_element(b: _Builder, block: KeywordBlock) -> None:
         conn.append(nodes)
     if not ids:
         return
-    expected = 8 if "3D" in etype else 4
-    if width != expected:
+    allowed = (4, 6, 8) if "3D" in etype else (3, 4)
+    if width not in allowed:
         raise InpSyntaxError(
             f"要素タイプ {etype}（節点数 {width}）は未対応です。"
-            "3D は 8 節点六面体（C3D8 系）、2D は 4 節点四辺形（CPS4/CPE4 系）のみ",
+            "3D は四面体 C3D4 / 楔 C3D6 / 六面体 C3D8 系（4 / 6 / 8 節点）、"
+            "2D は三角形 CPS3 / 四辺形 CPS4 系（3 / 4 節点）のみ（2 次要素は不可）",
             block.source,
             block.line_no,
         )
@@ -377,16 +380,7 @@ def _handle_material_property(
         zero = block.get("ZERO")
         if zero:
             updates["reference_temperature"] = _float(zero, block, "ZERO")
-    b.materials[current_material] = MaterialDefinition(
-        name=mat.name,
-        density=updates.get("density", mat.density),
-        viscosity=updates.get("viscosity", mat.viscosity),
-        conductivity=updates.get("conductivity", mat.conductivity),
-        specific_heat=updates.get("specific_heat", mat.specific_heat),
-        expansion=updates.get("expansion", mat.expansion),
-        reference_temperature=updates.get("reference_temperature", mat.reference_temperature),
-        permeability=updates.get("permeability", mat.permeability),
-    )
+    b.materials[current_material] = replace(mat, **updates)
 
 
 def _handle_section(b: _Builder, block: KeywordBlock, kind: SectionKind) -> None:
