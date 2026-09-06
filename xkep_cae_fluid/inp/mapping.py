@@ -27,6 +27,12 @@ from xkep_cae_fluid.core.base import AbstractProcess, ProcessMeta
 from xkep_cae_fluid.core.categories import PreProcess
 from xkep_cae_fluid.darcy.data import DarcyFlowInput, DarcyPatchBC
 from xkep_cae_fluid.fvm import BCKind, PatchBC
+from xkep_cae_fluid.fvm.momentum import VelocityPatchBC
+from xkep_cae_fluid.fvm.viscosity import (
+    CarreauViscosity,
+    PowerLawViscosity,
+    ViscosityModelStrategy,
+)
 from xkep_cae_fluid.heat_transfer.data import (
     BoundaryCondition as HTBoundaryCondition,
 )
@@ -55,6 +61,7 @@ from xkep_cae_fluid.inp.case import (
     MaterialDefinition,
     SectionKind,
     StepDefinition,
+    ViscosityModel,
 )
 from xkep_cae_fluid.inp.grid import FACE_NAMES, StructuredGridMap
 from xkep_cae_fluid.inp.mesh import InpMeshResult
@@ -174,6 +181,27 @@ def _gravity_vector(case: CaseDefinition, step: StepDefinition) -> tuple[float, 
     if len(loads) > 1:
         raise UnsupportedFeatureError("*DLOAD, GRAV は 1 つだけ指定してください")
     return loads[0].vector
+
+
+def _body_force_field(
+    case: CaseDefinition, step: StepDefinition, mesh: InpMeshResult
+) -> np.ndarray | None:
+    """``*DLOAD`` の体積力（BX / BY / BZ / BF）を (n_cells, 3) [N/m³] に展開する（無ければ None）."""
+    loads = [ld for ld in case.loads + step.loads if ld.is_body_force]
+    if not loads:
+        return None
+    out = np.zeros((mesh.n_cells, 3))
+    for ld in loads:
+        mask = mesh.mask_for_elements(case.element_ids_of(ld.target))
+        out[mask] += np.asarray(ld.vector, dtype=np.float64)
+    return out
+
+
+def _reject_body_force(case: CaseDefinition, step: StepDefinition, where: str) -> None:
+    if any(ld.is_body_force for ld in case.loads + step.loads):
+        raise UnsupportedFeatureError(
+            f"*DLOAD の体積力（BX / BY / BZ / BF）は{where}では未対応（非構造 *NAVIER STOKES のみ）"
+        )
 
 
 def _fluid_material(case: CaseDefinition) -> MaterialDefinition:
@@ -402,8 +430,17 @@ def map_navier_stokes(
         raise UnsupportedFeatureError(f"HEAT TRANSFER={proc.heat_transfer} は NONE / COUPLED のみ")
     if not grid.is_uniform:
         raise UnsupportedFeatureError("*NAVIER STOKES（NaturalConvectionFDM）は等間隔格子のみ対応")
+    _reject_body_force(case, step, "構造格子経路")
 
     fluid = _fluid_material(case)
+    if fluid.viscosity_law is not None:
+        raise UnsupportedFeatureError(
+            "*VISCOSITY, TYPE=POWER LAW / CARREAU は構造格子経路では未対応（非構造 *NAVIER STOKES のみ）"
+        )
+    if case.mpcs:
+        raise UnsupportedFeatureError(
+            "*MPC（回転壁）は構造格子経路では未対応（非構造 *NAVIER STOKES のみ）"
+        )
     rho = fluid.require("density")
     mu = fluid.require("viscosity")
     nx, ny, nz = grid.dimensions
@@ -754,6 +791,10 @@ def _resolve_patch_name(target: str, mesh: InpMeshResult) -> str:
     name = target.strip().upper()
     patches = mesh.mesh.boundary_patches or {}
     if name not in patches:
+        if name in mesh.periodic_surfaces:
+            raise UnsupportedFeatureError(
+                f"面 {name} は周期境界（*BOUNDARY, TYPE=PERIODIC）なので境界条件を置けません"
+            )
         if name in mesh.surface_faces:
             raise UnsupportedFeatureError(
                 f"*SURFACE {name} は内部面を含むのでパッチではありません（バッフルにするには"
@@ -899,7 +940,13 @@ class InpToHeatTransferFVMProcess(PreProcess["InpMeshMappingInput", "HeatTransfe
 # Navier–Stokes（NavierStokesFVMProcess、非構造メッシュ経由）
 # ---------------------------------------------------------------------------
 
-_COUPLING_FVM: dict[str, str] = {"SIMPLE": "simple", "SIMPLEC": "simplec", "PISO": "piso"}
+_COUPLING_FVM: dict[str, str] = {
+    "SIMPLE": "simple",
+    "SIMPLEC": "simplec",
+    "PISO": "piso",
+    "COUPLED": "coupled",
+}
+_NS_FVM_RELAXATION_KEYS = _NC_RELAXATION_KEYS | {"VISCOSITY"}
 _DARCY_SOLVER_KEYS = _HT_SOLVER_KEYS | {"MAX_PICARD", "PICARD_TOL"}
 _NS_FVM_SOLVER_KEYS = _NC_SOLVER_KEYS | {"MOMENTUM"}
 # CONVECTION= の値 → (対流スキーム, リミッタ)。TVD は LIMITER= で既定 van Leer を上書きできる
@@ -910,12 +957,105 @@ _CONVECTION_FVM: dict[str, tuple[str, str | None]] = {
     "VAN_LEER": ("tvd", "van_leer"),
     "VANLEER": ("tvd", "van_leer"),
     "SUPERBEE": ("tvd", "superbee"),
+    "NONE": ("none", None),  # Stokes（対流項なし）
+    "STOKES": ("none", None),
 }
 _LIMITER_FVM: dict[str, str] = {
     "VAN_LEER": "van_leer",
     "VANLEER": "van_leer",
     "SUPERBEE": "superbee",
 }
+
+
+def _oriented(case: CaseDefinition, bc: BoundaryCondition) -> tuple[float, float, float]:
+    """境界条件の値ベクトルを全体座標系にする（``ORIENTATION=`` があれば局所 → 全体）."""
+    vals = tuple(bc.values) + (0.0,) * (3 - len(bc.values))
+    if not bc.orientation:
+        return (float(vals[0]), float(vals[1]), float(vals[2]))
+    ori = case.orientations.get(bc.orientation)
+    if ori is None:
+        raise UnsupportedFeatureError(
+            f"ORIENTATION={bc.orientation} が *ORIENTATION で定義されていません"
+        )
+    return ori.to_global(vals[:3])
+
+
+def _reference_node_targets(case: CaseDefinition) -> set[str]:
+    """``*MPC`` の参照節点になっている ``*NSET`` 名 / 節点 ID（通常の境界条件から除く）."""
+    return {m.master for m in case.mpcs}
+
+
+def _mpc_patch_bcs(
+    case: CaseDefinition, mesh: InpMeshResult, boundaries: list[BoundaryCondition]
+) -> dict[str, VelocityPatchBC]:
+    """``*MPC`` の従属面 → 参照節点の剛体運動（並進 + 回転）の速度境界条件.
+
+    参照節点への ``*BOUNDARY`` の自由度 1-3 が並進速度、4-6 が角速度 [rad/s]。
+    回転中心は参照節点の座標。
+    """
+    if not case.mpcs:
+        return {}
+    by_ref: dict[str, dict[BoundaryKind, BoundaryCondition]] = {}
+    for bc in boundaries:
+        name = bc.target.strip().upper()
+        if name not in _reference_node_targets(case):
+            continue
+        if bc.kind not in (BoundaryKind.VELOCITY, BoundaryKind.ROTATION, BoundaryKind.WALL):
+            raise UnsupportedFeatureError(
+                f"参照節点 {name} への *BOUNDARY は自由度 1-3（速度）/ 4-6（角速度）のみ"
+                f"（{bc.kind.value}）"
+            )
+        by_ref.setdefault(name, {})[bc.kind] = bc
+    node_index = {int(n): i for i, n in enumerate(case.nodes.ids.tolist())}
+    out: dict[str, VelocityPatchBC] = {}
+    for mpc in case.mpcs:
+        ids = case.node_ids_of(mpc.master)
+        if ids.size != 1:
+            raise UnsupportedFeatureError(
+                f"*MPC の参照節点 {mpc.master} は節点 1 つが必要です（{ids.size} 個）"
+            )
+        center = tuple(float(v) for v in case.nodes.coords[node_index[int(ids[0])]][:3])
+        kinds = by_ref.get(mpc.master, {})
+        vel = (0.0, 0.0, 0.0)
+        omega = (0.0, 0.0, 0.0)
+        if BoundaryKind.VELOCITY in kinds:
+            vel = _oriented(case, kinds[BoundaryKind.VELOCITY])
+        if BoundaryKind.ROTATION in kinds:
+            omega = _oriented(case, kinds[BoundaryKind.ROTATION])
+        if not kinds:
+            logger.warning(
+                "*MPC の参照節点 %s に *BOUNDARY がありません（静止壁として扱います）", mpc.master
+            )
+        patch = _resolve_patch_name(mpc.slave, mesh)
+        if patch in out:
+            raise UnsupportedFeatureError(f"面 {patch} に *MPC が重複しています")
+        out[patch] = VelocityPatchBC.rotating_wall(omega, center, vel)
+        logger.info(
+            "*MPC %s: 面 %s ← 参照節点 %s（中心 %s, ω=%s rad/s, v=%s m/s）",
+            mpc.kind.value,
+            patch,
+            mpc.master,
+            center,
+            omega,
+            vel,
+        )
+    return out
+
+
+def _viscosity_strategy(material: MaterialDefinition) -> ViscosityModelStrategy | None:
+    """``*VISCOSITY, TYPE=`` を fvm 層の粘度モデル Strategy にする（ニュートンなら None）."""
+    law = material.viscosity_law
+    if law is None:
+        return None
+    if law.model == ViscosityModel.POWER_LAW:
+        K, n_idx = law.parameters[0], law.parameters[1]
+        gamma_min = law.parameters[2] if len(law.parameters) > 2 else 1.0e-2
+        mu_max = law.parameters[3] if len(law.parameters) > 3 else 1.0e8
+        return PowerLawViscosity(K=K, n=n_idx, gamma_min=gamma_min, mu_max=mu_max)
+    if law.model == ViscosityModel.CARREAU:
+        mu_0, mu_inf, lam, n_idx = law.parameters[:4]
+        return CarreauViscosity(mu_0=mu_0, mu_inf=mu_inf, lam=lam, n=n_idx)
+    raise UnsupportedFeatureError(f"*VISCOSITY, TYPE={law.model.value} は未対応")
 
 
 def _ns_fvm_patch_bc(
@@ -926,8 +1066,6 @@ def _ns_fvm_patch_bc(
     coupled: bool,
     default: FlowPatchBC,
 ) -> FlowPatchBC:
-    from xkep_cae_fluid.fvm.momentum import VelocityPatchBC
-
     velocity = default.velocity
     thermal: PatchBC | None = default.thermal
     for bc in bcs:
@@ -1020,11 +1158,21 @@ def map_navier_stokes_fvm(
     # 境界: パッチごとに集約（未指定は静止壁、2D 要素の ZM/ZP は対称面）。
     # target が要素集合（パッチ名ではない elset）なら領域内部の吐出・吸入セル（InternalCellBC）
     bcs_by: dict[str, list[BoundaryCondition]] = {}
-    internal_bcs = _internal_cell_bcs(case, mesh, case.boundaries + step.boundaries, coupled)
+    all_bcs = list(case.boundaries + step.boundaries)
+    internal_bcs = _internal_cell_bcs(case, mesh, all_bcs, coupled)
+    mpc_bcs = _mpc_patch_bcs(case, mesh, all_bcs)
+    ref_targets = _reference_node_targets(case)
     patches = md.boundary_patches or {}
     for bc in case.boundaries + step.boundaries:
-        if bc.target.strip().upper() in case.elsets and bc.target.strip().upper() not in patches:
+        name = bc.target.strip().upper()
+        if name in ref_targets:
+            continue  # *MPC の参照節点（_mpc_patch_bcs が処理済み）
+        if name in case.elsets and name not in patches:
             continue
+        if bc.kind == BoundaryKind.ROTATION:
+            raise UnsupportedFeatureError(
+                f"自由度 4-6（角速度）は *MPC の参照節点にだけ与えられます（target={bc.target}）"
+            )
         pname = _resolve_patch_name(bc.target, mesh)
         _reject_flow_bc_on_baffle(pname, bc, mesh)
         bcs_by.setdefault(pname, []).append(bc)
@@ -1040,16 +1188,18 @@ def map_navier_stokes_fvm(
         if nm in films:
             raise UnsupportedFeatureError(f"面 {nm} に *SFILM が重複しています")
         films[nm] = film
-    names = set(bcs_by) | set(flux) | set(films)
+    names = set(bcs_by) | set(flux) | set(films) | set(mpc_bcs)
     if mesh.ndim == 2:
-        names |= {"ZM", "ZP"}
+        # 2D 要素の z 2 面は既定で対称面（周期にした場合はパッチが無いので付けない）
+        names |= {nm for nm in ("ZM", "ZP") if nm in patches}
     bcs: dict[str, FlowPatchBC] = {}
     for nm in sorted(names):
-        default = (
-            FlowPatchBC.symmetry()
-            if (mesh.ndim == 2 and nm in ("ZM", "ZP"))
-            else FlowPatchBC.wall()
-        )
+        if nm in mpc_bcs:
+            default = FlowPatchBC(velocity=mpc_bcs[nm])
+        elif mesh.ndim == 2 and nm in ("ZM", "ZP"):
+            default = FlowPatchBC.symmetry()
+        else:
+            default = FlowPatchBC.wall()
         bcs[nm] = _ns_fvm_patch_bc(
             nm, bcs_by.get(nm, []), flux.get(nm), films.get(nm), coupled, default
         )
@@ -1078,6 +1228,7 @@ def map_navier_stokes_fvm(
                 "LIMITER= は CONVECTION=TVD / VAN_LEER / SUPERBEE と組み合わせる"
             )
         limiter = _LIMITER_FVM[key]
+    body_force = _body_force_field(case, step, mesh)
     time_scheme = "euler"
     if "TIME" in disc:
         key = _norm_value(disc["TIME"])
@@ -1089,18 +1240,25 @@ def map_navier_stokes_fvm(
         key = _norm_value(disc["PRESSURE_VELOCITY"])
         if key not in _COUPLING_FVM:
             raise UnsupportedFeatureError(
-                f"PRESSURE_VELOCITY={disc['PRESSURE_VELOCITY']} は未対応（SIMPLE / SIMPLEC / PISO）"
+                f"PRESSURE_VELOCITY={disc['PRESSURE_VELOCITY']} は未対応"
+                "（SIMPLE / SIMPLEC / PISO / COUPLED）"
             )
         coupling = _COUPLING_FVM[key]
     piso_correctors = _as_int(disc.get("PISO_CORRECTORS", "2"), "PISO_CORRECTORS")
     if piso_correctors < 1:
         raise UnsupportedFeatureError("PISO_CORRECTORS は 1 以上")
     relax = step.control_values(ControlCategory.RELAXATION)
-    _check_keys(relax, _NC_RELAXATION_KEYS, "RELAXATION")
+    _check_keys(relax, _NS_FVM_RELAXATION_KEYS, "RELAXATION")
     alpha_u = _as_float(relax.get("VELOCITY", "0.7"), "VELOCITY")
     alpha_p = _as_float(relax.get("PRESSURE", "0.3"), "PRESSURE")
     alpha_T = _as_float(relax.get("TEMPERATURE", "0.9"), "TEMPERATURE")
+    alpha_mu = _as_float(relax.get("VISCOSITY", "0.5"), "VISCOSITY")
     adaptive = _as_bool(relax.get("ADAPTIVE", "NO"), "ADAPTIVE")
+    if adaptive and coupling == "coupled":
+        raise UnsupportedFeatureError(
+            "ADAPTIVE は COUPLED では意味を持ちません（緩和係数を使わない）"
+        )
+    viscosity_model = _viscosity_strategy(fluid)
     nonorth = _as_int(disc.get("NONORTHOGONAL_CORRECTORS", "2"), "NONORTHOGONAL_CORRECTORS")
     if nonorth < 1:
         raise UnsupportedFeatureError("NONORTHOGONAL_CORRECTORS は 1 以上")
@@ -1160,6 +1318,8 @@ def map_navier_stokes_fvm(
         alpha_u=alpha_u,
         alpha_p=alpha_p,
         alpha_T=alpha_T,
+        alpha_mu=alpha_mu,
+        viscosity_model=viscosity_model,
         coupling=coupling,
         internal_bcs=internal_bcs,
         n_piso_correctors=piso_correctors,
@@ -1168,6 +1328,7 @@ def map_navier_stokes_fvm(
         convection=convection,
         limiter=limiter,
         time_scheme=time_scheme,
+        body_force=body_force,
         linear_solver=momentum_solver,
         pressure_solver=pressure_solver,
         tol_inner=tol_inner,

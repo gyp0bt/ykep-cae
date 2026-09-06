@@ -40,6 +40,10 @@ class MeshData:
       ``XM/XP/YM/YP/ZM/ZP`` の 6 面、polyMesh は boundary ファイルのパッチ名、
       .inp は ``*SURFACE`` 名）
 
+    周期面（``face_offset``）は内部面として扱い、owner から見た neighbour の中心を
+    ``cell_centers[neighbour] + face_offset`` に置く（並進周期。
+    :func:`~xkep_cae_fluid.fvm.geometry.neighbour_centers`）。
+
     ``connectivity`` は要素の節点順序を保った表（六面体は Abaqus C3D8 と同じ
     底面 4 節点 + 上面 4 節点の右手系）。多面体など決まった順序が無いセルは
     ``-1`` 詰めで節点集合だけを持ち、``cell_types`` に
@@ -61,6 +65,11 @@ class MeshData:
     face_neighbour: np.ndarray | None = None  # (n_internal_faces,) 各面の隣接セル
     # 境界パッチ: パッチ名 → 境界面インデックス（n_internal_faces 以上）
     boundary_patches: Mapping[str, np.ndarray] | None = None
+    # 周期面: 内部面ごとの neighbour セル中心に足す並進ベクトル (n_internal_faces, ndim)。
+    # 周期対の 2 面を 1 本の内部面に併合したとき、neighbour 側は owner から見て
+    # 「並進で戻した位置」にあるものとして幾何（P–N ベクトル・補間重み・勾配）を評価する。
+    # None または全ゼロなら通常の面
+    face_offset: np.ndarray | None = None
 
     @property
     def n_nodes(self) -> int:
@@ -89,6 +98,11 @@ class MeshData:
     @property
     def n_boundary_faces(self) -> int:
         return self.n_faces - self.n_internal_faces
+
+    @property
+    def has_periodic_faces(self) -> bool:
+        """周期面（``face_offset`` が非ゼロの内部面）を持つか."""
+        return self.face_offset is not None and bool(np.any(self.face_offset != 0.0))
 
     @property
     def boundary_faces(self) -> np.ndarray:

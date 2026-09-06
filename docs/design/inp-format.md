@@ -80,11 +80,16 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 | `*SURFACE` | `NAME=, TYPE=ELEMENT` | `elset_or_id, S#` | 面ラベルは要素の幾何から外向き方向を判定（節点順序の回転に依存しない） |
 | `*MATERIAL` | `NAME=` | – | 以下のサブキーワードを束ねる |
 | `*DENSITY` `*VISCOSITY` `*CONDUCTIVITY` `*SPECIFIC HEAT` | – | 値 1 つ | ρ, μ, k, Cp |
+| `*VISCOSITY` | `TYPE=POWER LAW` | `K, n[, gamma_min, mu_max]` | μ = K γ̇^(n−1)。非構造 `*NAVIER STOKES` のみ（[汎用記法](inp-generic-extrusion.md)） |
+| `*VISCOSITY` | `TYPE=CARREAU` | `mu_0, mu_inf, lambda, n` | Carreau モデル。同上 |
+| `*ORIENTATION` | `NAME=, SYSTEM=RECTANGULAR\|CYLINDRICAL` | `ax, ay, az, bx, by, bz` | 速度・角速度の成分を解釈する局所座標系（`CYLINDRICAL` は軸上の 2 点） |
+| `*MPC` | – | `BEAM\|RIGID\|TIE, slave_surface, master_node` | 面を参照節点の剛体運動に拘束（回転壁）。非構造 `*NAVIER STOKES` のみ |
 | `*EXPANSION` | `ZERO=T_ref` | β | Boussinesq 体膨張係数と基準温度 |
 | `*PERMEABILITY` | – | K [m²] | `*DARCY` の透過率（セクションごと。固体セクションにも指定可） |
 | `*FORCHHEIMER` / `*SPECIFIC STORAGE` | – | β [1/m] / S_s [1/Pa] | `*DARCY` の慣性補正（Picard）/ 非定常の比貯留（非定常 `*DARCY` には必須） |
 | `*FLUID SECTION` / `*SOLID SECTION` | `ELSET=, MATERIAL=` | – | 流体 / 固体（`solid_mask` + `k_solid`）。全セルを重複なく覆う必要あり |
 | `*INITIAL CONDITIONS` | `TYPE=TEMPERATURE` | `target, 値` | 節点ベース（nset / 節点 ID / `ALL`）は要素節点平均でセル値に。elset / 要素 ID はセル直接指定（ykep 拡張）。後勝ち |
+| `*BOUNDARY, TYPE=PERIODIC` | – | `master_surface, slave_surface[, tx, ty, tz]` | 並進周期。対の面を照合して内部面に併合する（`*STEP` の外だけ。非構造経路のみ） |
 | `*BOUNDARY` `*SFILM` `*DFLUX` `*DLOAD` | – | – | `*STEP` の外に書くと全ステップに適用 |
 
 ### ステップ
@@ -112,13 +117,14 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 
 | PARAMETERS | KEY | 値 | 対応先 |
 |---|---|---|---|
-| `DISCRETIZATION` | `CONVECTION` | `UPWIND`（既定）, `VAN LEER`, `SUPERBEE`（非構造 NS は `TVD` も: リミッタは `LIMITER=`、既定 van Leer） | `convection_scheme` / `NavierStokesFVMInput.convection` + `limiter` |
+| `DISCRETIZATION` | `CONVECTION` | `UPWIND`（既定）, `VAN LEER`, `SUPERBEE`（非構造 NS は `TVD` も: リミッタは `LIMITER=`、既定 van Leer。`NONE` / `STOKES` で運動量の対流項を落とす） | `convection_scheme` / `NavierStokesFVMInput.convection` + `limiter` |
 | | `TIME` | `EULER`（既定）, `BDF2` | `time_scheme` |
-| | `PRESSURE_VELOCITY` | `SIMPLE`（既定）, `SIMPLEC`, `PISO` | `coupling_method` / `coupling` |
+| | `PRESSURE_VELOCITY` | `SIMPLE`（既定）, `SIMPLEC`, `PISO`（非構造 NS は `COUPLED` も: 速度と圧力を 1 つの線形系で直接解く。`ADAPTIVE` / `OUTFLOW` は不可） | `coupling_method` / `coupling` |
 | | `PISO_CORRECTORS` | 整数（既定 2） | `n_piso_correctors` |
 | | `LIMITER` | `VAN_LEER`, `SUPERBEE`（非構造 NS で `CONVECTION=TVD` と組み合わせる。NaturalConvection ではエラー） | `NavierStokesFVMInput.limiter` |
 | | `NONORTHOGONAL_CORRECTORS` | 整数（既定 2。非構造 NS のみ。圧力補正の非直交補正の反復回数、直交メッシュでは 1 回。45° 近くでは 3 以上にしない） | `NavierStokesFVMInput.n_nonorthogonal_correctors` |
 | `RELAXATION` | `VELOCITY` `PRESSURE` `TEMPERATURE` | 0〜1（既定 0.7 / 0.3 / 0.9） | `alpha_u`, `alpha_p`, `alpha_T` |
+| | `VISCOSITY` | 0〜1（既定 0.5。非構造 NS の非ニュートン Picard） | `NavierStokesFVMInput.alpha_mu` |
 | | `ADAPTIVE` | `YES` / `NO`（両経路。規則は `fvm/relaxation.py`） | `adaptive_relaxation` |
 | `SOLVER` | `PRESSURE` | `BICGSTAB`（既定）, `AMG`（非構造経路は `DIRECT` も） | `pressure_solver` |
 | `SOLVER`（非構造 NS） | `MOMENTUM` | `DIRECT`, `BICGSTAB`（既定）, `AMG` | `NavierStokesFVMInput.linear_solver` |
@@ -155,6 +161,9 @@ python -m xkep_cae_fluid.inp -j=case.inp int            # エントリポイン�
 | `*DFLUX` + `elset, BF, q` | 体積発熱 [W/m³]（`q_vol` / `q`） |
 | `*SFILM` + `surface, F, T_inf, h` | 対流熱伝達（`*HEAT TRANSFER` のみ。Robin BC） |
 | `*DLOAD` + `elset, GRAV, g, nx, ny, nz` | 重力（大きさ × 方向余弦）。**無指定なら無重力** |
+| `*DLOAD` + `elset, BX\|BY\|BZ, f` / `elset, BF, fx, fy, fz` | 一様体積力 [N/m³]（非構造 `*NAVIER STOKES` のみ）。周期境界の圧力跳びを `P = βx + p̃` に分解した `−β` を入れる |
+| `*BOUNDARY, TYPE=PERIODIC` + `master, slave[, tx, ty, tz]`（`*STEP` の外） | 並進周期。対の面を内部面に併合（境界条件は置けない）。1 セル厚の両端を周期にすると ∂/∂z = 0 が厳密になり第 3 成分が自由になる |
+| `*BOUNDARY[, ORIENTATION=]` + `refnode_nset, 4, 6, ω` | 参照節点の角速度 [rad/s]（自由度 4-6）。`*MPC` で拘束した面が `u = v_ref + ω × (x − x_ref)` で動く |
 
 既定: 流体面は no-slip + 断熱。2D 要素（4 節点）のケースでは z の 2 面が **対称面** になる
 （nz=1 の準 2D）。

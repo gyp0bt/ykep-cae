@@ -44,6 +44,11 @@ VARIABLE_ALIASES: dict[str, str] = {
     "NT11": "T",
     "TEMP": "T",
     "TEMPERATURE": "T",
+    "MU": "MU",  # 非ニュートン粘度 μ(γ̇)（*VISCOSITY, TYPE=POWER LAW / CARREAU のとき）
+    "VISCOSITY": "MU",
+    "GAMMA": "GAMMA",  # せん断速度 γ̇
+    "SR": "GAMMA",
+    "STRAIN_RATE": "GAMMA",
     "RES": "res_*",  # 残差マップ全部（res_u / res_v / res_w / res_T / res_mass …）
     "RESIDUAL": "res_*",
 }

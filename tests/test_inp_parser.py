@@ -326,3 +326,131 @@ class TestInpCaseBuildAPI:
     def test_build_case_function_equals_process(self):
         parsed = parse_inp_text(MINIMAL_CASE)
         assert build_case(parsed).n_elements == InpCaseBuildProcess().execute(parsed).n_elements
+
+
+class TestGenericExtrusionKeywords:
+    """汎用記法（周期境界・体積力・非ニュートン粘度・座標系・MPC・回転自由度）の構文."""
+
+    def _case(self, extra: str):
+        text = "*GRID, NX=2, NY=2, NZ=1, LX=0.2, LY=0.2, LZ=0.1\n" + extra
+        return build_case(parse_inp_text(text))
+
+    def test_periodic_pair(self):
+        case = self._case("*BOUNDARY, TYPE=PERIODIC\n WEST, EAST\n")
+        assert len(case.periodic) == 1
+        # 別名 WEST/EAST は予約面名 XM/XP に正規化される
+        assert case.periodic[0].master == "XM" and case.periodic[0].slave == "XP"
+        assert case.periodic[0].translation is None
+        assert not case.boundaries
+
+    def test_periodic_with_translation(self):
+        case = self._case("*BOUNDARY, TYPE=PERIODIC\n XM, XP, 0.2, 0.0, 0.0\n")
+        assert case.periodic[0].translation == (0.2, 0.0, 0.0)
+
+    @pytest.mark.parametrize(
+        "extra,match",
+        [
+            ("*BOUNDARY, TYPE=PERIODIC\n XM\n", "master_surface, slave_surface"),
+            ("*BOUNDARY, TYPE=PERIODIC\n XM, XM\n", "2 面が同じ"),
+            ("*BOUNDARY, TYPE=PERIODIC\n XM, NOPE\n", "予約面名でもありません"),
+            (
+                "*BOUNDARY, TYPE=PERIODIC\n XM, XP\n*BOUNDARY, TYPE=PERIODIC\n XP, YM\n",
+                "複数の周期境界",
+            ),
+            (
+                "*STEP, NAME=s\n*NAVIER STOKES, STEADY STATE\n"
+                "*BOUNDARY, TYPE=PERIODIC\n XM, XP\n*END STEP\n",
+                "\\*STEP の外",
+            ),
+        ],
+    )
+    def test_periodic_errors(self, extra: str, match: str):
+        with pytest.raises(InpSyntaxError, match=match):
+            self._case(extra)
+
+    @pytest.mark.parametrize(
+        "row,label,vector",
+        [
+            (" ALL, BX, 2.5", "BX", (2.5, 0.0, 0.0)),
+            (" ALL, BY, -3.0", "BY", (0.0, -3.0, 0.0)),
+            (" ALL, BZ, 4.0", "BZ", (0.0, 0.0, 4.0)),
+            (" ALL, BF, 1.0, 2.0, 3.0", "BF", (1.0, 2.0, 3.0)),
+        ],
+    )
+    def test_dload_body_force(self, row: str, label: str, vector: tuple):
+        case = self._case(f"*DLOAD\n{row}\n")
+        ld = case.loads[0]
+        assert ld.label == label and ld.is_body_force and ld.vector == vector
+
+    def test_dload_grav_is_not_body_force(self):
+        case = self._case("*DLOAD\n ALL, GRAV, 9.81, 0., -1., 0.\n")
+        assert not case.loads[0].is_body_force
+        assert case.loads[0].vector == (0.0, -9.81, 0.0)
+
+    def test_dload_unknown_label(self):
+        with pytest.raises(InpSyntaxError, match="GRAV / BX / BY / BZ / BF"):
+            self._case("*DLOAD\n ALL, PX, 1.0\n")
+
+    def test_viscosity_power_law_and_carreau(self):
+        case = self._case(
+            "*MATERIAL, NAME=M1\n*VISCOSITY, TYPE=POWER LAW\n 5000., 0.4, 1e-3, 1e7\n"
+            "*MATERIAL, NAME=M2\n*VISCOSITY, TYPE=CARREAU\n 1e4, 10., 1.0, 0.5\n"
+            "*MATERIAL, NAME=M3\n*VISCOSITY\n 1000.\n"
+        )
+        law = case.materials["M1"].viscosity_law
+        assert law.model.value == "POWER LAW" and law.parameters == (5000.0, 0.4, 1e-3, 1e7)
+        assert case.materials["M1"].viscosity == 5000.0  # 参照粘度 = K
+        assert case.materials["M2"].viscosity_law.parameters == (1e4, 10.0, 1.0, 0.5)
+        assert case.materials["M3"].viscosity_law is None
+        assert case.materials["M3"].viscosity == 1000.0
+
+    @pytest.mark.parametrize(
+        "extra,match",
+        [
+            ("*MATERIAL, NAME=M\n*VISCOSITY, TYPE=BINGHAM\n 1., 2.\n", "TYPE=BINGHAM"),
+            ("*MATERIAL, NAME=M\n*VISCOSITY, TYPE=POWER LAW\n 5000.\n", "K, n"),
+            ("*MATERIAL, NAME=M\n*VISCOSITY, TYPE=CARREAU\n 1., 2., 3.\n", "mu_0"),
+            ("*MATERIAL, NAME=M\n*VISCOSITY, TYPE=POWER LAW\n 5000., -0.4\n", "正の値"),
+        ],
+    )
+    def test_viscosity_errors(self, extra: str, match: str):
+        with pytest.raises(InpSyntaxError, match=match):
+            self._case(extra)
+
+    def test_orientation_and_mpc(self):
+        case = self._case(
+            "*NSET, NSET=REF\n 1\n"
+            "*ORIENTATION, NAME=SPIN, SYSTEM=CYLINDRICAL\n 0., 0., 0., 0., 0., 1.\n"
+            "*MPC\n BEAM, XP, REF\n"
+        )
+        ori = case.orientations["SPIN"]
+        assert ori.system.value == "CYLINDRICAL" and ori.point_b == (0.0, 0.0, 1.0)
+        assert np.allclose(ori.basis()[2], [0.0, 0.0, 1.0])
+        assert case.mpcs[0].slave == "XP" and case.mpcs[0].master == "REF"
+
+    def test_rotation_dofs_4_to_6(self):
+        case = self._case(
+            "*NSET, NSET=REF\n 1\n*MPC\n BEAM, XP, REF\n"
+            "*ORIENTATION, NAME=SPIN, SYSTEM=CYLINDRICAL\n 0., 0., 0., 0., 0., 1.\n"
+            "*BOUNDARY, ORIENTATION=SPIN\n REF, 6, 6, 12.5\n REF, 1, 3, 0.5\n"
+        )
+        rot = [b for b in case.boundaries if b.kind is BoundaryKind.ROTATION][0]
+        assert rot.values == (0.0, 0.0, 12.5) and rot.orientation == "SPIN"
+        vel = [b for b in case.boundaries if b.kind is BoundaryKind.VELOCITY][0]
+        assert vel.values == (0.5, 0.5, 0.5)
+
+    @pytest.mark.parametrize(
+        "extra,match",
+        [
+            ("*NSET, NSET=REF\n 1\n*MPC\n BEAM, NOPE, REF\n", "従属面"),
+            ("*MPC\n BEAM, XP, NOSUCH\n", "参照節点"),
+            ("*NSET, NSET=REF\n 1\n*MPC\n SPRING, XP, REF\n", "BEAM, RIGID, TIE"),
+            ("*ORIENTATION, NAME=A, SYSTEM=SPHERICAL\n 0.,0.,0., 0.,0.,1.\n", "SYSTEM=SPHERICAL"),
+            ("*ORIENTATION, NAME=A\n 0., 0., 0.\n", "ax, ay, az"),
+            ("*BOUNDARY, ORIENTATION=NOPE\n XP, 1, 3, 0.\n", "ORIENTATION=NOPE"),
+            ("*BOUNDARY\n XP, 7, 7, 0.\n", "4-6: 角速度"),
+        ],
+    )
+    def test_orientation_mpc_errors(self, extra: str, match: str):
+        with pytest.raises(InpSyntaxError, match=match):
+            self._case(extra)

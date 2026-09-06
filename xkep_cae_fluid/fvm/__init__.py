@@ -41,6 +41,7 @@ from xkep_cae_fluid.fvm.geometry import (
     internal_face_values,
     is_orthogonal,
     max_nonorthogonality_deg,
+    neighbour_centers,
 )
 from xkep_cae_fluid.fvm.linear import (
     AMGSolver,
@@ -74,6 +75,7 @@ __all__ = [
     "face_skewness",
     "is_orthogonal",
     "max_nonorthogonality_deg",
+    "neighbour_centers",
     "assemble_diffusion",
     "assemble_convection",
     "assemble_scalar_transport",

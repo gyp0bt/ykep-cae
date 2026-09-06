@@ -140,6 +140,19 @@ def _boundary_surfaces(case: CaseDefinition) -> tuple[str, ...]:
     return tuple(sorted(n for n in names if n in case.surfaces))
 
 
+def _generic_only_features(case: CaseDefinition) -> tuple[str, ...]:
+    """非構造メッシュ経路でしか解けない汎用記法の機能名（周期境界・体積力）."""
+    out: list[str] = []
+    if case.periodic:
+        out.append("*BOUNDARY, TYPE=PERIODIC")
+    if case.mpcs:
+        out.append("*MPC（参照節点の剛体運動）")
+    steps = list(case.steps)
+    if any(ld.is_body_force for ld in list(case.loads) + [ld for st in steps for ld in st.loads]):
+        out.append("*DLOAD の体積力")
+    return tuple(out)
+
+
 def _internal_bc_surface(case: CaseDefinition, grid: StructuredGridMap) -> str | None:
     """境界条件の target になった ``*SURFACE`` のうち、箱格子の外皮に無い面を含む最初の名前."""
     for name in _boundary_surfaces(case):
@@ -202,6 +215,14 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
         # 使うステップがあるときだけ組む
         grid: StructuredGridMap | None = None
         wants_grid = bool(families & {EquationFamily.NAVIER_STOKES, EquationFamily.HEAT_TRANSFER})
+        generic = _generic_only_features(case)
+        if generic and mode == "structured":
+            raise UnsupportedFeatureError(
+                f"{', '.join(generic)} は非構造メッシュ経路のみ対応（--mesh=structured は不可）"
+            )
+        if generic and mode == "auto":
+            logger.info("%s のため非構造メッシュで解きます", ", ".join(generic))
+            mode = "unstructured"
         if wants_grid and mode != "unstructured":
             try:
                 grid = StructuredGridRecoveryProcess().execute(StructuredGridInput(case=case))
@@ -295,6 +316,8 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
                 "n_boundary_faces": int(mesh.mesh.n_boundary_faces),
                 "patches": sorted(mesh.mesh.boundary_patches or ()),
                 "max_nonorthogonality_deg": float(max_nonorthogonality_deg(mesh.mesh)),
+                "periodic_surfaces": list(mesh.periodic_surfaces),
+                "n_periodic_faces": int(mesh.periodic_faces.size),
             }
         else:
             assert grid is not None
@@ -319,8 +342,8 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
             base_summary["solver"] = {
                 "process": "NavierStokesFVMProcess",
                 "coupling": ns_input.coupling,
-                "convection": "upwind",
-                "time_scheme": "euler",
+                "convection": ns_input.convection,
+                "time_scheme": ns_input.time_scheme,
                 "pressure_solver": ns_input.pressure_solver,
                 "momentum_solver": ns_input.linear_solver,
                 "alpha_u": ns_input.alpha_u,
@@ -335,6 +358,9 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
             logger.info("ステップ %s: *NAVIER STOKES → NavierStokesFVMProcess（非構造）", step.name)
             res_ns = NavierStokesFVMProcess().execute(ns_input)
             fields = {"U": res_ns.velocity, "P": res_ns.p, "T": res_ns.T, **res_ns.residual_fields}
+            if res_ns.viscosity is not None:
+                fields["MU"] = res_ns.viscosity
+                fields["GAMMA"] = res_ns.strain_rate
             last = {k: (v[-1] if v else None) for k, v in res_ns.residual_history.items()}
             summary = {
                 **base_summary,
@@ -346,6 +372,12 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
                 "max_abs_velocity": float(np.max(np.abs(res_ns.velocity))),
                 "temperature_range": [float(res_ns.T.min()), float(res_ns.T.max())],
             }
+            if res_ns.viscosity is not None:
+                summary["viscosity_range"] = [
+                    float(res_ns.viscosity.min()),
+                    float(res_ns.viscosity.max()),
+                ]
+                summary["max_strain_rate"] = float(res_ns.strain_rate.max())
             n_iter = int(res_ns.n_outer_iterations)
             converged = bool(res_ns.converged)
             result: object = res_ns

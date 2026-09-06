@@ -15,10 +15,23 @@ CPS6 / CPS8 は頂点だけを使う）を、箱格子かどうかに関係な�
 ## 入出力
 
 - `InpMeshInput(case, depth_2d=1.0, reserved_patches=True, baffle_surfaces=())`
-- `InpMeshResult(mesh, element_ids, node_ids, cell_sets, node_sets, surface_faces, ndim, baffle_surfaces, baffle_faces)`
+- `InpMeshResult(mesh, element_ids, node_ids, cell_sets, node_sets, surface_faces, ndim, baffle_surfaces, baffle_faces, periodic_faces, periodic_surfaces)`
   - `cell_index_of(element_ids)` / `mask_for_elements(element_ids)` / `node_values_to_cells(node_ids, values)`
     は `StructuredGridMap` の同名メソッドの非構造版（結果は `(n_cells,)`）
   - `baffle_surfaces` は実際に内部面を分割した `*SURFACE` 名、`baffle_faces` はその境界面 index（両側）
+  - `periodic_surfaces` は `*BOUNDARY, TYPE=PERIODIC` に使った面名（境界条件は置けない）、
+    `periodic_faces` は併合してできた内部面 index
+
+### 周期境界（`*BOUNDARY, TYPE=PERIODIC`）
+
+対の 2 面の**面中心を並進 t で照合**し、master 面を内部面に昇格（neighbour = slave 側のセル）して
+slave 面を消す。並進を省くと両面の面中心の平均差から決める。併合した内部面には
+`MeshData.face_offset = −t` を持たせ、fvm 層はそれで neighbour セル中心を owner 側に戻す
+（[fvm-layer.md](fvm-layer.md) の `neighbour_centers`）。幾何（面積・法線・セル体積・セル中心）は
+**併合前**に計算するので、周期面があってもセルの幾何は変わらない。
+
+照合できないとき（面数が違う、並進が合わない、法線が反平行でない、内部面を含む、面が重複する）は
+ずれの最大値を添えてエラーにする。並進周期のみ（回転・螺旋は未対応）。
 
 ## アルゴリズム
 
@@ -74,5 +87,7 @@ P–N 直線と面平面の交点で補間した値にスキュー補正 ∇φ_f
 - セル中心は面中心の平均（一次近似。四面体では重心と一致）
 - バッフルは両側同条件（片側ごとの条件、薄板の熱伝導・熱容量、内部の流入・流出面は無い。内部の吐出・吸入は
   要素集合を target にした `*BOUNDARY` → `InternalCellBC`）
+- 周期境界は並進のみ。予約面名（`XM..ZP`）は `*SURFACE` のパッチと**同じ面を含みうる**ので、
+  両方に境界条件を書くと後勝ちになる（明示した `*SURFACE` を使うのが安全）
 - 3D 描画（mirador）は四面体 / 楔を C3D4 / C3D6 として描くが、角錐（C3D5）は messi 側に要素タイプが無いので
   `MiradorExportProcess` が `ValueError`（VTK 出力は可）

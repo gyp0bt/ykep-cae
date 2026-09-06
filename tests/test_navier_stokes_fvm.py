@@ -10,6 +10,8 @@ import pytest
 from xkep_cae_fluid.core.mesh import StructuredMeshInput, StructuredMeshProcess
 from xkep_cae_fluid.core.testing import binds_to
 from xkep_cae_fluid.fvm import PatchBC, diffusive_face_flux, resolve_boundary
+from xkep_cae_fluid.fvm.momentum import VelocityPatchBC, resolve_velocity_boundary
+from xkep_cae_fluid.fvm.viscosity import CarreauViscosity, PowerLawViscosity
 from xkep_cae_fluid.incompressible import (
     FlowPatchBC,
     InternalCellBC,
@@ -106,7 +108,7 @@ class TestNavierStokesFVMAPI:
         with pytest.raises(ValueError, match="rho"):
             _run(mesh, {}, rho=-1.0, max_outer_iter=1)
         with pytest.raises(ValueError, match="coupling"):
-            _run(mesh, {}, coupling="coupled", max_outer_iter=1)
+            _run(mesh, {}, coupling="block", max_outer_iter=1)
         with pytest.raises(ValueError, match="convection"):
             _run(mesh, {}, convection="quick", max_outer_iter=1)
         with pytest.raises(ValueError, match="limiter"):
@@ -569,3 +571,289 @@ class TestNavierStokesFVMPhysics:
         assert float((c * mesh.cell_volumes).sum()) == pytest.approx(total0, rel=1e-10)
         assert c.min() >= -1e-9 and c.max() <= 1.0 + 1e-9
         assert 0.05 < c[x > 0.5].mean() < 0.95  # 流れで再分配されている
+
+
+def _periodic_box(nx, ny, lx, ly, lz=0.05, *, x_periodic=True, z_periodic=True):
+    """箱格子を .inp 経由で作り、x / z 方向を周期にする（体積力駆動の検証用）."""
+    lines = [f"*GRID, NX={nx}, NY={ny}, NZ=1, LX={lx}, LY={ly}, LZ={lz}"]
+    if x_periodic:
+        lines.append("*BOUNDARY, TYPE=PERIODIC\n XM, XP")
+    if z_periodic:
+        lines.append("*BOUNDARY, TYPE=PERIODIC\n ZM, ZP")
+    return build_inp_mesh(build_case(parse_inp_text("\n".join(lines) + "\n"))).mesh
+
+
+def _annulus(nr, nt, r_in, r_out, depth=0.05):
+    """全周の円環（六面体）。内周 ``INNER`` / 外周 ``OUTER``."""
+    import math
+
+    def nid(i, j, k):
+        return 1 + i + (nr + 1) * (j % nt) + (nr + 1) * nt * k
+
+    lines = ["*NODE"]
+    for k in range(2):
+        for j in range(nt):
+            th = 2 * math.pi * j / nt
+            for i in range(nr + 1):
+                r = r_in + (r_out - r_in) * i / nr
+                lines.append(
+                    f" {nid(i, j, k)}, {r * math.cos(th)}, {r * math.sin(th)}, {k * depth}"
+                )
+    lines.append("*ELEMENT, TYPE=C3D8, ELSET=ALL")
+    e, inner, outer = 0, [], []
+    for j in range(nt):
+        for i in range(nr):
+            e += 1
+            c = [
+                nid(i, j, 0),
+                nid(i + 1, j, 0),
+                nid(i + 1, j + 1, 0),
+                nid(i, j + 1, 0),
+                nid(i, j, 1),
+                nid(i + 1, j, 1),
+                nid(i + 1, j + 1, 1),
+                nid(i, j + 1, 1),
+            ]
+            lines.append(f" {e}, " + ", ".join(map(str, c)))
+            (inner if i == 0 else outer if i == nr - 1 else []).append(e)
+    for name, ids in (("EIN", inner), ("EOUT", outer)):
+        lines.append(f"*ELSET, ELSET={name}")
+        lines += [" " + ", ".join(map(str, ids[a : a + 8])) for a in range(0, len(ids), 8)]
+    lines.append("*SURFACE, NAME=INNER\n EIN, S6")
+    lines.append("*SURFACE, NAME=OUTER\n EOUT, S4")
+    return build_inp_mesh(build_case(parse_inp_text("\n".join(lines) + "\n"))).mesh
+
+
+class TestPeriodicAndBodyForcePhysics:
+    """周期境界 + 一様体積力（押出の圧力跳びの分解）と Stokes モード."""
+
+    def test_periodic_channel_matches_poiseuille(self):
+        h, f, mu = 0.1, 2.0, 0.01
+        mesh = _periodic_box(4, 24, 0.4, h)
+        res = _run(
+            mesh,
+            {"YM": FlowPatchBC.wall(), "YP": FlowPatchBC.wall()},
+            mu=mu,
+            body_force=(f, 0.0, 0.0),
+            coupling="coupled",
+            tol=1e-10,
+            max_outer_iter=20,
+        )
+        assert res.converged
+        y = mesh.cell_centers[:, 1]
+        u_exact = f / (2.0 * mu) * y * (h - y)
+        assert np.max(np.abs(res.velocity[:, 0] - u_exact)) / u_exact.max() < 3e-3
+        # 圧力は周期方向に一様（跳びは体積力に移してある）
+        assert np.ptp(res.p) < 1e-10
+        assert res.residual_history["mass"][-1] < 1e-12
+
+    def test_z_periodic_gives_exact_2p5d_third_component(self):
+        """1 セル厚の z を周期にすると ∂/∂z = 0 が厳密になり w が y だけの関数になる.
+
+        対称面にすると z 方向にも壁ができ、w が厚さ ``lz`` に依存する偽の解になる
+        （2.5D の展開チャネルで下流方向速度を出すには周期にしなければならない）。
+        """
+        h, mu, f = 0.1, 0.01, 1.0
+        kw = dict(mu=mu, body_force=(0.0, 0.0, f), coupling="coupled", tol=1e-10, max_outer_iter=20)
+        mesh = _periodic_box(4, 16, 0.4, h)
+        res = _run(mesh, {"YM": FlowPatchBC.wall(), "YP": FlowPatchBC.wall()}, **kw)
+        y = mesh.cell_centers[:, 1]
+        w_exact = f / (2.0 * mu) * y * (h - y)
+        assert res.converged
+        assert np.max(np.abs(res.velocity[:, 2] - w_exact)) / w_exact.max() < 1e-2
+        # 厚さを変えても解は動かない（∂/∂z = 0）
+        thick = _periodic_box(4, 16, 0.4, h, lz=0.2)
+        res_thick = _run(thick, {"YM": FlowPatchBC.wall(), "YP": FlowPatchBC.wall()}, **kw)
+        assert np.max(np.abs(res_thick.velocity[:, 2] - res.velocity[:, 2])) < 1e-10
+        # 対称面にすると z 方向の壁が効いて w が厚さに依存する
+        sym_bcs = {
+            "YM": FlowPatchBC.wall(),
+            "YP": FlowPatchBC.wall(),
+            "ZM": FlowPatchBC.symmetry(),
+            "ZP": FlowPatchBC.symmetry(),
+        }
+        a = _run(_periodic_box(4, 16, 0.4, h, z_periodic=False), sym_bcs, **kw)
+        b = _run(_periodic_box(4, 16, 0.4, h, lz=0.2, z_periodic=False), sym_bcs, **kw)
+        assert a.velocity[:, 2].max() < 0.5 * w_exact.max()
+        assert b.velocity[:, 2].max() > 1.5 * a.velocity[:, 2].max()
+
+    def test_stokes_mode_drops_convection(self):
+        """``convection="none"`` は慣性項を落とす（ρ を変えても解が動かない）."""
+        mesh = _periodic_box(4, 16, 0.4, 0.1)
+        bcs = {"YM": FlowPatchBC.wall(), "YP": FlowPatchBC.wall(velocity=(0.5, 0.0, 0.0))}
+        kw = dict(mu=0.01, coupling="coupled", convection="none", tol=1e-10, max_outer_iter=20)
+        a = _run(mesh, bcs, rho=1.0, **kw)
+        b = _run(mesh, bcs, rho=1000.0, **kw)
+        assert a.converged and b.converged
+        assert np.max(np.abs(a.velocity - b.velocity)) < 1e-12
+
+
+class TestCoupledSolverPhysics:
+    """速度–圧力の連成（``coupling="coupled"``）: SIMPLE と同じ解に 1 回の直接解で届く."""
+
+    def test_stokes_cavity_matches_simple_in_two_iterations(self):
+        mesh = _periodic_box(16, 16, 1.0, 1.0, x_periodic=False)
+        bcs = {
+            "XM": FlowPatchBC.wall(),
+            "XP": FlowPatchBC.wall(),
+            "YM": FlowPatchBC.wall(),
+            "YP": FlowPatchBC.wall(velocity=(1.0, 0.0, 0.0)),
+        }
+        kw = dict(mu=0.01, convection="none", tol=1e-9, max_outer_iter=800)
+        c = _run(mesh, bcs, coupling="coupled", **kw)
+        s = _run(mesh, bcs, coupling="simple", **kw)
+        assert c.converged and s.converged
+        assert c.n_outer_iterations == 2 and s.n_outer_iterations > 50
+        assert np.max(np.abs(c.velocity - s.velocity)) < 1e-6
+        dp = c.p - s.p
+        assert np.max(np.abs(dp - dp.mean())) < 1e-7 * max(np.ptp(c.p), 1e-30)
+
+    def test_re100_cavity_matches_simple(self):
+        mesh = _periodic_box(20, 20, 1.0, 1.0, x_periodic=False)
+        bcs = {
+            "XM": FlowPatchBC.wall(),
+            "XP": FlowPatchBC.wall(),
+            "YM": FlowPatchBC.wall(),
+            "YP": FlowPatchBC.wall(velocity=(1.0, 0.0, 0.0)),
+        }
+        kw = dict(mu=0.01, rho=1.0, tol=1e-7, convection="upwind")
+        c = _run(mesh, bcs, coupling="coupled", max_outer_iter=60, **kw)
+        s = _run(mesh, bcs, coupling="simple", max_outer_iter=800, **kw)
+        assert c.converged and s.converged
+        assert c.n_outer_iterations < s.n_outer_iterations / 5
+        assert np.max(np.abs(c.velocity - s.velocity)) < 1e-4
+
+    def test_outflow_rejected(self):
+        mesh = _periodic_box(4, 4, 0.4, 0.1, x_periodic=False)
+        with pytest.raises(ValueError, match="OUTFLOW"):
+            _run(
+                mesh,
+                {"XM": FlowPatchBC.inlet((0.01, 0.0, 0.0)), "XP": FlowPatchBC.outflow()},
+                coupling="coupled",
+                max_outer_iter=2,
+            )
+
+
+class TestRotatingWallPhysics:
+    """``VelocityPatchBC.rotating_wall``: 参照点まわりの剛体回転する壁（Taylor–Couette）."""
+
+    def test_taylor_couette_matches_analytic(self):
+        r1, r2, omega = 0.5, 1.0, 2.0
+        mesh = _annulus(16, 96, r1, r2)
+        res = _run(
+            mesh,
+            {
+                "INNER": FlowPatchBC.wall(),
+                "OUTER": FlowPatchBC.rotating_wall((0.0, 0.0, omega)),
+                "ZM": FlowPatchBC.symmetry(),
+                "ZP": FlowPatchBC.symmetry(),
+            },
+            mu=1.0,
+            convection="none",
+            coupling="coupled",
+            tol=1e-9,
+            max_outer_iter=30,
+            n_nonorthogonal_correctors=3,
+        )
+        assert res.converged
+        xc = mesh.cell_centers
+        r = np.linalg.norm(xc[:, :2], axis=1)
+        th = np.arctan2(xc[:, 1], xc[:, 0])
+        a = omega * r2**2 / (r2**2 - r1**2)
+        u_exact = a * r - a * r1**2 / r
+        u_th = -res.velocity[:, 0] * np.sin(th) + res.velocity[:, 1] * np.cos(th)
+        u_r = res.velocity[:, 0] * np.cos(th) + res.velocity[:, 1] * np.sin(th)
+        assert np.max(np.abs(u_th - u_exact)) / np.abs(u_exact).max() < 5e-3
+        assert np.max(np.abs(u_r)) < 1e-9 * np.abs(u_th).max()
+
+    def test_rotation_reduces_to_translation_far_from_axis(self):
+        """回転中心を遠ざけると面ごとの速度が一様並進に近づく（ω × r の実装確認）."""
+        mesh = _periodic_box(4, 8, 0.4, 0.1, x_periodic=False)
+        vb = resolve_velocity_boundary(
+            mesh, {"YP": VelocityPatchBC.rotating_wall((0.0, 0.0, 1e-6), (0.0, -1.0e6, 0.0))}
+        )
+        top = mesh.boundary_patches["YP"] - mesh.n_internal_faces
+        # ω × r = (0, 0, ω) × (x, +1e6, 0) = (−ω·1e6, ω x, 0)
+        assert np.allclose(vb.velocity[top, 0], -1.0, rtol=1e-6)
+        assert np.max(np.abs(vb.velocity[top, 1])) < 1e-6
+
+
+class TestNonNewtonianPhysics:
+    """``viscosity_model``: γ̇ から μ を更新する Picard（べき乗則の解析解と照合）."""
+
+    def _power_law_channel(self, k, n, gamma_min=1e-2, ny=32, **kw):
+        h, f = 0.1, 2.0
+        mesh = _periodic_box(4, ny, 0.4, h)
+        res = _run(
+            mesh,
+            {"YM": FlowPatchBC.wall(), "YP": FlowPatchBC.wall()},
+            mu=k,
+            viscosity_model=PowerLawViscosity(K=k, n=n, gamma_min=gamma_min),
+            body_force=(f, 0.0, 0.0),
+            convection="none",
+            coupling="coupled",
+            tol=1e-9,
+            max_outer_iter=200,
+            **kw,
+        )
+        y = mesh.cell_centers[:, 1]
+        half = h / 2.0
+        u_exact = (
+            n
+            / (n + 1.0)
+            * (f / k) ** (1.0 / n)
+            * (half ** ((n + 1.0) / n) - np.abs(y - half) ** ((n + 1.0) / n))
+        )
+        return res, u_exact, mesh
+
+    def test_power_law_channel_matches_analytic(self):
+        res, u_exact, _ = self._power_law_channel(0.05, 0.5)
+        assert res.converged
+        assert np.max(np.abs(res.velocity[:, 0] - u_exact)) / u_exact.max() < 5e-3
+        # 壁で最もせん断が強く粘度が下がる（せん断減粘）
+        assert res.viscosity is not None and res.strain_rate is not None
+        assert res.viscosity.min() < res.viscosity.max()
+        assert res.strain_rate.max() == pytest.approx((2.0 * 0.05 / 0.05) ** 2.0, rel=0.1)
+
+    def test_gamma_min_clamp_does_not_change_the_answer(self):
+        a, _, _ = self._power_law_channel(0.05, 0.5, gamma_min=1e-2)
+        b, u_exact, _ = self._power_law_channel(0.05, 0.5, gamma_min=1e-4)
+        assert a.converged and b.converged
+        assert np.max(np.abs(a.velocity - b.velocity)) / u_exact.max() < 5e-3
+
+    def test_relaxation_does_not_change_the_fixed_point(self):
+        a, u_exact, _ = self._power_law_channel(0.05, 0.7, alpha_mu=1.0)
+        b, _, _ = self._power_law_channel(0.05, 0.7, alpha_mu=0.3)
+        assert a.converged and b.converged
+        # 収束判定は残差なので不動点そのものは残差レベルまでしか一致しない
+        assert np.max(np.abs(a.velocity - b.velocity)) / u_exact.max() < 1e-5
+
+    def test_newtonian_limit_matches_constant_viscosity(self):
+        mesh = _periodic_box(4, 16, 0.4, 0.1)
+        bcs = {"YM": FlowPatchBC.wall(), "YP": FlowPatchBC.wall()}
+        kw = dict(
+            body_force=(2.0, 0.0, 0.0),
+            convection="none",
+            coupling="coupled",
+            tol=1e-10,
+            max_outer_iter=100,
+        )
+        a = _run(mesh, bcs, mu=0.02, **kw)
+        b = _run(
+            mesh,
+            bcs,
+            mu=0.02,
+            viscosity_model=CarreauViscosity(mu_0=0.02, mu_inf=0.02, lam=1.0, n=1.0),
+            **kw,
+        )
+        assert a.converged and b.converged
+        assert np.max(np.abs(a.velocity - b.velocity)) < 1e-10
+
+    def test_rejects_bad_viscosity_model(self):
+        class _Bad:
+            def viscosity(self, gamma_dot):
+                return np.zeros_like(gamma_dot)
+
+        mesh = _periodic_box(4, 4, 0.4, 0.1)
+        with pytest.raises(ValueError, match="非正または非有限"):
+            _run(mesh, {}, viscosity_model=_Bad(), max_outer_iter=2)

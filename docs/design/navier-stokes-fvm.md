@@ -16,11 +16,14 @@
 ## 支配方程式
 
 - 連続: ∇·u = 0
-- 運動量: ρ ∂u/∂t + ∇·(ρ u u) = −∇p + ∇·(μ∇u) − (μ/K) u − ρ β (T − T_ref) g
-  （K: 透過率、inf で抵抗なし。β = 0 で浮力なし）
+- 運動量: ρ ∂u/∂t + ∇·(ρ u u) = −∇p + ∇·(μ∇u) − (μ/K) u − ρ β (T − T_ref) g + f
+  （K: 透過率、inf で抵抗なし。β = 0 で浮力なし。f: 一様 / セル別の体積力 `body_force` [N/m³]）
+- 対流項は `convection="none"`（Stokes）で落とせる。粘度は `viscosity_model` で μ(γ̇) にできる
+  （γ̇ = sqrt(2 D:D) を最小二乗の速度勾配から評価する Picard。変粘度では ∇·(μ∇uᵀ) の余剰項
+  Σ_j ∂_i u_j ∂_j μ を陽的ソースに足す）
 - エネルギー（`solve_energy`）: ρC ∂T/∂t + ∇·(ρC u T) = ∇·(k∇T) + q（固体セルは u = 0、k = k_solid）
 
-## 離散化（同位置格子 SIMPLE / SIMPLEC / PISO）
+## 離散化（同位置格子 SIMPLE / SIMPLEC / PISO / COUPLED）
 
 1. 圧力勾配 ∇p: 最小二乗 `cell_gradient_lsq`（OUTLET は Dirichlet、他はゼロ勾配）
 2. 運動量成分ごとに: 対流 1 次風上（`assemble_convection(bounded=True)`、有界形）+ TVD 遅延補正
@@ -72,15 +75,44 @@
 旧規則は 75 → 474 反復に悪化していた）、SIMPLE では α_p ≤ 1 − α_u。`alpha_history` に反復ごとの値を残す。
 実測: cavity-nc-2（非直交 14°）75 → 62 反復、cavity-nc-1 の非構造経路 275 → 219 反復。
 
+### 速度–圧力の連成（`coupling="coupled"`）
+
+SIMPLE 系の分離解法に代えて、速度 nd 成分と圧力を 1 つの線形系にまとめて直接解く
+（`fvm/momentum.assemble_coupled`）。
+
+```
+[ A_u        V ∂/∂x G_p ] [u]   [b_u]
+[ A_v        V ∂/∂y G_p ] [v] = [b_v]
+[ ρ Div F_u  ρ Div F_p   ] [p]   [b_c]
+```
+
+- 圧力勾配は最小二乗勾配の**線形作用素**（`geometry.lsq_gradient_operator`。
+  `cell_gradient_lsq` と同じ係数を疎行列 + Dirichlet 境界の定数項として返す）
+- 連続式は Rhie–Chow 面流束（D_f = interp(V/a_P)、a_P は緩和前の対角）を u と p の両方について陰的に
+- 緩和係数を使わない。Stokes（`convection="none"`）なら**外部反復 2 回**で収束し、
+  対流があっても面流束の Picard だけで回る
+
+鞍点系なので直接法（`DirectSolver`）で解く。`OUTFLOW`（対流流出）と `adaptive_relaxation` は使えない。
+Stokes キャビティ（16×16）と Re=100 キャビティ（20×20）で SIMPLE と同じ解（1e-6 / 1e-4）に、
+反復数は 273 → 2、197 → 10 になる。
+
+### 周期境界
+
+`MeshData.face_offset` がある内部面（`.inp` の `*BOUNDARY, TYPE=PERIODIC`）は、
+neighbour セル中心を並進で戻した位置で幾何を評価するだけで、拡散・対流・圧力補正・Rhie–Chow は
+そのまま通る（[fvm-layer.md](fvm-layer.md)、[inp-generic-extrusion.md](inp-generic-extrusion.md)）。
+圧力跳びは `body_force` に移す。
+
 ## 入出力
 
 | | 内容 |
 |---|---|
-| `NavierStokesFVMInput` | `mesh`、`rho`、`mu`、`bcs`（パッチ → `FlowPatchBC`）、`solve_energy`、`Cp`、`k_fluid`、`beta`、`T_ref`、`gravity`、`T0`/`u0`/`p0`、`solid_mask`、`k_solid`、`heat_source`、`permeability`、`dt`/`t_end`、`max_outer_iter`、`tol`、`alpha_u`/`alpha_p`/`alpha_T`、`adaptive_relaxation`、`coupling`（simple / simplec / piso）、`n_piso_correctors`、`n_nonorthogonal_correctors`（既定 2）、`convection`（upwind / tvd）、`limiter`（van_leer / superbee）、`time_scheme`（euler / bdf2）、`scalars`（`ScalarSpec`）、`internal_bcs`（`InternalCellBC`）、`linear_solver`/`pressure_solver`、`tol_inner`/`max_inner_iter` |
-| `NavierStokesFVMResult` | `velocity (n_cells, 3)`、`p`、`T`、`mass_flux (n_faces,)`、`scalars`（名前 → 場）、`converged`、`n_outer_iterations`、`n_timesteps`、`residual_history`（u/v/w/T/mass/スカラー名）、`residual_fields`（res_u/res_v/res_w/res_T/res_mass/res_<名前>）、`alpha_history`（適応緩和のときの alpha_u / alpha_p） |
+| `NavierStokesFVMInput` | `mesh`、`rho`、`mu`、`bcs`（パッチ → `FlowPatchBC`）、`solve_energy`、`Cp`、`k_fluid`、`beta`、`T_ref`、`gravity`、`T0`/`u0`/`p0`、`solid_mask`、`k_solid`、`heat_source`、`permeability`、`dt`/`t_end`、`max_outer_iter`、`tol`、`alpha_u`/`alpha_p`/`alpha_T`、`adaptive_relaxation`、`coupling`（simple / simplec / piso / coupled）、`viscosity_model`、`alpha_mu`、`body_force`、`n_piso_correctors`、`n_nonorthogonal_correctors`（既定 2）、`convection`（upwind / tvd / none）、`limiter`（van_leer / superbee）、`time_scheme`（euler / bdf2）、`scalars`（`ScalarSpec`）、`internal_bcs`（`InternalCellBC`）、`linear_solver`/`pressure_solver`、`tol_inner`/`max_inner_iter` |
+| `NavierStokesFVMResult` | `velocity (n_cells, 3)`、`p`、`T`、`mass_flux (n_faces,)`、`scalars`（名前 → 場）、`converged`、`n_outer_iterations`、`n_timesteps`、`residual_history`（u/v/w/T/mass/スカラー名）、`residual_fields`（res_u/res_v/res_w/res_T/res_mass/res_<名前>）、`alpha_history`（適応緩和のときの alpha_u / alpha_p）、`viscosity` / `strain_rate`（`viscosity_model` のときの μ と γ̇） |
 
-`FlowPatchBC.wall(temperature=, heat_flux=, film=(h, T_inf), velocity=)` / `inlet(velocity, temperature=)` /
-`outlet(pressure=, temperature=)` / `outflow(temperature=)` / `symmetry()`。
+`FlowPatchBC.wall(temperature=, heat_flux=, film=(h, T_inf), velocity=)` /
+`rotating_wall(angular_velocity, center=, velocity=, …)`（u = v + ω × (x − center)）/
+`inlet(velocity, temperature=)` / `outlet(pressure=, temperature=)` / `outflow(temperature=)` / `symmetry()`。
 `InternalCellBC.inlet(mask, velocity, temperature=)` / `outlet(mask)`。
 `ScalarSpec(name, diffusivity, phi0=, source=, bcs={パッチ: PatchBC}, alpha=)`。
 
@@ -104,6 +136,13 @@
     補正 1 回は 60 反復で収束せず、2 回は直交メッシュ並みの反復数で収束して解は保守的な緩和の収束解と 1e-5 で一致。
     直交メッシュでは補正回数によらず同じ反復数（余分な圧力解法をしない）
   - 適応緩和: Poiseuille 流路で収束し、`alpha_history` が反復ごとに記録され、上下限と α_p ≤ 1 − α_u を守る
+  - 周期境界 + 体積力: 周期流路の Poiseuille が解析解と 3e-3、圧力は周期方向に一様（跳びは体積力に移してある）。
+    1 セル厚の z を周期にすると w が厚さに依らない厳密な 2.5D になり、対称面にすると厚さに依存する偽の解になる
+  - Stokes モード: `convection="none"` は密度を変えても解が動かない
+  - COUPLED: Stokes キャビティを 2 反復で解き SIMPLE（273 反復）と 1e-6 一致、Re=100 でも 1e-4 一致
+  - 回転壁: Taylor–Couette（円環 16×96、外周回転）が解析解 u_θ = Ar + B/r と 5e-3、半径方向速度は 1e-9 以下
+  - 非ニュートン: べき乗則流路が解析解と 5e-3、`gamma_min` / `alpha_mu` を変えても不動点が動かない、
+    Carreau の n=1・μ_0=μ_∞ がニュートンに退化する
 
 実測（`docs/status/status-35.md`）: 圧力補正の非直交補正は定常 SIMPLE の**収束解を変えず**（p' → 0）、
 効くのは緩和が強いとき・歪みが大きいときの安定性。せん断 0.6 / 1.0（31° / 45°）で α = (0.8, 0.5) は
@@ -116,6 +155,9 @@
   相当（T_f を ψ 倍）が要る
 - OUTFLOW は流出流束のスケーリング（Fluent の outflow 相当）で、非定常の非反射条件 ∂u/∂t + U_c ∂u/∂n = 0 ではない
 - 乱流モデルなし。CFL 適応 dt は構造格子版のみ
+- COUPLED は直接法固定（鞍点系の前処理付き Krylov 法は未実装）で `OUTFLOW` 非対応。大規模では SIMPLE 系が省メモリ
+- 周期境界は**並進のみ**（回転周期・螺旋周期は未対応）
+- 非ニュートン粘度の Picard は残差で収束判定する（粘度場の変化量では見ていない）。粘性発熱 Φ = μγ̇² は未対応
 - 構造格子版 `NaturalConvectionFDMProcess` の Rhie–Chow は緩和後の a_P を使っている（収束解の α_u 依存が
   残っている可能性。空気実物性の不安定化調査と合わせて確認する）
 - 内部セル境界は `.inp` では要素集合を target にした `*BOUNDARY`（TYPE=VELOCITY / PRESSURE / TEMPERATURE）で与える

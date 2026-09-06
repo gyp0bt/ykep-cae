@@ -16,12 +16,15 @@
   （厚さゼロのバッフル・薄板・仕切り。両側とも同じ境界条件を受ける）
 - 予約面名 ``XM/XP/YM/YP/ZM/ZP`` は境界面を外向き法線の主軸で分類して自動生成する
   （``*SURFACE`` に同名があればそちらが優先。バッフル面は分類しない）
+- ``*BOUNDARY, TYPE=PERIODIC``（``CaseDefinition.periodic``）の 2 面は面中心を並進で照合し、
+  **master 面を内部面に昇格**（neighbour = slave 側のセル、``MeshData.face_offset = −t``）して
+  slave 面を消す。周期面は境界パッチにならず、fvm 層は通常の内部面として扱う（並進周期のみ）
 """
 
 from __future__ import annotations
 
 import warnings
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import ClassVar
 
@@ -37,7 +40,7 @@ from xkep_cae_fluid.core.data import (
     MeshData,
 )
 from xkep_cae_fluid.core.mesh_reader import compute_cell_geometry, compute_face_geometry
-from xkep_cae_fluid.inp.case import CaseDefinition, SurfaceDefinition
+from xkep_cae_fluid.inp.case import CaseDefinition, PeriodicDefinition, SurfaceDefinition
 from xkep_cae_fluid.inp.grid import _HEX_FACES, FACE_NAMES, UnsupportedMeshError
 
 # Abaqus の面番号 S1.. → 局所節点 index（四面体 C3D4、角錐 C3D5、楔 C3D6。六面体は grid._HEX_FACES）
@@ -131,6 +134,10 @@ class InpMeshResult:
         実際に内部面を分割した ``*SURFACE`` 名
     baffle_faces : np.ndarray
         バッフルの境界面 index（両側、(n_baffle_faces,)）。無ければ空
+    periodic_faces : np.ndarray
+        周期対を併合した内部面 index（``*BOUNDARY, TYPE=PERIODIC``）。無ければ空
+    periodic_surfaces : tuple[str, ...]
+        周期境界に使った面名（``*SURFACE`` 名または予約面名。境界条件は置けない）
     """
 
     mesh: MeshData
@@ -142,6 +149,8 @@ class InpMeshResult:
     ndim: int
     baffle_surfaces: tuple[str, ...] = ()
     baffle_faces: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.int64))
+    periodic_faces: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.int64))
+    periodic_surfaces: tuple[str, ...] = ()
 
     @property
     def n_cells(self) -> int:
@@ -367,12 +376,14 @@ def build_inp_mesh(
             a = n_int + n_boundary_orig + 2 * k
             baffle_partner[a] = a + 1
             baffle_partner[a + 1] = a
-    baffle_faces = np.array(sorted(baffle_partner), dtype=np.int64)
+    baffle_faces_old = np.array(sorted(baffle_partner), dtype=np.int64)
 
     faces_list = [f[0] for f in internal] + [b[0] for b in boundary]
     owner = np.array([f[1] for f in internal] + [b[1] for b in boundary], dtype=np.int64)
     neighbour = np.array([f[2] for f in internal], dtype=np.int64)
 
+    # 幾何は周期面を併合する前（両面とも境界面のまま）に計算する。併合後の内部面は master 側の
+    # 幾何を持ち、neighbour（slave 側のセル）は face_offset で並進して戻した位置に置く
     face_areas, face_normals, face_centers = compute_face_geometry(coords, faces_list)
     cell_volumes, cell_centers = compute_cell_geometry(
         coords, faces_list, owner, neighbour, n_cells
@@ -395,9 +406,8 @@ def build_inp_mesh(
             sorted(i for n in sd.ids.tolist() for i in node_lookup.get(int(n), [])), dtype=np.int64
         )
 
-    # *SURFACE → 面（バッフルの面はどちら側を指していても両側を含める）
-    surface_faces: dict[str, np.ndarray] = {}
-    patches: dict[str, np.ndarray] = {}
+    # *SURFACE → 面（併合前の index。バッフルの面はどちら側を指していても両側を含める）
+    surface_raw: dict[str, np.ndarray] = {}
     for name, surf in case.surfaces.items():
         idx = _surface_to_faces(surf, case, lookup, elem_face, kinds, n2d, ndim)
         if baffle_partner:
@@ -405,23 +415,73 @@ def build_inp_mesh(
                 baffle_partner[i] for i in idx.tolist() if i in baffle_partner
             }
             idx = np.array(sorted(both), dtype=np.int64)
-        surface_faces[name] = idx
-        if np.all(idx >= n_int):
-            patches[name] = idx
+        surface_raw[name] = idx
+    is_baffle_old = np.zeros(len(faces_list), dtype=bool)
+    is_baffle_old[baffle_faces_old] = True
+    reserved_raw = _reserved_face_names(face_normals, n_int, is_baffle_old)
 
-    # 予約面名（外向き法線の主軸。バッフル面は外皮ではないので分類しない）
+    # 周期面の併合（*BOUNDARY, TYPE=PERIODIC）: master 面を内部面に昇格し slave 面を消す
+    face_map = np.arange(len(faces_list), dtype=np.int64)
+    face_offset = np.zeros((n_int, 3))
+    periodic_faces = np.zeros(0, dtype=np.int64)
+    if case.periodic:
+
+        def _resolve(name: str) -> np.ndarray:
+            key = name.strip().upper()
+            if key in surface_raw:
+                return surface_raw[key]
+            if key in reserved_raw:
+                return reserved_raw[key]
+            raise UnsupportedMeshError(
+                f"周期境界の面 {name!r} は *SURFACE でも予約面名（外皮に存在する面）でもありません"
+            )
+
+        merged = _merge_periodic(
+            case.periodic,
+            coords,
+            _resolve,
+            n_int,
+            faces_list,
+            owner,
+            neighbour,
+            face_areas,
+            face_normals,
+            face_centers,
+        )
+        (
+            faces_list,
+            owner,
+            neighbour,
+            face_areas,
+            face_normals,
+            face_centers,
+            face_offset,
+            face_map,
+            periodic_faces,
+        ) = merged
+        n_int = int(neighbour.shape[0])
+
+    def _remap(idx: np.ndarray) -> np.ndarray:
+        return np.unique(face_map[np.asarray(idx, dtype=np.int64)]).astype(np.int64)
+
+    surface_faces: dict[str, np.ndarray] = {}
+    patches: dict[str, np.ndarray] = {}
+    for name, idx in surface_raw.items():
+        new_idx = _remap(idx)
+        surface_faces[name] = new_idx
+        if new_idx.size and np.all(new_idx >= n_int):
+            patches[name] = new_idx
+    baffle_faces = _remap(baffle_faces_old) if baffle_faces_old.size else baffle_faces_old
+    periodic_surfaces = tuple(sorted({n for p in case.periodic for n in (p.master, p.slave)}))
+
+    # 予約面名（外向き法線の主軸。バッフル面は外皮ではないので分類しない。周期面は内部面）。
+    # 同じ面が ``*SURFACE`` のパッチと予約名の両方に入りうる（両方に境界条件を書くと後勝ち）
     if reserved_patches:
-        bn = face_normals[n_int:]
-        axis = np.argmax(np.abs(bn), axis=1)
-        outer = np.arange(len(bn)) < n_boundary_orig
-        for name in FACE_NAMES:
-            if name in patches:
-                continue
-            ax = "XYZ".index(name[0])
-            sign = 1.0 if name[1] == "P" else -1.0
-            sel = outer & (axis == ax) & (np.sign(bn[np.arange(len(bn)), axis]) == sign)
-            if np.any(sel):
-                patches[name] = n_int + np.nonzero(sel)[0].astype(np.int64)
+        is_baffle = np.zeros(len(faces_list), dtype=bool)
+        is_baffle[baffle_faces] = True
+        for name, idx in _reserved_face_names(face_normals, n_int, is_baffle).items():
+            if name not in patches:
+                patches[name] = idx
 
     width = max(kinds)
     conn = np.full((n_cells, width), -1, dtype=np.int64)
@@ -441,6 +501,7 @@ def build_inp_mesh(
         face_owner=owner,
         face_neighbour=neighbour,
         boundary_patches=patches,
+        face_offset=face_offset if periodic_faces.size else None,
     )
     return InpMeshResult(
         mesh=mesh,
@@ -452,6 +513,137 @@ def build_inp_mesh(
         ndim=ndim,
         baffle_surfaces=tuple(used_baffles),
         baffle_faces=baffle_faces,
+        periodic_faces=periodic_faces,
+        periodic_surfaces=periodic_surfaces,
+    )
+
+
+def _reserved_face_names(
+    face_normals: np.ndarray, n_int: int, exclude: np.ndarray
+) -> dict[str, np.ndarray]:
+    """境界面を外向き法線の主軸で XM..ZP に分類する（``exclude`` の面は分類しない）."""
+    bn = face_normals[n_int:]
+    if bn.shape[0] == 0:
+        return {}
+    axis = np.argmax(np.abs(bn), axis=1)
+    keep = ~np.asarray(exclude, dtype=bool)[n_int:]
+    out: dict[str, np.ndarray] = {}
+    for name in FACE_NAMES:
+        ax = "XYZ".index(name[0])
+        sign = 1.0 if name[1] == "P" else -1.0
+        sel = keep & (axis == ax) & (np.sign(bn[np.arange(len(bn)), axis]) == sign)
+        if np.any(sel):
+            out[name] = n_int + np.nonzero(sel)[0].astype(np.int64)
+    return out
+
+
+def _merge_periodic(
+    periodic: tuple[PeriodicDefinition, ...],
+    coords: np.ndarray,
+    resolve: Callable[[str], np.ndarray],
+    n_int: int,
+    faces_list: list[list[int]],
+    owner: np.ndarray,
+    neighbour: np.ndarray,
+    face_areas: np.ndarray,
+    face_normals: np.ndarray,
+    face_centers: np.ndarray,
+) -> tuple[
+    list[list[int]],
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
+    """周期対の境界面を照合し、master 面を内部面（neighbour = slave 側のセル）に併合する.
+
+    slave 面の中心が master 面の中心を並進 t だけ動かした位置に一致することを要求する
+    （許容は座標の対角長 × 1e-6）。併合した内部面は master の幾何を持ち、
+    ``face_offset = −t`` で neighbour セル中心を owner 側に戻す。slave 面は消え、
+    面 index の対応は ``face_map``（旧 → 新。slave 面は併合先の内部面）で返す。
+
+    Returns
+    -------
+    (faces_list, owner, neighbour, areas, normals, centers, face_offset, face_map, periodic_faces)
+    """
+    from scipy.spatial import cKDTree
+
+    n_faces = len(faces_list)
+    span = float(np.linalg.norm(coords.max(axis=0) - coords.min(axis=0)))
+    tol = 1e-6 * max(span, 1e-300)
+    used = np.zeros(n_faces, dtype=bool)
+    masters: list[int] = []
+    slaves: list[int] = []
+    offsets: list[np.ndarray] = []
+    for per in periodic:
+        m = np.asarray(resolve(per.master), dtype=np.int64)
+        s = np.asarray(resolve(per.slave), dtype=np.int64)
+        label = f"{per.master} ↔ {per.slave}"
+        if m.size == 0 or s.size == 0:
+            raise UnsupportedMeshError(f"周期境界 {label} の面が空です")
+        if np.any(m < n_int) or np.any(s < n_int):
+            raise UnsupportedMeshError(f"周期境界 {label} の面に内部面が含まれています")
+        if np.any(used[m]) or np.any(used[s]):
+            raise UnsupportedMeshError(f"周期境界 {label} の面が他の周期境界と重なっています")
+        if m.size != s.size:
+            raise UnsupportedMeshError(
+                f"周期境界 {label} の面数が一致しません（{m.size} 対 {s.size}）"
+            )
+        if per.translation is None:
+            t = face_centers[s].mean(axis=0) - face_centers[m].mean(axis=0)
+        else:
+            t = np.asarray(per.translation, dtype=np.float64)
+        target = face_centers[m] + t[None, :]
+        dist, j = cKDTree(face_centers[s]).query(target)
+        if float(np.max(dist)) > tol or np.unique(j).size != m.size:
+            raise UnsupportedMeshError(
+                f"周期境界 {label} の面が並進 t={tuple(float(v) for v in t)} で一致しません"
+                f"（最大ずれ {float(np.max(dist)):.3e} m、許容 {tol:.3e} m。"
+                f"両面のメッシュ分割が同じか、並進ベクトルが正しいか確認）"
+            )
+        s_matched = s[j]
+        dots = np.sum(face_normals[m] * face_normals[s_matched], axis=1)
+        if np.any(dots > -1.0 + 1e-6):
+            raise UnsupportedMeshError(
+                f"周期境界 {label} の面法線が反平行ではありません（並進周期は平行な 2 面のみ）"
+            )
+        masters.extend(m.tolist())
+        slaves.extend(s_matched.tolist())
+        offsets.extend([-t] * m.size)
+        used[m] = True
+        used[s] = True
+
+    m_arr = np.asarray(masters, dtype=np.int64)
+    s_arr = np.asarray(slaves, dtype=np.int64)
+    keep_b = [i for i in range(n_int, n_faces) if not used[i]]
+    new_order = np.concatenate(
+        [np.arange(n_int, dtype=np.int64), m_arr, np.asarray(keep_b, dtype=np.int64)]
+    )
+    face_map = np.full(n_faces, -1, dtype=np.int64)
+    face_map[new_order] = np.arange(new_order.size, dtype=np.int64)
+    face_map[s_arr] = face_map[m_arr]
+    n_int_new = n_int + m_arr.size
+    faces_new = [faces_list[int(i)] for i in new_order.tolist()]
+    owner_new = owner[new_order]
+    neighbour_new = np.concatenate([neighbour, owner[s_arr]]).astype(np.int64)
+    face_offset = np.zeros((n_int_new, 3))
+    if offsets:
+        face_offset[n_int:n_int_new] = np.asarray(offsets, dtype=np.float64)
+    periodic_faces = np.arange(n_int, n_int_new, dtype=np.int64)
+    return (
+        faces_new,
+        owner_new,
+        neighbour_new,
+        face_areas[new_order],
+        face_normals[new_order],
+        face_centers[new_order],
+        face_offset,
+        face_map,
+        periodic_faces,
     )
 
 

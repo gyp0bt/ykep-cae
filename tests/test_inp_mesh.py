@@ -16,7 +16,13 @@ from xkep_cae_fluid.core.data import (
 )
 from xkep_cae_fluid.core.mesh import StructuredMeshInput, StructuredMeshProcess
 from xkep_cae_fluid.core.testing import binds_to
-from xkep_cae_fluid.fvm import PatchBC, diffusive_face_flux, resolve_boundary
+from xkep_cae_fluid.fvm import (
+    PatchBC,
+    diffusive_face_flux,
+    max_nonorthogonality_deg,
+    neighbour_centers,
+    resolve_boundary,
+)
 from xkep_cae_fluid.heat_transfer import HeatTransferFVMInput, HeatTransferFVMProcess
 from xkep_cae_fluid.inp.builder import build_case
 from xkep_cae_fluid.inp.grid import (
@@ -625,3 +631,101 @@ class TestInpMeshPhysics:
         # 出力の接続は右手系に正規化されている（六面体: (n1−n0)×(n3−n0)·(n4−n0) > 0）
         p = m.node_coords[m.connectivity[0]]
         assert np.dot(np.cross(p[1] - p[0], p[3] - p[0]), p[4] - p[0]) > 0
+
+
+PERIODIC_BOX = """\
+*GRID, NX=3, NY=2, NZ=1, LX=0.3, LY=0.2, LZ=0.1
+*BOUNDARY, TYPE=PERIODIC
+ XM, XP
+"""
+
+
+class TestInpMeshPeriodic:
+    """``*BOUNDARY, TYPE=PERIODIC``: 対の境界面を内部面に併合し ``face_offset`` を付ける."""
+
+    def _mesh(self, text: str) -> InpMeshResult:
+        return build_inp_mesh(build_case(parse_inp_text(text)))
+
+    def test_merges_pair_into_internal_faces(self):
+        plain = self._mesh("*GRID, NX=3, NY=2, NZ=1, LX=0.3, LY=0.2, LZ=0.1\n")
+        res = self._mesh(PERIODIC_BOX)
+        m, m0 = res.mesh, plain.mesh
+        # XM/XP の 2 枚 × 2 セル = 4 枚が消え、2 枚の内部面になる
+        assert m.n_cells == m0.n_cells
+        assert m.n_faces == m0.n_faces - 2
+        assert m.n_internal_faces == m0.n_internal_faces + 2
+        assert res.periodic_faces.size == 2
+        assert res.periodic_surfaces == ("XM", "XP")
+        assert set(m.boundary_patches) == {"YM", "YP", "ZM", "ZP"}
+        assert m.has_periodic_faces
+
+    def test_offset_and_neighbour_centers(self):
+        m = self._mesh(PERIODIC_BOX).mesh
+        off = m.face_offset[m.n_internal_faces - 2 :]
+        # 並進 t = (+0.3, 0, 0)、オフセットは −t
+        assert np.allclose(off, [[-0.3, 0.0, 0.0], [-0.3, 0.0, 0.0]])
+        # 併合面の owner は x=0 側、neighbour（戻した位置）は owner の 1 セル手前
+        d = neighbour_centers(m) - m.cell_centers[m.face_owner[: m.n_internal_faces], :3]
+        assert np.allclose(np.linalg.norm(d[-2:], axis=1), 0.1)
+        assert max_nonorthogonality_deg(m) == pytest.approx(0.0, abs=1e-9)
+
+    def test_explicit_translation_and_z_pair(self):
+        text = (
+            "*GRID, NX=3, NY=2, NZ=1, LX=0.3, LY=0.2, LZ=0.1\n"
+            "*BOUNDARY, TYPE=PERIODIC\n XM, XP, 0.3, 0.0, 0.0\n"
+            "*BOUNDARY, TYPE=PERIODIC\n ZM, ZP, 0.0, 0.0, 0.1\n"
+        )
+        res = self._mesh(text)
+        assert res.periodic_faces.size == 2 + 6
+        assert set(res.mesh.boundary_patches) == {"YM", "YP"}
+        # z は 1 セル厚なので owner == neighbour（自己ループ面）になる
+        zf = res.periodic_faces[2:]
+        assert np.array_equal(res.mesh.face_owner[zf], res.mesh.face_neighbour[zf])
+
+    @pytest.mark.parametrize(
+        "text,match",
+        [
+            (
+                "*GRID, NX=3, NY=2, NZ=1, LX=0.3, LY=0.2, LZ=0.1\n"
+                "*BOUNDARY, TYPE=PERIODIC\n XM, XP, 0.5, 0.0, 0.0\n",
+                "一致しません",
+            ),
+            (
+                "*GRID, NX=3, NY=2, NZ=1, LX=0.3, LY=0.2, LZ=0.1\n"
+                "*BOUNDARY, TYPE=PERIODIC\n XM, YP\n",
+                "面数が一致しません",
+            ),
+            (
+                "*GRID, NX=2, NY=1, NZ=1, LX=0.2, LY=0.1, LZ=0.1\n"
+                "*ELSET, ELSET=E1\n 1\n*SURFACE, NAME=MID\n E1, S4\n"
+                "*BOUNDARY, TYPE=PERIODIC\n MID, XP\n",
+                "内部面が含まれています",
+            ),
+        ],
+    )
+    def test_rejects_bad_pairs(self, text: str, match: str):
+        with pytest.raises(UnsupportedMeshError, match=match):
+            self._mesh(text)
+
+    def test_solution_is_translation_invariant(self):
+        """周期方向に一様な熱伝導: 周期面があっても解が壁 1 枚ぶんずれない."""
+        text = (
+            "*GRID, NX=4, NY=4, NZ=1, LX=0.4, LY=0.4, LZ=0.1\n*BOUNDARY, TYPE=PERIODIC\n XM, XP\n"
+        )
+        m = self._mesh(text).mesh
+        bcs = {"YM": PatchBC.dirichlet(0.0), "YP": PatchBC.dirichlet(1.0)}
+        res = HeatTransferFVMProcess().execute(
+            HeatTransferFVMInput(
+                mesh=m,
+                conductivity=1.0,
+                T0=np.zeros(m.n_cells),
+                bcs=bcs,
+                linear_solver="direct",
+            )
+        )
+        T = res.T
+        y = m.cell_centers[:, 1]
+        assert np.allclose(T, y / 0.4, atol=1e-12)
+        # 同じ y のセルは x に依らず同じ温度
+        for y0 in np.unique(np.round(y, 12)):
+            assert np.ptp(T[np.isclose(y, y0)]) < 1e-12

@@ -149,6 +149,8 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] Phase 1.5: 粒子追跡 + RTD（G4a/G4b、status-28）
 - [x] 図解レポート 2 本を Artifact 公開（[reports/extruder](reports/extruder/README.md)）
 - [x] 文献 RTD 照合 G5（Phase 2 の前提。実機データが無いので Pinto–Tadmor 1970 との照合に差し替え、2026-09-04 通過）
+- [x] 汎用記法（`.inp`）で同じ問題を書けるようにする → [Phase 12](#phase-12-汎用記法inpで押出級の流れを書く完了status-36)。
+  `ExtruderChannelInpProcess` が諸元から汎用 .inp を生成し、専用ソルバーが検証のリファレンスになる（status-36）
 - [ ] Phase 2: 粘性発熱 `Φ = μγ̇²` + 温度依存粘度
 - [ ] Phase 3: 混練エレメント（3D、messi + OpenFOAM）
 
@@ -244,6 +246,27 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [ ] 非直交補正の limited 版（45° 超のメッシュ）、バッフルの片側ごとの条件・薄板の熱伝導、角錐の mirador 描画（messi に C3D5 が無い）— status-35 TODO
 - [ ] 構造格子版 `NaturalConvectionFDMProcess` の Rhie–Chow も緩和前の a_P に（収束解の α_u 依存の確認。空気実物性の不安定化調査と合わせて）— status-35 TODO
 - [ ] 非構造 NS で空気実物性（mu=1.85e-5）+ q_vol の自然対流を評価（構造格子版で未解決の mass 残差 O(1–100) が再現するか）— status-35 TODO
+
+## Phase 12: 汎用記法（.inp）で押出級の流れを書く（完了、status-36）
+
+押出専用のキーワードではなく**汎用記法**（`*NODE` / `*ELEMENT` + `*NAVIER STOKES`）で
+展開チャネル 2.5D を書けるようにする。設計は [design/inp-generic-extrusion.md](design/inp-generic-extrusion.md)。
+
+- [x] 周期境界 `*BOUNDARY, TYPE=PERIODIC`（並進。`MeshData.face_offset` + fvm 層の `neighbour_centers`。
+  `InpMeshProcess` が対の面を照合して内部面に併合）— status-36
+- [x] 一様体積力 `*DLOAD` の `BX` / `BY` / `BZ` / `BF`（圧力跳び `Δp = G·L_turn` を `P = βx + p̃` に分解）— status-36
+- [x] 非ニュートン粘度 `*VISCOSITY, TYPE=POWER LAW | CARREAU`（粘度モデルを `fvm/viscosity.py` へ、
+  非構造の γ̇ は最小二乗の速度勾配から、Picard 緩和は `RELAXATION` の `VISCOSITY=`）— status-36
+- [x] 回転壁 `*ORIENTATION` + `*MPC` + 参照節点の自由度 4-6（`VelocityPatchBC.rotating_wall`、
+  Taylor–Couette が解析解と 1.3e-3）— status-36
+- [x] Stokes モード `CONVECTION=NONE` と速度–圧力の連成 `PRESSURE_VELOCITY=COUPLED`
+  （`assemble_coupled` + `lsq_gradient_operator`。Stokes キャビティが 273 → 2 反復）— status-36
+- [x] `ExtruderChannelInpProcess`（諸元 → 汎用記法 .inp）と例題 extruder-channel-1、
+  専用 2.5D ソルバー・形状係数との照合（Q は機械精度、Q_axial 1.4e-3）— status-36
+- [ ] 非構造メッシュの粒子追跡 / RTD（面流束ベースの Pollock 型）— 汎用経路で混練性・RTD を出すために必要
+- [ ] 回転周期・螺旋周期（3D 螺旋 1 ピッチは軸方向並進で書けるので優先度は低い）
+- [ ] COUPLED の前処理付き Krylov 法（大規模向け）と `OUTFLOW` 対応
+- [ ] 粘性発熱 `Φ = μγ̇²` と温度依存粘度（専用ソルバー側の Phase 2 と合わせる）
 
 ## 将来構想
 

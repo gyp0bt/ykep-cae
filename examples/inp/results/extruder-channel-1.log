@@ -1,0 +1,14 @@
+INFO ykep: ykep -j=examples/inp/extruder-channel-1.inp int -o=examples/inp/results
+INFO xkep_cae_fluid.inp.runner: *BOUNDARY, TYPE=PERIODIC, *DLOAD の体積力 のため非構造メッシュで解きます
+INFO xkep_cae_fluid.inp.runner: ジョブ extruder-channel-1: single screw metering channel (unrolled 2.5D, generic notation) D=40mm N=1/s G=1e5 Pa/m / 非構造メッシュ セル 2016・面 6144（境界 192、パッチ BARREL, XM, XP, YM, YP、最大非直交角 0.0°）/ ステップ 1
+INFO xkep_cae_fluid.inp.runner: ステップ channel: *NAVIER STOKES → NavierStokesFVMProcess（非構造）
+INFO xkep_cae_fluid.incompressible.solver: NavierStokesFVM: セル 2016 / COUPLED / 対流 none / 時間 定常 / 非直交補正 1 回 / α_u=0.70 α_p=0.30
+INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 1: mass=0.00e+00, u=8.65e-02, v=0.00e+00, w=2.72e-01, T=0.00e+00
+INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 2: mass=7.51e-12, u=7.37e-17, v=3.57e-17, w=1.48e-16, T=0.00e+00
+INFO xkep_cae_fluid.incompressible.solver: SIMPLE 収束: 2 反復, max_residual=7.51e-12
+INFO xkep_cae_fluid.inp.runner: ステップ channel 完了: converged=True, 反復 2, 0.18 s → extruder-channel-1.npz, extruder-channel-1.vtk, extruder-channel-1.yaml
+CONVERGED: step channel (NAVIER STOKES), 2 iterations, 0.18 s
+  -> examples/inp/results/extruder-channel-1.npz
+  -> examples/inp/results/extruder-channel-1.vtk
+  -> examples/inp/results/extruder-channel-1.yaml
+[ProcessDiagnostics] レポート出力: /home/user/ykep-cae/docs/generated/process_usage_report.md
