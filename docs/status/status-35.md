@@ -206,7 +206,11 @@ a_P（= a⁰_P/α_u）を使っていたこと。RC の補正項が α_u 倍に�
 ruff check xkep_cae_fluid/ tests/ → All checks passed / ruff format --check → 全ファイル整形済み
 python contracts/validate_process_contracts.py → 契約違反なし（登録プロセス 35）
 python -m pytest tests/ --collect-only -q → 775 tests collected
-python -m pytest tests/ -q -m "not slow and not external" → 実行中（結果は次のコミットで追記。ファイル単位: test_navier_stokes_fvm / test_inp_* / test_fvm_layer / test_heat_transfer_* / test_darcy* / test_scalar_transport* / test_post_mirador で 310 passed / 15 skipped）
+python -m pytest tests/ -q -m "not slow and not external" -p no:cacheprovider
+→ 740 passed / 1 failed / 15 skipped / 18 deselected / 1 xfailed（742.84 s、コミット 0d30756、pyamg・pypardiso 導入済み、numba・messi 未導入）
+  1 failed は本 status で追加した test_solve_energy_false_keeps_temperature_field の enum 名の誤り
+  （FluidBoundaryCondition.INLET → INLET_VELOCITY）。修正して単独再実行 → 1 passed（本体コードの変更なし）
+  skip 15 = messi 未導入の mirador 系 + numba 系 + pypardiso の subprocess テスト等
 ```
 
 ## 4. 次にやること

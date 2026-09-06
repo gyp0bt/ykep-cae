@@ -2163,7 +2163,7 @@ class TestAMGPressureSolver:
             beta=0.0,
             T_ref=300.0,
             bc_xm=FluidBoundarySpec(
-                condition=FluidBoundaryCondition.INLET, velocity=(0.01, 0.0, 0.0)
+                condition=FluidBoundaryCondition.INLET_VELOCITY, velocity=(0.01, 0.0, 0.0)
             ),
             bc_xp=FluidBoundarySpec(condition=FluidBoundaryCondition.OUTLET_PRESSURE),
             max_simple_iter=5,
