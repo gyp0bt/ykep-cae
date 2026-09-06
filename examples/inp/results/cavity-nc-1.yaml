@@ -4,15 +4,7 @@ step: Steady
 procedure: NAVIER STOKES
 steady: true
 turbulence: LAMINAR
-grid:
-  nx: 12
-  ny: 12
-  nz: 3
-lengths:
-  lx: 0.1
-  ly: 0.1
-  lz: 0.025000000000000005
-commit: 7537fc7
+commit: 40c8e8f
 parameters:
   L: 0.1
   n: 12
@@ -29,6 +21,14 @@ parameters:
   nu: 0.01
   alpha: 0.001
   beta: 0.050968399592252786
+grid:
+  nx: 12
+  ny: 12
+  nz: 3
+lengths:
+  lx: 0.1
+  ly: 0.1
+  lz: 0.025000000000000005
 solver:
   process: NaturalConvectionFDMProcess
   coupling: simple
@@ -51,16 +51,15 @@ final_residuals:
   p: 9.59481765671586e-06
   T: 7.817377799527687e-07
   mass: 8.673060776850491e-06
-elapsed_seconds: 4.338717448999887
+elapsed_seconds: 2.830221851999795
 max_abs_velocity: 0.035667957409045874
 temperature_range:
   - 290.6149714058406
   - 309.38502502700453
-wall_seconds: 4.346956798999599
+wall_seconds: 2.83704760899991
 output_files:
   - cavity-nc-1.npz
   - cavity-nc-1.vtk
-  - cavity-nc-1.html
   - cavity-nc-1.yaml
 variables:
   - U

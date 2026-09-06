@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
+from functools import cache
 
 import numpy as np
 import pytest
@@ -14,10 +16,10 @@ from xkep_cae_fluid.extruder.data import (
     RTDInput,
     ScrewSpec,
 )
-from xkep_cae_fluid.extruder.rtd import RTDProcess, weighted_ecdf, weighted_quantile
+from xkep_cae_fluid.extruder.rtd import RTDProcess
 from xkep_cae_fluid.extruder.solver import ExtruderFlowProcess
 from xkep_cae_fluid.extruder.tracker import ParticleTrackerProcess
-from xkep_cae_fluid.extruder.viscosity import NewtonianViscosity
+from xkep_cae_fluid.fvm.viscosity import NewtonianViscosity
 
 MU = 1000.0
 Z_AXIAL = 0.050
@@ -34,52 +36,25 @@ def spec_gap(ny: int = 16, n_gap: int = 6, nx_channel: int = 40) -> ScrewSpec:
     return replace(_BASE, delta=1.0e-4, nx_channel=nx_channel, nx_land=12, ny_bulk=ny, n_gap=n_gap)
 
 
-def pipeline(spec: ScrewSpec, G: float, z_axial: float = Z_AXIAL, **track_kw):
+@cache
+def flow_of(spec: ScrewSpec, G: float):
+    """収束済みの流れ場（同じ諸元なら解き直さない。返り値は読み取り専用）."""
     proc = ExtruderFlowProcess()
     proc.viscosity = NewtonianViscosity(mu=MU)
-    flow = proc.process(ExtruderFlowInput(spec=spec, G=G))
-    track = ParticleTrackerProcess().process(
-        ParticleTrackInput(flow=flow, z_axial=z_axial, **track_kw)
-    )
+    return proc.process(ExtruderFlowInput(spec=spec, G=G))
+
+
+@cache
+def pipeline(spec: ScrewSpec, G: float, z_axial: float = Z_AXIAL):
+    """流れ場 → 粒子追跡 → RTD の一気通し（同じ引数なら使い回す）.
+
+    1 回で 2.5D ソルバー + 5 万ステップの追跡が走るので、同じ構成を各テストが
+    解き直すとファイル全体で数分の差になる。返り値は読み取り専用で扱うこと。
+    """
+    flow = flow_of(spec, G)
+    track = ParticleTrackerProcess().process(ParticleTrackInput(flow=flow, z_axial=z_axial))
     rtd = RTDProcess().process(RTDInput(track=track, flow=flow, z_axial=z_axial, n_bins=100))
     return flow, track, rtd
-
-
-class TestWeightedQuantile:
-    """重み付き分位点のヘルパー."""
-
-    def test_uniform_weights_match_numpy(self):
-        v = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-        w = np.ones_like(v)
-        q = weighted_quantile(v, w, np.array([0.5]))
-        assert q[0] == pytest.approx(3.0)
-
-    def test_weight_shifts_the_median(self):
-        v = np.array([1.0, 10.0])
-        assert weighted_quantile(v, np.array([99.0, 1.0]), 0.5) < 2.0
-        assert weighted_quantile(v, np.array([1.0, 99.0]), 0.5) > 9.0
-
-    def test_rejects_zero_weight(self):
-        with pytest.raises(ValueError, match="重み"):
-            weighted_quantile(np.array([1.0]), np.array([0.0]), 0.5)
-
-
-class TestWeightedEcdf:
-    """重み付き経験分布。`weighted_quantile` と同じ中点流儀なので分位点が逆算で一致する."""
-
-    def test_matches_weighted_quantile(self):
-        rng = np.random.default_rng(0)
-        v = rng.uniform(1.0, 3.0, 500)
-        w = rng.uniform(0.1, 1.0, 500)
-        t, F = weighted_ecdf(v, w)
-        assert np.all(np.diff(t) >= 0.0)
-        assert 0.0 < F[0] < F[-1] < 1.0
-        for q in (0.1, 0.5, 0.9):
-            assert np.interp(q, F, t) == pytest.approx(float(weighted_quantile(v, w, q)))
-
-    def test_rejects_zero_weight(self):
-        with pytest.raises(ValueError, match="重み"):
-            weighted_ecdf(np.array([1.0, 2.0]), np.array([0.0, 0.0]))
 
 
 @binds_to(RTDProcess)
@@ -128,6 +103,7 @@ class TestGateG4b:
         _, _, rtd = pipeline(spec_gap(), 5.0e6)
         assert rtd.t_mean == pytest.approx(rtd.t_mean_theory, rel=1.5e-2)
 
+    @pytest.mark.slow
     def test_mean_converges_with_grid(self):
         """格子細分で ⟨t⟩ が理論値に近づくこと.
 
@@ -184,6 +160,7 @@ class TestPercentilesConverge:
     累積せん断の中央値なので、そちらが収束していることが実用上の要件になる。
     """
 
+    @pytest.mark.slow
     @pytest.mark.parametrize("with_gap", [False, True])
     def test_median_and_spread_are_grid_converged(self, with_gap):
         results = []
@@ -201,8 +178,9 @@ class TestPercentilesConverge:
         assert b.gamma_p50 == pytest.approx(a.gamma_p50, rel=5e-2)
 
 
+@pytest.mark.slow
 class TestDeadZone:
-    """隙間ゼロの理想化はデッドゾーンを作るという知見."""
+    """隙間ゼロの理想化はデッドゾーンを作るという知見（32×80 格子で 80 秒級）."""
 
     def test_zero_clearance_has_a_heavier_tail(self):
         """隙間ゼロの方が「平均の 10 倍以上」滞留する材料の割合が大きいこと.
@@ -257,7 +235,13 @@ class TestRTDPhysics:
         assert 0.4 < rtd.lambda_mean < 0.6
 
     def test_back_pressure_lengthens_residence(self):
-        """背圧を上げると押出量が減り、平均滞留時間が延びること."""
-        _, _, low = pipeline(spec_gap(), 1.0e6)
-        _, _, high = pipeline(spec_gap(), 6.0e6)
-        assert high.t_mean_theory > low.t_mean_theory
+        """背圧を上げると押出量が減り、平均滞留時間が延びること.
+
+        理論平均滞留時間 z_axial·A_free/(sinφ·Q_axial) は流れ場だけで決まるので、
+        粒子追跡は要らない（追跡まで回すと 1 ケース 40 秒掛かる）。
+        """
+        theory = [
+            Z_AXIAL * f.grid.area_free / (math.sin(f.grid.spec.phi) * f.Q_axial)
+            for f in (flow_of(spec_gap(), 1.0e6), flow_of(spec_gap(), 6.0e6))
+        ]
+        assert theory[1] > theory[0]

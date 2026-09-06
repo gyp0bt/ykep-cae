@@ -4,7 +4,7 @@ step: Steady
 procedure: DARCY
 steady: true
 turbulence: LAMINAR
-commit: 04b0e70
+commit: 40c8e8f
 parameters:
   p_in: 1000.0
   mu: 0.001
@@ -31,20 +31,21 @@ solver:
   max_iter: 1000
   viscosity: 0.001
 converged: true
-residual: 6.919767568286336e-16
-elapsed_seconds: 0.0339256809966173
-max_abs_velocity: 0.00025116501804001894
+residual: 6.509694311602769e-16
+elapsed_seconds: 0.02595263100010925
+max_abs_velocity: 0.0002511650180400191
 pressure_range:
   - 15.373717281274036
   - 984.6262827177454
-inflow_m3s: 2.51846827212496e-06
-outflow_m3s: 2.5184682720386122e-06
-max_mass_residual: 2.34137591742585e-17
-wall_seconds: 0.04340824300015811
+inflow_m3s: 2.5184682721249613e-06
+outflow_m3s: 2.518468272038612e-06
+max_mass_residual: 2.3413732704478898e-17
+n_picard_iter: 1
+n_timesteps: 0
+wall_seconds: 0.03225662900013049
 output_files:
   - darcy-1.npz
   - darcy-1.vtk
-  - darcy-1.html
   - darcy-1.yaml
 variables:
   - P

@@ -1,0 +1,30 @@
+2026-09-06 04:59:30,977 INFO ykep: ykep -j=examples/inp/channel-baffle-1.inp int -o=examples/inp/results
+2026-09-06 04:59:31,006 INFO xkep_cae_fluid.inp.runner: *SURFACE PLATE が内部面を含む（バッフル）ため非構造メッシュで解きます
+2026-09-06 04:59:31,202 INFO xkep_cae_fluid.inp.runner: ジョブ channel-baffle-1: バッフル（内部面を両側の境界面に分割）: PLATE（8 面）
+2026-09-06 04:59:31,203 INFO xkep_cae_fluid.inp.runner: ジョブ channel-baffle-1: Channel with a zero-thickness baffle blocking the lower half (unstructured FVM path) / 非構造メッシュ セル 256・面 1068（境界 600、パッチ PLATE, XM, XP, YM, YP, ZM, ZP、最大非直交角 0.0°）/ ステップ 1
+2026-09-06 04:59:31,208 INFO xkep_cae_fluid.inp.runner: ステップ Steady: *NAVIER STOKES → NavierStokesFVMProcess（非構造）
+2026-09-06 04:59:31,210 INFO xkep_cae_fluid.incompressible.solver: NavierStokesFVM: セル 256 / SIMPLE / 対流 upwind / 時間 定常 / 非直交補正 1 回 / α_u=0.70 α_p=0.30
+2026-09-06 04:59:31,220 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 1: mass=5.49e-02, u=3.06e-02, v=0.00e+00, w=0.00e+00, T=0.00e+00
+2026-09-06 04:59:31,228 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 2: mass=2.71e-02, u=4.28e-02, v=1.96e-02, w=3.40e-18, T=0.00e+00
+2026-09-06 04:59:31,235 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 3: mass=1.43e-02, u=2.32e-02, v=1.13e-02, w=1.47e-18, T=0.00e+00
+2026-09-06 04:59:31,243 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 4: mass=9.49e-03, u=1.29e-02, v=6.58e-03, w=7.33e-19, T=0.00e+00
+2026-09-06 04:59:31,252 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 5: mass=6.47e-03, u=7.28e-03, v=3.90e-03, w=3.95e-19, T=0.00e+00
+2026-09-06 04:59:31,294 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 10: mass=9.82e-04, u=4.97e-04, v=3.40e-04, w=2.97e-20, T=0.00e+00
+2026-09-06 04:59:31,373 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 20: mass=3.89e-05, u=8.75e-06, v=3.87e-06, w=3.29e-22, T=0.00e+00
+2026-09-06 04:59:31,420 INFO xkep_cae_fluid.incompressible.solver: SIMPLE 収束: 26 反復, max_residual=8.01e-06
+2026-09-06 04:59:31,428 INFO xkep_cae_fluid.inp.runner: ステップ Steady 完了: converged=True, 反復 26, 0.21 s → channel-baffle-1.npz, channel-baffle-1.vtk, channel-baffle-1.yaml
+2026-09-06 05:02:39,685 INFO ykep: ykep -j=examples/inp/channel-baffle-1.inp int -o=examples/inp/results
+2026-09-06 05:02:39,715 INFO xkep_cae_fluid.inp.runner: *SURFACE PLATE が内部面を含む（バッフル）ため非構造メッシュで解きます
+2026-09-06 05:02:39,918 INFO xkep_cae_fluid.inp.runner: ジョブ channel-baffle-1: バッフル（内部面を両側の境界面に分割）: PLATE（8 面）
+2026-09-06 05:02:39,918 INFO xkep_cae_fluid.inp.runner: ジョブ channel-baffle-1: Channel with a zero-thickness baffle blocking the lower half (unstructured FVM path) / 非構造メッシュ セル 256・面 1068（境界 600、パッチ PLATE, XM, XP, YM, YP, ZM, ZP、最大非直交角 0.0°）/ ステップ 1
+2026-09-06 05:02:39,924 INFO xkep_cae_fluid.inp.runner: ステップ Steady: *NAVIER STOKES → NavierStokesFVMProcess（非構造）
+2026-09-06 05:02:39,927 INFO xkep_cae_fluid.incompressible.solver: NavierStokesFVM: セル 256 / SIMPLE / 対流 upwind / 時間 定常 / 非直交補正 1 回 / α_u=0.70 α_p=0.30
+2026-09-06 05:02:39,937 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 1: mass=5.49e-02, u=3.06e-02, v=0.00e+00, w=0.00e+00, T=0.00e+00
+2026-09-06 05:02:39,946 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 2: mass=2.71e-02, u=4.28e-02, v=1.96e-02, w=3.40e-18, T=0.00e+00
+2026-09-06 05:02:39,955 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 3: mass=1.43e-02, u=2.32e-02, v=1.13e-02, w=1.47e-18, T=0.00e+00
+2026-09-06 05:02:39,965 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 4: mass=9.49e-03, u=1.29e-02, v=6.58e-03, w=7.33e-19, T=0.00e+00
+2026-09-06 05:02:39,974 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 5: mass=6.47e-03, u=7.28e-03, v=3.90e-03, w=3.95e-19, T=0.00e+00
+2026-09-06 05:02:40,020 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 10: mass=9.82e-04, u=4.97e-04, v=3.40e-04, w=2.97e-20, T=0.00e+00
+2026-09-06 05:02:40,112 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 20: mass=3.89e-05, u=8.75e-06, v=3.87e-06, w=3.29e-22, T=0.00e+00
+2026-09-06 05:02:40,166 INFO xkep_cae_fluid.incompressible.solver: SIMPLE 収束: 26 反復, max_residual=8.01e-06
+2026-09-06 05:02:40,175 INFO xkep_cae_fluid.inp.runner: ステップ Steady 完了: converged=True, 反復 26, 0.24 s → channel-baffle-1.npz, channel-baffle-1.vtk, channel-baffle-1.yaml

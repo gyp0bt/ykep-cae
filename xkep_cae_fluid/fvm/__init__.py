@@ -6,6 +6,7 @@
 - 面補間・面物性・勾配などの幾何演算（:mod:`geometry`）
 - 拡散・対流（1 次風上 + TVD 遅延補正）・時間項（Euler / BDF2）・ソース項の係数行列組み立てと非直交補正（:mod:`assembly`）
 - 線形ソルバー Strategy（:mod:`linear`）
+- 緩和係数の適応的調整（:mod:`relaxation`）
 
 を提供する。各方程式ファミリー（スカラー輸送、Darcy、伝熱 …）の SolverProcess は
 ここを組み合わせて書く薄い層になる。設計は
@@ -40,6 +41,7 @@ from xkep_cae_fluid.fvm.geometry import (
     internal_face_values,
     is_orthogonal,
     max_nonorthogonality_deg,
+    neighbour_centers,
 )
 from xkep_cae_fluid.fvm.linear import (
     AMGSolver,
@@ -47,6 +49,11 @@ from xkep_cae_fluid.fvm.linear import (
     DirectSolver,
     make_linear_solver,
     relative_residual,
+)
+from xkep_cae_fluid.fvm.relaxation import (
+    DEFAULT_RELAXATION_BOUNDS,
+    RelaxationBounds,
+    adapt_relaxation_factors,
 )
 
 __all__ = [
@@ -68,6 +75,7 @@ __all__ = [
     "face_skewness",
     "is_orthogonal",
     "max_nonorthogonality_deg",
+    "neighbour_centers",
     "assemble_diffusion",
     "assemble_convection",
     "assemble_scalar_transport",
@@ -83,4 +91,7 @@ __all__ = [
     "AMGSolver",
     "make_linear_solver",
     "relative_residual",
+    "RelaxationBounds",
+    "DEFAULT_RELAXATION_BOUNDS",
+    "adapt_relaxation_factors",
 ]

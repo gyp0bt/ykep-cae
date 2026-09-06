@@ -94,6 +94,7 @@ class TestNSBAPI:
 
 
 class TestNSBConvergence:
+    @pytest.mark.slow
     def test_fixed_config_matches_process_solver(self):
         """速度下限あり・擬似時間項は対角のみ、の構成は Process ソルバーと同じ解に収束する."""
         u_in = 0.1

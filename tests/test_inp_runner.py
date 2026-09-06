@@ -373,6 +373,57 @@ class TestInpCaseRunnerAPI:
         with pytest.raises(ValueError, match="mesh_mode"):
             InpCaseRunnerProcess().execute(InpJobInput(path=str(inp), mesh_mode="polyhedral"))
 
+    def test_navier_stokes_baffle_channel(self, tmp_path: Path):
+        """内部面の *SURFACE を *BOUNDARY, TYPE=WALL の target にすると、ランナーがバッフルとして分割する.
+
+        8×4 の 2D 流路の中央に下半分を塞ぐ薄板を置く。板の面の質量流束は 0、板の上の隙間で
+        流速が入口の 1.5 倍以上に増し、流入 = 流出（質量保存）。
+        """
+        lines = ["*HEADING", " channel with a half-height baffle", "*NODE"]
+        nx, ny = 8, 4
+        for j in range(ny + 1):
+            for i in range(nx + 1):
+                lines.append(f" {1 + i + (nx + 1) * j}, {0.1 * i}, {0.1 * j}, 0")
+        lines.append("*ELEMENT, TYPE=CPS4, ELSET=ALL")
+        for j in range(ny):
+            for i in range(nx):
+                n0 = 1 + i + (nx + 1) * j
+                lines.append(f" {1 + i + nx * j}, {n0}, {n0 + 1}, {n0 + nx + 2}, {n0 + nx + 1}")
+        text = (
+            "\n".join(lines)
+            + "\n"
+            + (
+                "*SURFACE, NAME=PLATE, TYPE=ELEMENT\n 4, S2\n 12, S2\n"
+                "*MATERIAL, NAME=F\n*DENSITY\n 1.\n*VISCOSITY\n 0.01\n"
+                "*FLUID SECTION, ELSET=ALL, MATERIAL=F\n"
+                "*STEP, NAME=S1\n*NAVIER STOKES, STEADY STATE, HEAT TRANSFER=NONE\n"
+                "*BOUNDARY, TYPE=VELOCITY\n XM, 0.01, 0., 0.\n"
+                "*BOUNDARY, TYPE=PRESSURE\n XP, 0.\n"
+                "*BOUNDARY, TYPE=WALL\n PLATE\n"
+                "*CONTROLS, PARAMETERS=SOLVER\n PRESSURE=DIRECT, MOMENTUM=DIRECT, MAX_OUTER=400, TOL=1e-6\n"
+                "*OUTPUT, FIELD, FORMAT=VTK\n*END STEP\n"
+            )
+        )
+        inp = tmp_path / "baffle.inp"
+        inp.write_text(text, encoding="utf-8")
+        res = InpCaseRunnerProcess().execute(InpJobInput(path=str(inp), output_dir=str(tmp_path)))
+        assert res.mesh is not None and res.mesh.baffle_surfaces == ("PLATE",)
+        assert len(res.mesh.baffle_faces) == 4
+        step = res.steps[0]
+        assert step.converged and step.summary["solver"]["process"] == "NavierStokesFVMProcess"
+        m = res.mesh.mesh
+        r = step.result
+        assert np.all(r.mass_flux[res.mesh.baffle_faces] == 0.0)
+        xc, yc = m.cell_centers[:, 0], m.cell_centers[:, 1]
+        gap = (np.abs(xc - 0.35) < 1e-9) & (yc > 0.2)
+        assert gap.sum() == 2 and r.velocity[gap, 0].mean() > 1.5 * 0.01
+        q_in = -r.mass_flux[m.patch_faces("XM")].sum()
+        q_out = r.mass_flux[m.patch_faces("XP")].sum()
+        assert q_in == pytest.approx(0.01 * 0.4 * 1.0, rel=1e-9)
+        assert q_out == pytest.approx(q_in, rel=1e-6)
+        # 等温（HEAT TRANSFER=NONE）でも T は場として出る（一様）
+        assert step.summary["temperature_range"][0] == step.summary["temperature_range"][1]
+
     def test_navier_stokes_sheared_example(self, tmp_path: Path):
         """cavity-nc-2（せん断メッシュ）は auto で非構造経路に落ちる."""
         res = InpCaseRunnerProcess().execute(
@@ -563,6 +614,27 @@ class TestYkepCli:
 
 class TestInpPhysics:
     """物理テスト: .inp 経由でも 1D 定常熱伝導が線形分布になること."""
+
+    def test_baffle_example_accelerates_flow_in_gap(self, tmp_path: Path):
+        """channel-baffle-1: 箱格子 + 内部面 *SURFACE → 非構造経路。隙間で流速 1.5 倍超、流入 = 流出、板の流束 0."""
+        res = InpCaseRunnerProcess().execute(
+            InpJobInput(path="examples/inp/channel-baffle-1.inp", output_dir=str(tmp_path))
+        )
+        assert res.grid is None and res.mesh is not None
+        assert res.mesh.baffle_surfaces == ("PLATE",) and len(res.mesh.baffle_faces) == 8
+        step = res.steps[0]
+        assert step.converged and step.summary["solver"]["process"] == "NavierStokesFVMProcess"
+        m = res.mesh.mesh
+        r = step.result
+        assert np.all(r.mass_flux[res.mesh.baffle_faces] == 0.0)
+        x, y = m.cell_centers[:, 0], m.cell_centers[:, 1]
+        gap = (np.abs(x - 0.825) < 1e-9) & (y > 0.2)
+        assert gap.sum() == 4 and r.velocity[gap, 0].mean() > 1.5 * 0.01
+        q_in = -r.mass_flux[m.patch_faces("XM")].sum()
+        q_out = r.mass_flux[m.patch_faces("XP")].sum()
+        assert q_in == pytest.approx(0.01 * 0.4 * 0.05, rel=1e-9) and q_out == pytest.approx(
+            q_in, rel=1e-5
+        )
 
     def test_darcy_example_mass_balance(self, tmp_path: Path):
         """darcy-1.inp（せん断メッシュ + 低透過率ブロック）: 流入 = 流出、圧力は境界値の範囲内."""

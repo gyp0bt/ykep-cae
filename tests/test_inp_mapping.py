@@ -8,9 +8,11 @@ import pytest
 from xkep_cae_fluid.core.testing import binds_to
 from xkep_cae_fluid.darcy.data import DarcyBCKind
 from xkep_cae_fluid.fvm import BCKind
-from xkep_cae_fluid.fvm.momentum import VelocityBCKind
+from xkep_cae_fluid.fvm.momentum import VelocityBCKind, resolve_velocity_boundary
+from xkep_cae_fluid.fvm.viscosity import CarreauViscosity, PowerLawViscosity
 from xkep_cae_fluid.heat_transfer.data import BoundaryCondition as HTBC
 from xkep_cae_fluid.incompressible import InternalCellBCKind
+from xkep_cae_fluid.incompressible.data import NavierStokesFVMInput
 from xkep_cae_fluid.inp.builder import build_case
 from xkep_cae_fluid.inp.grid import recover_structured_grid
 from xkep_cae_fluid.inp.mapping import (
@@ -485,7 +487,11 @@ class TestInpToHeatTransferFVMAPI:
                 "*BOUNDARY, TYPE=TEMPERATURE\n LID, 400.",
                 "予約面名",
             ),
-            ("*BOUNDARY, TYPE=TEMPERATURE\n XM, 400.", "*BOUNDARY, TYPE=WALL\n XM", "TEMPERATURE"),
+            (
+                "*BOUNDARY, TYPE=TEMPERATURE\n XM, 400.",
+                "*BOUNDARY, TYPE=VELOCITY\n XM, 1., 0., 0.",
+                "TEMPERATURE",
+            ),
             (" XP, S, 250.", " XM, S, 250.", "同時"),
             ("METHOD=BICGSTAB", "METHOD=JACOBI", "METHOD"),
             (
@@ -614,13 +620,12 @@ class TestInpToNavierStokesFVMAPI:
             ("CONVECTION=UPWIND", "CONVECTION=QUICK", "CONVECTION"),
             ("CONVECTION=UPWIND", "CONVECTION=UPWIND, LIMITER=VAN_LEER", "LIMITER"),
             ("CONVECTION=UPWIND", "CONVECTION=TVD, LIMITER=MINMOD", "LIMITER"),
-            ("PRESSURE_VELOCITY=SIMPLEC", "PRESSURE_VELOCITY=COUPLED", "PRESSURE_VELOCITY"),
+            ("PRESSURE_VELOCITY=SIMPLEC", "PRESSURE_VELOCITY=BLOCK", "PRESSURE_VELOCITY"),
             (
                 "PRESSURE_VELOCITY=SIMPLEC",
                 "PRESSURE_VELOCITY=PISO, PISO_CORRECTORS=0",
                 "PISO_CORRECTORS",
             ),
-            ("TEMPERATURE=0.8", "TEMPERATURE=0.8, ADAPTIVE=YES", "ADAPTIVE"),
             ("PRESSURE=DIRECT", "PRESSURE=JACOBI", "PRESSURE"),
             ("*BOUNDARY, TYPE=SYMMETRY\n YP", "*BOUNDARY, TYPE=SYMMETRY\n LID", "予約面名"),
             (" YM, S, 100.", " XM, S, 100.", "同時"),
@@ -704,3 +709,182 @@ class TestInpToNavierStokesFVMAPI:
         text = NS_FVM_TEXT.replace(old, "*BOUNDARY, TYPE=OUTLET\n YP")
         inp = InpToNavierStokesFVMProcess().execute(_darcy_input(text))
         assert inp.bcs["YP"].velocity.kind == VelocityBCKind.OUTFLOW
+
+
+class TestInpMeshBaffleMapping:
+    """内部面の *SURFACE（バッフル）と NONORTHOGONAL_CORRECTORS / ADAPTIVE の非構造 NS マッピング."""
+
+    BAFFLE = "*SURFACE, NAME=PLATE, TYPE=ELEMENT\n 2, S4\n*BOUNDARY, TYPE=WALL\n PLATE\n"
+
+    def _text(self, extra: str = "") -> str:
+        text = NS_FVM_TEXT.replace(
+            "*INITIAL CONDITIONS", self.BAFFLE + extra + "*INITIAL CONDITIONS"
+        )
+        assert "PLATE" in text
+        return text
+
+    def test_internal_surface_requires_baffle_split(self):
+        text = self._text()
+        with pytest.raises(UnsupportedFeatureError, match="内部面"):
+            InpToNavierStokesFVMProcess().execute(_darcy_input(text))
+        case = build_case(parse_inp_text(text))
+        mesh = InpMeshProcess().execute(InpMeshInput(case=case, baffle_surfaces=("PLATE",)))
+        assert mesh.baffle_surfaces == ("PLATE",) and len(mesh.baffle_faces) == 2
+        inp = InpToNavierStokesFVMProcess().execute(InpMeshMappingInput(case=case, mesh=mesh))
+        assert inp.bcs["PLATE"].velocity.kind.name == "WALL"
+        assert inp.n_nonorthogonal_correctors == 2 and not inp.adaptive_relaxation
+
+    def test_flow_bc_on_baffle_rejected(self):
+        text = self._text().replace(
+            "*BOUNDARY, TYPE=WALL\n PLATE\n", "*BOUNDARY, TYPE=VELOCITY\n PLATE, 0.1, 0, 0\n"
+        )
+        case = build_case(parse_inp_text(text))
+        mesh = InpMeshProcess().execute(InpMeshInput(case=case, baffle_surfaces=("PLATE",)))
+        with pytest.raises(UnsupportedFeatureError, match="バッフル"):
+            InpToNavierStokesFVMProcess().execute(InpMeshMappingInput(case=case, mesh=mesh))
+
+    def test_nonorthogonal_correctors_and_adaptive(self):
+        old = "CONVECTION=UPWIND, PRESSURE_VELOCITY=SIMPLEC"
+        text = NS_FVM_TEXT.replace(old, old + ", NONORTHOGONAL_CORRECTORS=3").replace(
+            "TEMPERATURE=0.8", "TEMPERATURE=0.8, ADAPTIVE=YES"
+        )
+        inp = InpToNavierStokesFVMProcess().execute(_darcy_input(text))
+        assert inp.n_nonorthogonal_correctors == 3 and inp.adaptive_relaxation
+        with pytest.raises(UnsupportedFeatureError, match="NONORTHOGONAL_CORRECTORS"):
+            InpToNavierStokesFVMProcess().execute(
+                _darcy_input(NS_FVM_TEXT.replace(old, old + ", NONORTHOGONAL_CORRECTORS=0"))
+            )
+        # 構造格子（NaturalConvectionFDM）では意味が無いので明示エラー
+        with pytest.raises(UnsupportedFeatureError, match="NONORTHOGONAL_CORRECTORS"):
+            InpToNaturalConvectionProcess().execute(
+                _mapping_input(
+                    NS_HEAD
+                    + "*STEP\n*NAVIER STOKES, STEADY STATE\n*CONTROLS, PARAMETERS=DISCRETIZATION\n"
+                    " NONORTHOGONAL_CORRECTORS=2\n*END STEP\n"
+                )
+            )
+
+    def test_heat_transfer_none_skips_energy_on_structured_grid(self):
+        text = NS_HEAD + "*STEP\n*NAVIER STOKES, STEADY STATE, HEAT TRANSFER=NONE\n*END STEP\n"
+        inp = InpToNaturalConvectionProcess().execute(_mapping_input(text))
+        assert not inp.solve_energy and inp.beta == 0.0
+        coupled = (
+            NS_HEAD + "*STEP\n*NAVIER STOKES, STEADY STATE, HEAT TRANSFER=COUPLED\n*END STEP\n"
+        )
+        assert InpToNaturalConvectionProcess().execute(_mapping_input(coupled)).solve_energy
+
+
+GENERIC_TEXT = """\
+*HEADING
+ generic notation: periodic + body force + non-newtonian + rotating wall
+*GRID, NX=4, NY=4, NZ=1, LX=0.4, LY=0.4, LZ=0.1
+*NSET, NSET=REF
+ 1
+*MATERIAL, NAME=MELT
+*DENSITY
+ 1000.
+*VISCOSITY, TYPE=POWER LAW
+ 5000., 0.4, 1e-3, 1e7
+*FLUID SECTION, ELSET=ALL, MATERIAL=MELT
+*ORIENTATION, NAME=SPIN, SYSTEM=CYLINDRICAL
+ 0., 0., 0., 0., 0., 1.
+*MPC
+ BEAM, YP, REF
+*BOUNDARY, TYPE=PERIODIC
+ XM, XP
+*STEP, NAME=S1
+*NAVIER STOKES, STEADY STATE, HEAT TRANSFER=NONE
+*CONTROLS, PARAMETERS=DISCRETIZATION
+ CONVECTION=NONE, PRESSURE_VELOCITY=COUPLED
+*CONTROLS, PARAMETERS=RELAXATION
+ VISCOSITY=0.3
+*DLOAD
+ ALL, BF, -1000., 0., -500.
+*BOUNDARY, ORIENTATION=SPIN
+ REF, 6, 6, 2.0
+*BOUNDARY, TYPE=WALL
+ YM
+*END STEP
+"""
+
+
+class TestGenericExtrusionMapping:
+    """汎用記法（周期・体積力・非ニュートン・回転壁・COUPLED）の非構造 NS へのマッピング."""
+
+    def _input(self, text: str) -> NavierStokesFVMInput:
+        return InpToNavierStokesFVMProcess().execute(_darcy_input(text))
+
+    def test_full_mapping(self):
+        inp = self._input(GENERIC_TEXT)
+        assert inp.coupling == "coupled" and inp.convection == "none"
+        assert inp.alpha_mu == 0.3
+        assert isinstance(inp.viscosity_model, PowerLawViscosity)
+        assert (inp.viscosity_model.K, inp.viscosity_model.n) == (5000.0, 0.4)
+        assert (inp.viscosity_model.gamma_min, inp.viscosity_model.mu_max) == (1e-3, 1e7)
+        assert inp.mu == 5000.0  # 参照粘度
+        assert inp.body_force.shape == (inp.mesh.n_cells, 3)
+        assert np.allclose(inp.body_force, [-1000.0, 0.0, -500.0])
+        # 周期にした XM/XP はパッチではなくなる
+        assert "XM" not in inp.bcs and "XP" not in inp.bcs
+        # *MPC の従属面が参照節点の剛体回転を受ける
+        top = inp.bcs["YP"].velocity
+        assert top.kind is VelocityBCKind.WALL and top.is_rotating
+        assert top.angular_velocity == (0.0, 0.0, 2.0) and top.center == (0.0, 0.0, 0.0)
+
+    def test_rotating_wall_face_velocity(self):
+        inp = self._input(GENERIC_TEXT)
+        vb = resolve_velocity_boundary(inp.mesh, {k: v.velocity for k, v in inp.bcs.items()})
+        top = inp.mesh.boundary_patches["YP"] - inp.mesh.n_internal_faces
+        xf = inp.mesh.face_centers[inp.mesh.boundary_patches["YP"]]
+        # u = ω × r = (0, 0, 2) × (x, y, z) = (−2y, 2x, 0)
+        assert np.allclose(vb.velocity[top, 0], -2.0 * xf[:, 1])
+        assert np.allclose(vb.velocity[top, 1], 2.0 * xf[:, 0])
+
+    def test_carreau_and_body_force_components(self):
+        text = GENERIC_TEXT.replace(
+            "*VISCOSITY, TYPE=POWER LAW\n 5000., 0.4, 1e-3, 1e7",
+            "*VISCOSITY, TYPE=CARREAU\n 1e4, 10., 1.0, 0.5",
+        ).replace(" ALL, BF, -1000., 0., -500.", " ALL, BX, -1000.\n ALL, BZ, -500.")
+        inp = self._input(text)
+        assert isinstance(inp.viscosity_model, CarreauViscosity)
+        assert (inp.viscosity_model.mu_0, inp.viscosity_model.mu_inf) == (1e4, 10.0)
+        assert np.allclose(inp.body_force, [-1000.0, 0.0, -500.0])
+
+    def test_translation_of_reference_node(self):
+        text = GENERIC_TEXT.replace(" REF, 6, 6, 2.0", " REF, 6, 6, 2.0\n REF, 1, 1, 0.5")
+        inp = self._input(text)
+        assert inp.bcs["YP"].velocity.velocity == (0.5, 0.0, 0.0)
+
+    @pytest.mark.parametrize(
+        "old,new,match",
+        [
+            ("*BOUNDARY, TYPE=WALL\n YM", "*BOUNDARY, TYPE=WALL\n XM", "周期境界"),
+            (" REF, 6, 6, 2.0", " YM, 6, 6, 2.0", "参照節点にだけ"),
+            (" REF, 6, 6, 2.0", " REF, 8, 8, 2.0", "自由度 1-3"),
+            ("VISCOSITY=0.3", "VISCOSITY=0.3, ADAPTIVE=YES", "ADAPTIVE"),
+            ("*MPC\n BEAM, YP, REF", "*MPC\n BEAM, YP, REF\n BEAM, YP, REF", "重複"),
+            ("*NSET, NSET=REF\n 1", "*NSET, NSET=REF\n 1, 2", "節点 1 つ"),
+        ],
+    )
+    def test_unsupported(self, old: str, new: str, match: str):
+        assert old in GENERIC_TEXT
+        with pytest.raises(UnsupportedFeatureError, match=match):
+            self._input(GENERIC_TEXT.replace(old, new))
+
+    def test_structured_path_rejects_generic_features(self):
+        text = """\
+*GRID, NX=4, NY=4, NZ=1, LX=0.4, LY=0.4, LZ=0.4
+*MATERIAL, NAME=F
+*DENSITY
+ 1.
+*VISCOSITY
+ 0.01
+*FLUID SECTION, ELSET=ALL, MATERIAL=F
+*STEP, NAME=S1
+*NAVIER STOKES, STEADY STATE
+*DLOAD
+ ALL, BX, 1.0
+*END STEP
+"""
+        with pytest.raises(UnsupportedFeatureError, match="体積力"):
+            InpToNaturalConvectionProcess().execute(_mapping_input(text))

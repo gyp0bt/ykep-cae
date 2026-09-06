@@ -53,7 +53,8 @@ from xkep_cae_fluid.extruder.data import (
 )
 from xkep_cae_fluid.extruder.down_channel import DownChannelFlowProcess
 from xkep_cae_fluid.extruder.geometry import ScrewGeometryProcess
-from xkep_cae_fluid.extruder.viscosity import ViscosityModelStrategy, strain_rate
+from xkep_cae_fluid.extruder.viscosity import strain_rate
+from xkep_cae_fluid.fvm.viscosity import ViscosityModelStrategy
 
 
 class ExtruderFlowProcess(SolverProcess["ExtruderFlowInput", "ExtruderFlowResult"]):

@@ -342,6 +342,11 @@ CLAUDE.md の「機能は可能な限り process クラスとして実装」に�
 | `ParticleTrackerProcess` | trilinear 補間 + RK4 | `x` 面通過で `z ± L_turn` に飛ばす。**この飛びが RTD を広げる主機構** |
 | `RTDProcess` | 滞留時間分布、累積せん断ひずみ、混合指数 | Phase 1.5 の本体 |
 
+> 非構造メッシュ（汎用記法の .inp）で同じことをする経路は
+> [particle-tracking-fvm.md](particle-tracking-fvm.md)（`ParticleTrackFVMProcess` /
+> `ResidenceTimeProcess`）。面流束から再構成した Pollock 型で、ψ を使わない。
+> 例題 extruder-channel-1 でこの構造格子版と ⟨t⟩ 6.5e-3・分位点 1e-3 台で一致する（status-37）。
+
 ### 4.1 既存資産の棚卸し（調査済み）
 
 ```

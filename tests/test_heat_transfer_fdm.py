@@ -4,7 +4,10 @@ API テスト（契約準拠）と物理テスト（解析解との比較）を�
 冷却フィンベンチマーク（Robin BC 活用）を含む。
 """
 
+import importlib.util
+
 import numpy as np
+import pytest
 
 from xkep_cae_fluid.core.testing import binds_to
 from xkep_cae_fluid.heat_transfer.data import (
@@ -859,8 +862,6 @@ class TestSparsesolverPhysics:
 
     def test_invalid_method_raises(self):
         """未対応の method で ValueError."""
-        import pytest
-
         with pytest.raises(ValueError):
             HeatTransferFDMProcess(method="invalid")
 
@@ -1048,6 +1049,7 @@ class TestFinArray:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(importlib.util.find_spec("pyamg") is None, reason="pyamg 未導入")
 class TestAMGSolverPhysics:
     """PyAMG マルチグリッド前処理付き CG ソルバーの物理テスト."""
 
@@ -1216,6 +1218,7 @@ class TestAMGSolverPhysics:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(importlib.util.find_spec("numba") is None, reason="numba 未導入")
 class TestNumbaSolverPhysics:
     """Numba JIT 版ガウスザイデル法の物理テスト."""
 

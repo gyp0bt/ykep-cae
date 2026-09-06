@@ -9,12 +9,12 @@ import pytest
 
 from xkep_cae_fluid.extruder.data import ScrewSpec
 from xkep_cae_fluid.extruder.geometry import ScrewGeometryProcess
-from xkep_cae_fluid.extruder.viscosity import (
+from xkep_cae_fluid.extruder.viscosity import strain_rate
+from xkep_cae_fluid.fvm.viscosity import (
     CarreauViscosity,
     NewtonianViscosity,
     PowerLawViscosity,
     ViscosityModelStrategy,
-    strain_rate,
 )
 
 _BASE = ScrewSpec(D=0.040, lead=0.040, H=0.004, e=0.004, delta=0.0, N=100.0 / 60.0)

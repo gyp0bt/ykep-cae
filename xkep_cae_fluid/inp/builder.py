@@ -30,9 +30,14 @@ from xkep_cae_fluid.inp.case import (
     InitialCondition,
     InitialConditionKind,
     MaterialDefinition,
+    MPCDefinition,
+    MPCKind,
     NodeTable,
+    OrientationDefinition,
+    OrientationSystem,
     OutputFormat,
     OutputRequest,
+    PeriodicDefinition,
     Procedure,
     SectionDefinition,
     SectionKind,
@@ -41,6 +46,8 @@ from xkep_cae_fluid.inp.case import (
     StepDefinition,
     SurfaceDefinition,
     SurfaceEntry,
+    ViscosityLaw,
+    ViscosityModel,
 )
 from xkep_cae_fluid.inp.parser import InpParseResult, InpSyntaxError, KeywordBlock
 
@@ -135,6 +142,9 @@ class _Builder:
     films: list[FilmCondition] | None = None
     fluxes: list[DistributedFlux] | None = None
     loads: list[DistributedLoad] | None = None
+    periodic: list[PeriodicDefinition] | None = None
+    orientations: dict[str, OrientationDefinition] | None = None
+    mpcs: list[MPCDefinition] | None = None
     steps: list[StepDefinition] | None = None
     grid_defined: bool = False
 
@@ -152,6 +162,9 @@ class _Builder:
         self.films = []
         self.fluxes = []
         self.loads = []
+        self.periodic = []
+        self.orientations = {}
+        self.mpcs = []
         self.steps = []
 
 
@@ -268,12 +281,14 @@ def _handle_element(b: _Builder, block: KeywordBlock) -> None:
         conn.append(nodes)
     if not ids:
         return
-    allowed = (4, 6, 8) if "3D" in etype else (3, 4)
+    allowed = (4, 5, 6, 8, 10, 15, 20) if "3D" in etype else (3, 4, 6, 8)
     if width not in allowed:
         raise InpSyntaxError(
             f"要素タイプ {etype}（節点数 {width}）は未対応です。"
-            "3D は四面体 C3D4 / 楔 C3D6 / 六面体 C3D8 系（4 / 6 / 8 節点）、"
-            "2D は三角形 CPS3 / 四辺形 CPS4 系（3 / 4 節点）のみ（2 次要素は不可）",
+            "3D は四面体 C3D4/C3D10 / 角錐 C3D5 / 楔 C3D6/C3D15 / 六面体 C3D8/C3D20 系"
+            "（4 / 10 / 5 / 6 / 15 / 8 / 20 節点）、"
+            "2D は三角形 CPS3/CPS6 / 四辺形 CPS4/CPS8 系（3 / 6 / 4 / 8 節点）のみ"
+            "（2 次要素は頂点だけを使う。非構造メッシュ経路のみ）",
             block.source,
             block.line_no,
         )
@@ -373,14 +388,54 @@ def _handle_material_property(
     if not block.data or not block.data[0]:
         raise InpSyntaxError(f"*{block.keyword} に値がありません", block.source, block.line_no)
     attr = _MATERIAL_SUBKEYWORDS[block.keyword]
-    value = _float(block.data[0][0], block, block.keyword)
     mat = b.materials[current_material]
+    if block.keyword == "VISCOSITY":
+        law = _parse_viscosity_law(block)
+        if law is not None:
+            b.materials[current_material] = replace(
+                mat, viscosity=law.nominal_viscosity, viscosity_law=law
+            )
+            return
+    value = _float(block.data[0][0], block, block.keyword)
     updates = {attr: value}
     if block.keyword == "EXPANSION":
         zero = block.get("ZERO")
         if zero:
             updates["reference_temperature"] = _float(zero, block, "ZERO")
     b.materials[current_material] = replace(mat, **updates)
+
+
+_VISCOSITY_PARAMS: dict[ViscosityModel, tuple[int, int, str]] = {
+    ViscosityModel.POWER_LAW: (2, 4, "K, n[, gamma_min, mu_max]"),
+    ViscosityModel.CARREAU: (4, 4, "mu_0, mu_inf, lambda, n"),
+}
+
+
+def _parse_viscosity_law(block: KeywordBlock) -> ViscosityLaw | None:
+    """``*VISCOSITY, TYPE=POWER LAW | CARREAU`` のデータ行。TYPE 無し / NEWTONIAN なら None."""
+    type_text = _norm_name(block.get("TYPE", "NEWTONIAN") or "NEWTONIAN")
+    try:
+        model = ViscosityModel(type_text)
+    except ValueError as exc:
+        raise InpSyntaxError(
+            f"*VISCOSITY, TYPE={type_text} は未対応（NEWTONIAN / POWER LAW / CARREAU）",
+            block.source,
+            block.line_no,
+        ) from exc
+    if model == ViscosityModel.NEWTONIAN:
+        return None
+    n_min, n_max, fmt = _VISCOSITY_PARAMS[model]
+    tokens = [t for t in block.data[0] if t != ""]
+    if not n_min <= len(tokens) <= n_max:
+        raise InpSyntaxError(
+            f"*VISCOSITY, TYPE={model.value} のデータ行は '{fmt}'", block.source, block.line_no
+        )
+    params = tuple(_float(t, block, "粘度パラメータ") for t in tokens)
+    if any(p <= 0.0 for p in params):
+        raise InpSyntaxError(
+            f"*VISCOSITY, TYPE={model.value} のパラメータは正の値", block.source, block.line_no
+        )
+    return ViscosityLaw(model=model, parameters=params)
 
 
 def _handle_section(b: _Builder, block: KeywordBlock, kind: SectionKind) -> None:
@@ -412,8 +467,90 @@ def _handle_initial_conditions(b: _Builder, block: KeywordBlock) -> None:
         )
 
 
+def _handle_orientation(b: _Builder, block: KeywordBlock) -> None:
+    name = _norm_name(block.require("NAME"))
+    system_text = _norm_name(block.get("SYSTEM", "RECTANGULAR") or "RECTANGULAR")
+    try:
+        system = OrientationSystem(system_text)
+    except ValueError as exc:
+        raise InpSyntaxError(
+            f"*ORIENTATION, SYSTEM={system_text} は未対応（RECTANGULAR / CYLINDRICAL）",
+            block.source,
+            block.line_no,
+        ) from exc
+    tokens = [t for row in block.data for t in row if t != ""]
+    if len(tokens) < 6:
+        raise InpSyntaxError(
+            "*ORIENTATION のデータ行は 'ax, ay, az, bx, by, bz'"
+            "（CYLINDRICAL は軸上の 2 点、RECTANGULAR は局所 1 軸上の点と 1–2 平面上の点）",
+            block.source,
+            block.line_no,
+        )
+    vals = [_float(t, block, "座標") for t in tokens[:6]]
+    b.orientations[name] = OrientationDefinition(
+        name=name,
+        system=system,
+        point_a=(vals[0], vals[1], vals[2]),
+        point_b=(vals[3], vals[4], vals[5]),
+    )
+
+
+def _handle_mpc(b: _Builder, block: KeywordBlock) -> None:
+    for row in block.data:
+        rest = [t for t in row if t != ""]
+        if len(rest) < 3:
+            raise InpSyntaxError(
+                "*MPC のデータ行は 'BEAM, slave_surface, master_node'",
+                block.source,
+                block.line_no,
+            )
+        kind_text = _norm_name(rest[0])
+        try:
+            kind = MPCKind(kind_text)
+        except ValueError as exc:
+            raise InpSyntaxError(
+                f"*MPC の種別 {rest[0]!r} は未対応（{', '.join(k.value for k in MPCKind)}）",
+                block.source,
+                block.line_no,
+            ) from exc
+        slave = FACE_ALIASES.get(_norm_name(rest[1]), _norm_name(rest[1]))
+        b.mpcs.append(MPCDefinition(kind=kind, slave=slave, master=_norm_name(rest[2])))
+
+
+def _is_periodic_block(block: KeywordBlock) -> bool:
+    return _norm_name(block.get("TYPE", "") or "") == "PERIODIC"
+
+
+def _parse_periodic_rows(block: KeywordBlock) -> list[PeriodicDefinition]:
+    """``*BOUNDARY, TYPE=PERIODIC`` のデータ行 ``master, slave[, tx, ty, tz]``."""
+    out: list[PeriodicDefinition] = []
+    for row in block.data:
+        rest = [t for t in row if t != ""]
+        if len(rest) < 2:
+            raise InpSyntaxError(
+                "*BOUNDARY, TYPE=PERIODIC のデータ行は 'master_surface, slave_surface[, tx, ty, tz]'",
+                block.source,
+                block.line_no,
+            )
+        master = FACE_ALIASES.get(_norm_name(rest[0]), _norm_name(rest[0]))
+        slave = FACE_ALIASES.get(_norm_name(rest[1]), _norm_name(rest[1]))
+        if master == slave:
+            raise InpSyntaxError(
+                f"周期境界の 2 面が同じです: {master}", block.source, block.line_no
+            )
+        translation: tuple[float, float, float] | None = None
+        if len(rest) > 2:
+            vec = [_float(t, block, "並進ベクトル") for t in rest[2:5]]
+            while len(vec) < 3:
+                vec.append(0.0)
+            translation = (vec[0], vec[1], vec[2])
+        out.append(PeriodicDefinition(master=master, slave=slave, translation=translation))
+    return out
+
+
 def _parse_boundary_rows(block: KeywordBlock) -> list[BoundaryCondition]:
     type_param = block.get("TYPE")
+    orientation = _norm_name(block.get("ORIENTATION", "") or "")
     out: list[BoundaryCondition] = []
     for row in block.data:
         if not row:
@@ -433,7 +570,9 @@ def _parse_boundary_rows(block: KeywordBlock) -> list[BoundaryCondition]:
                 out.append(BoundaryCondition(target=target, kind=BoundaryKind.SLIP))
                 continue
             values = tuple(_float(t, block, "境界値") for t in rest)
-            out.append(BoundaryCondition(target=target, kind=kind, values=values))
+            out.append(
+                BoundaryCondition(target=target, kind=kind, values=values, orientation=orientation)
+            )
             continue
         # 自由度番号形式: target, first_dof[, last_dof[, magnitude]]
         if not rest:
@@ -447,15 +586,33 @@ def _parse_boundary_rows(block: KeywordBlock) -> list[BoundaryCondition]:
         magnitude = _float(rest[2], block, "境界値") if len(rest) > 2 else 0.0
         dofs = list(range(first, last + 1))
         if all(d in (1, 2, 3) for d in dofs):
-            if magnitude == 0.0 and dofs == [1, 2, 3]:
+            if magnitude == 0.0 and dofs == [1, 2, 3] and not orientation:
                 out.append(BoundaryCondition(target=target, kind=BoundaryKind.WALL))
             else:
                 vel = [0.0, 0.0, 0.0]
                 for d in dofs:
                     vel[d - 1] = magnitude
                 out.append(
-                    BoundaryCondition(target=target, kind=BoundaryKind.VELOCITY, values=tuple(vel))
+                    BoundaryCondition(
+                        target=target,
+                        kind=BoundaryKind.VELOCITY,
+                        values=tuple(vel),
+                        orientation=orientation,
+                    )
                 )
+        elif all(d in (4, 5, 6) for d in dofs):
+            # 自由度 4-6 = 回転（角速度 [rad/s]）。参照節点に与えて *MPC で面に伝える
+            omega = [0.0, 0.0, 0.0]
+            for d in dofs:
+                omega[d - 4] = magnitude
+            out.append(
+                BoundaryCondition(
+                    target=target,
+                    kind=BoundaryKind.ROTATION,
+                    values=tuple(omega),
+                    orientation=orientation,
+                )
+            )
         elif dofs == [8]:
             out.append(
                 BoundaryCondition(target=target, kind=BoundaryKind.PRESSURE, values=(magnitude,))
@@ -466,7 +623,7 @@ def _parse_boundary_rows(block: KeywordBlock) -> list[BoundaryCondition]:
             )
         else:
             raise InpSyntaxError(
-                f"自由度 {first}-{last} は未対応（1-3: 速度, 8: 圧力, 11: 温度）",
+                f"自由度 {first}-{last} は未対応（1-3: 速度, 4-6: 角速度, 8: 圧力, 11: 温度）",
                 block.source,
                 block.line_no,
             )
@@ -521,24 +678,51 @@ def _parse_dload_rows(block: KeywordBlock) -> list[DistributedLoad]:
     for row in block.data:
         if len(row) < 3:
             raise InpSyntaxError(
-                "*DLOAD のデータ行は 'elset, GRAV, g, nx, ny, nz'", block.source, block.line_no
+                "*DLOAD のデータ行は 'elset, GRAV, g, nx, ny, nz' / 'elset, BX|BY|BZ, f' / "
+                "'elset, BF, fx, fy, fz'",
+                block.source,
+                block.line_no,
             )
         label = _norm_name(row[1])
-        if label != "GRAV":
+        target = _norm_name(row[0])
+        if label == "GRAV":
+            direction = [_float(t, block, "方向余弦") for t in row[3:6]]
+            while len(direction) < 3:
+                direction.append(0.0)
+            out.append(
+                DistributedLoad(
+                    target=target,
+                    label=label,
+                    magnitude=_float(row[2], block, "重力加速度"),
+                    direction=(direction[0], direction[1], direction[2]),
+                )
+            )
+        elif label in ("BX", "BY", "BZ"):
+            axis = [0.0, 0.0, 0.0]
+            axis["XYZ".index(label[1])] = 1.0
+            out.append(
+                DistributedLoad(
+                    target=target,
+                    label=label,
+                    magnitude=_float(row[2], block, "体積力"),
+                    direction=(axis[0], axis[1], axis[2]),
+                )
+            )
+        elif label == "BF":
+            vec = [_float(t, block, "体積力") for t in row[2:5] if t != ""]
+            while len(vec) < 3:
+                vec.append(0.0)
+            out.append(
+                DistributedLoad(
+                    target=target, label=label, magnitude=1.0, direction=(vec[0], vec[1], vec[2])
+                )
+            )
+        else:
             raise InpSyntaxError(
-                f"*DLOAD のラベル {row[1]!r} は未対応（GRAV のみ）", block.source, block.line_no
+                f"*DLOAD のラベル {row[1]!r} は未対応（GRAV / BX / BY / BZ / BF）",
+                block.source,
+                block.line_no,
             )
-        direction = [_float(t, block, "方向余弦") for t in row[3:6]]
-        while len(direction) < 3:
-            direction.append(0.0)
-        out.append(
-            DistributedLoad(
-                target=_norm_name(row[0]),
-                label=label,
-                magnitude=_float(row[2], block, "重力加速度"),
-                direction=(direction[0], direction[1], direction[2]),
-            )
-        )
     return out
 
 
@@ -739,6 +923,12 @@ def build_case(parsed: InpParseResult) -> CaseDefinition:
             elif kw == "CONTROLS":
                 step.controls.append(_parse_controls(block))
             elif kw == "BOUNDARY":
+                if _is_periodic_block(block):
+                    raise InpSyntaxError(
+                        "*BOUNDARY, TYPE=PERIODIC はメッシュの位相なので *STEP の外に置いてください",
+                        block.source,
+                        block.line_no,
+                    )
                 step.boundaries.extend(_parse_boundary_rows(block))
             elif kw == "SFILM":
                 step.films.extend(_parse_film_rows(block))
@@ -776,6 +966,10 @@ def build_case(parsed: InpParseResult) -> CaseDefinition:
             _handle_elset(b, block)
         elif kw == "SURFACE":
             _handle_surface(b, block)
+        elif kw == "ORIENTATION":
+            _handle_orientation(b, block)
+        elif kw == "MPC":
+            _handle_mpc(b, block)
         elif kw == "MATERIAL":
             current_material = _handle_material(b, block)
         elif kw in _MATERIAL_SUBKEYWORDS:
@@ -787,7 +981,10 @@ def build_case(parsed: InpParseResult) -> CaseDefinition:
         elif kw == "INITIAL CONDITIONS":
             _handle_initial_conditions(b, block)
         elif kw == "BOUNDARY":
-            b.boundaries.extend(_parse_boundary_rows(block))
+            if _is_periodic_block(block):
+                b.periodic.extend(_parse_periodic_rows(block))
+            else:
+                b.boundaries.extend(_parse_boundary_rows(block))
         elif kw == "SFILM":
             b.films.extend(_parse_film_rows(block))
         elif kw == "DFLUX":
@@ -874,6 +1071,32 @@ def build_case(parsed: InpParseResult) -> CaseDefinition:
                 raise InpSyntaxError(
                     f"*SURFACE {surf.name} の要素集合 {entry.target!r} が未定義", parsed.source
                 )
+    for mpc in b.mpcs:
+        if mpc.slave not in b.surfaces and mpc.slave not in RESERVED_FACE_NAMES:
+            raise InpSyntaxError(
+                f"*MPC の従属面 {mpc.slave!r} は *SURFACE でも予約面名でもありません", parsed.source
+            )
+        if mpc.master not in nsets and not mpc.master.isdigit():
+            raise InpSyntaxError(
+                f"*MPC の参照節点 {mpc.master!r} は *NSET でも節点 ID でもありません", parsed.source
+            )
+    for bc in list(b.boundaries) + [bc for st in b.steps for bc in st.boundaries]:
+        if bc.orientation and bc.orientation not in b.orientations:
+            raise InpSyntaxError(
+                f"*BOUNDARY, ORIENTATION={bc.orientation} が *ORIENTATION で定義されていません",
+                parsed.source,
+            )
+    used_periodic: set[str] = set()
+    for per in b.periodic:
+        for name in (per.master, per.slave):
+            if name not in b.surfaces and name not in RESERVED_FACE_NAMES:
+                raise InpSyntaxError(
+                    f"*BOUNDARY, TYPE=PERIODIC の面 {name!r} は *SURFACE でも予約面名でもありません",
+                    parsed.source,
+                )
+            if name in used_periodic:
+                raise InpSyntaxError(f"面 {name!r} が複数の周期境界に使われています", parsed.source)
+            used_periodic.add(name)
 
     return CaseDefinition(
         heading=b.heading,
@@ -889,6 +1112,9 @@ def build_case(parsed: InpParseResult) -> CaseDefinition:
         films=tuple(b.films),
         fluxes=tuple(b.fluxes),
         loads=tuple(b.loads),
+        periodic=tuple(b.periodic),
+        orientations=dict(b.orientations),
+        mpcs=tuple(b.mpcs),
         steps=tuple(b.steps),
         parameters=dict(parsed.parameters),
         source=parsed.source,

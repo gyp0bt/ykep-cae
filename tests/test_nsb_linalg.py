@@ -93,6 +93,7 @@ class TestLaggedPreconditionerAPI:
         pc.free()
 
 
+@pytest.mark.slow
 class TestLaggedPreconditionerConvergence:
     @pytest.mark.parametrize("lag", [1, 4])
     def test_lagged_pc_reaches_same_steady_state(self, lag: int):

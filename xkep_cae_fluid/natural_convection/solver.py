@@ -17,6 +17,7 @@ from scipy.sparse import linalg as spla
 
 from xkep_cae_fluid.core.base import AbstractProcess, ProcessMeta
 from xkep_cae_fluid.core.categories import SolverProcess
+from xkep_cae_fluid.fvm.relaxation import adapt_relaxation_factors
 from xkep_cae_fluid.natural_convection.assembly import (
     build_energy_system,
     build_momentum_system,
@@ -558,22 +559,28 @@ def _simple_iteration(
     rc_faces = compute_rhie_chow_face_velocity(
         inp, u_new, v_new, w_new, p_new, a_P_u_eff, a_P_v_eff, a_P_w_eff
     )
-    A_T, b_T = build_energy_system(
-        inp,
-        u_new,
-        v_new,
-        w_new,
-        T_old_time,
-        rc_face_velocities=rc_faces,
-        T_old_old_time=T_old_old_time,
-    )
-    residuals["T"] = _compute_residual_norm(A_T, T.ravel(), b_T)
-    residual_fields["res_T"] = _residual_field(A_T, T.ravel(), b_T, shape)
-    T_new_flat = _solve_linear(A_T, b_T, T.ravel(), inp.tol_inner, inp.max_inner_iter)
-    T_new = T_new_flat.reshape(nx, ny, nz)
+    if inp.solve_energy:
+        A_T, b_T = build_energy_system(
+            inp,
+            u_new,
+            v_new,
+            w_new,
+            T_old_time,
+            rc_face_velocities=rc_faces,
+            T_old_old_time=T_old_old_time,
+        )
+        residuals["T"] = _compute_residual_norm(A_T, T.ravel(), b_T)
+        residual_fields["res_T"] = _residual_field(A_T, T.ravel(), b_T, shape)
+        T_new_flat = _solve_linear(A_T, b_T, T.ravel(), inp.tol_inner, inp.max_inner_iter)
+        T_new = T_new_flat.reshape(nx, ny, nz)
 
-    # 温度に緩和を適用
-    T_new = inp.alpha_T * T_new + (1.0 - inp.alpha_T) * T
+        # 温度に緩和を適用
+        T_new = inp.alpha_T * T_new + (1.0 - inp.alpha_T) * T
+    else:
+        # 等温（HEAT TRANSFER=NONE）: エネルギー方程式を組まず T を保つ
+        residuals["T"] = 0.0
+        residual_fields["res_T"] = np.zeros(shape)
+        T_new = T.copy()
 
     # 内部 INLET BC: 温度指定があれば緩和後に強制
     for bc in inp.internal_face_bcs:
@@ -667,32 +674,24 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
         inp: NaturalConvectionInput,
         residuals: dict[str, float],
         prev_max_res: float,
+        min_res: float | None = None,
     ) -> NaturalConvectionInput:
-        """残差に応じて緩和係数を適応的に調整.
+        """残差に応じて緩和係数を適応的に調整（規則は :mod:`xkep_cae_fluid.fvm.relaxation`）.
 
         残差が減少 → 緩和を積極化（alpha_u↑, alpha_p↑）
         残差が増大 → 緩和を保守化（alpha_u↓, alpha_p↓）
         """
         max_res = _simple_convergence_residual(residuals)
-
-        if prev_max_res > 0 and max_res > 0:
-            ratio = max_res / prev_max_res  # < 1 なら改善
-            if ratio < 0.8:
-                # 順調に収束 → 緩和を積極化
-                new_alpha_u = min(inp.alpha_u * 1.1, 0.9)
-                new_alpha_p = min(inp.alpha_p * 1.1, 0.5)
-            elif ratio > 1.2:
-                # 残差増大 → 緩和を保守化
-                new_alpha_u = max(inp.alpha_u * 0.8, 0.1)
-                new_alpha_p = max(inp.alpha_p * 0.8, 0.05)
-            else:
-                return inp
-        else:
-            return inp
-
+        new_alpha_u, new_alpha_p = adapt_relaxation_factors(
+            inp.alpha_u,
+            inp.alpha_p,
+            max_res,
+            prev_max_res,
+            min_res=min_res,
+            simple_cap=inp.coupling_method.lower() == "simple",
+        )
         if new_alpha_u == inp.alpha_u and new_alpha_p == inp.alpha_p:
             return inp
-
         return replace(inp, alpha_u=new_alpha_u, alpha_p=new_alpha_p)
 
     def _solve_steady(
@@ -711,6 +710,7 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
         converged = False
         n_iter = 0
         prev_max_res = 0.0
+        min_res = 0.0
         residual_fields: dict[str, np.ndarray] = {}
 
         for outer in range(inp.max_simple_iter):
@@ -737,9 +737,14 @@ class NaturalConvectionFDMProcess(SolverProcess[NaturalConvectionInput, NaturalC
                     residuals["T"],
                 )
 
-            # 適応的緩和
+            # 適応的緩和（最小残差の 5 倍を超えたら保守化、保守化後は最小値を置き直す）
             if inp.adaptive_relaxation:
-                inp = self._adapt_relaxation(inp, residuals, prev_max_res)
+                adapted = self._adapt_relaxation(inp, residuals, prev_max_res, min_res)
+                if adapted.alpha_u < inp.alpha_u:
+                    min_res = max_res
+                elif np.isfinite(max_res) and max_res > 0.0:
+                    min_res = max_res if min_res <= 0.0 else min(min_res, max_res)
+                inp = adapted
             prev_max_res = max_res
 
             # 発散検出

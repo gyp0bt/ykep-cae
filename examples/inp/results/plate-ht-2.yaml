@@ -4,7 +4,7 @@ step: Steady
 procedure: HEAT TRANSFER
 steady: true
 turbulence: LAMINAR
-commit: 04b0e70
+commit: 40c8e8f
 parameters:
   T_left: 350.0
   q_in: 2000.0
@@ -35,12 +35,12 @@ solver:
   tol: 1e-08
 converged: true
 n_timesteps: 0
-final_residual: 6.306717577767214e-16
-elapsed_seconds: 0.019108726002741605
+final_residual: 5.756218059673792e-16
+elapsed_seconds: 0.013817183999890403
 temperature_range:
-  - 350.6562862525105
-  - 359.05538632055726
-wall_seconds: 0.028263560998311732
+  - 350.65628542026275
+  - 359.05542507228
+wall_seconds: 0.018311647000018638
 output_files:
   - plate-ht-2.npz
   - plate-ht-2.vtk

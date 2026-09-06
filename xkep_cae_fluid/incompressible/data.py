@@ -15,6 +15,7 @@ import numpy as np
 from xkep_cae_fluid.core.data import MeshData
 from xkep_cae_fluid.fvm.boundary import PatchBC
 from xkep_cae_fluid.fvm.momentum import VelocityPatchBC
+from xkep_cae_fluid.fvm.viscosity import ViscosityModelStrategy
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,21 @@ class FlowPatchBC:
     ) -> FlowPatchBC:
         """壁。``temperature`` で温度固定、``heat_flux`` で熱流束、``film=(h, T_inf)`` で対流熱伝達."""
         return FlowPatchBC(VelocityPatchBC.wall(velocity), _thermal(temperature, heat_flux, film))
+
+    @staticmethod
+    def rotating_wall(
+        angular_velocity: tuple[float, float, float],
+        center: tuple[float, float, float] = (0.0, 0.0, 0.0),
+        velocity: tuple[float, float, float] = (0.0, 0.0, 0.0),
+        temperature: float | None = None,
+        heat_flux: float | None = None,
+        film: tuple[float, float] | None = None,
+    ) -> FlowPatchBC:
+        """剛体回転する壁 u(x) = velocity + ω × (x − center)（回転するバレル・インペラ）."""
+        return FlowPatchBC(
+            VelocityPatchBC.rotating_wall(angular_velocity, center, velocity),
+            _thermal(temperature, heat_flux, film),
+        )
 
     @staticmethod
     def inlet(
@@ -161,7 +177,13 @@ class NavierStokesFVMInput:
     mesh : MeshData
         面情報と ``boundary_patches`` を持つメッシュ
     rho, mu : float
-        密度 [kg/m³]、粘性係数 [Pa·s]
+        密度 [kg/m³]、粘性係数 [Pa·s]（``viscosity_model`` を与えたときは参照値。ログにだけ使う）
+    viscosity_model : ViscosityModelStrategy | None
+        非ニュートン粘度 μ(γ̇)（:mod:`xkep_cae_fluid.fvm.viscosity` の POWER LAW / CARREAU など）。
+        外部反復ごとに最小二乗の速度勾配から γ̇ = sqrt(2 D:D) を評価して μ を更新する Picard 結合。
+        変粘度の応力 ∇·(μ∇uᵀ) の余剰項 Σ_j ∂_i u_j ∂_j μ は陽的ソースに入れる
+    alpha_mu : float
+        粘度更新の緩和係数 μ ← (1−α) μ + α μ(γ̇)（既定 0.5。押出の専用ソルバーと同じ）
     bcs : Mapping[str, FlowPatchBC]
         パッチ名 → 境界条件（未指定は静止壁・断熱）
     solve_energy : bool
@@ -188,13 +210,24 @@ class NavierStokesFVMInput:
         収束判定（運動量の相対初期残差と質量不整合の最大値）
     alpha_u, alpha_p, alpha_T : float
         緩和係数
+    adaptive_relaxation : bool
+        残差の推移で α_u / α_p を動かす（:func:`~xkep_cae_fluid.fvm.relaxation.adapt_relaxation_factors`、
+        構造格子版と同じ規則。非定常では各ステップ内で調整し、ステップを跨いで引き継ぐ）
     coupling : str
         ``simple`` / ``simplec`` / ``piso``（PISO は α_p = 1 で ``n_piso_correctors`` 回の圧力補正）
     n_piso_correctors : int
         PISO の圧力補正回数（既定 2）
+    n_nonorthogonal_correctors : int
+        圧力補正の非直交補正の反復回数（既定 2。1 = 補正なし。2 以上で前回の p' の勾配から
+        陽的な T_f 流束を右辺に足して p' を解き直す。直交メッシュでは常に 1 回。
+        非直交角 45° 付近では遅延補正の反復自体が縮小しないので 3 以上にしない）
     convection, limiter : str
         対流スキーム ``upwind``（既定）/ ``tvd`` と TVD リミッタ ``van_leer`` / ``superbee``
-        （運動量・エネルギー・追加スカラーに共通、遅延補正）
+        （運動量・エネルギー・追加スカラーに共通、遅延補正）。``none`` は運動量の対流項を落とす
+        Stokes 流れ（エネルギー・追加スカラーは風上のまま輸送する）
+    body_force : np.ndarray | tuple[float, float, float] | None
+        一様または セルごとの体積力 [N/m³]（(3,) または (n_cells, 3)）。運動量のソースに加える。
+        周期境界の圧力跳び Δp を P = βx + p̃ に分解したときの −β（押出の G）はここに入れる
     time_scheme : str
         ``euler``（陰的 1 次）/ ``bdf2``（2 次。最初のステップは Euler）
     scalars : tuple[ScalarSpec, ...]
@@ -211,6 +244,8 @@ class NavierStokesFVMInput:
     rho: float
     mu: float
     bcs: Mapping[str, FlowPatchBC] = field(default_factory=dict)
+    viscosity_model: ViscosityModelStrategy | None = None
+    alpha_mu: float = 0.5
     solve_energy: bool = False
     Cp: float = 1000.0
     k_fluid: float = 1.0
@@ -233,9 +268,12 @@ class NavierStokesFVMInput:
     alpha_T: float = 0.9
     coupling: str = "simple"
     n_piso_correctors: int = 2
+    n_nonorthogonal_correctors: int = 2
+    adaptive_relaxation: bool = False
     convection: str = "upwind"
     limiter: str = "van_leer"
     time_scheme: str = "euler"
+    body_force: np.ndarray | tuple[float, float, float] | None = None
     scalars: tuple[ScalarSpec, ...] = ()
     internal_bcs: tuple[InternalCellBC, ...] = ()
     linear_solver: str = "bicgstab"
@@ -271,6 +309,14 @@ class NavierStokesFVMResult:
         最終反復のセル別残差 res_u / res_v / res_w / res_T / res_mass（/ res_<スカラー名>）
     scalars : dict[str, np.ndarray]
         追加スカラーの最終場（``ScalarSpec.name`` → (n_cells,)）
+    alpha_history : dict[str, list[float]]
+        ``adaptive_relaxation`` のときの外部反復ごとの ``alpha_u`` / ``alpha_p``（それ以外は空）
+    viscosity : np.ndarray | None
+        ``viscosity_model`` のときのセル粘度 μ [Pa·s] (n_cells,)（それ以外は None）
+    strain_rate, mixing_index : np.ndarray | None
+        収束後の速度勾配から作るせん断速度 γ̇ = sqrt(2 D:D) [1/s] と
+        混合指数 λ = |D|/(|D|+|Ω|)（0: 純回転、0.5: 単純せん断、1: 純伸長）(n_cells,)。
+        粘度モデルの有無に関わらず出す（混練性・滞留時間分布の評価に使う）
     elapsed_seconds : float
     """
 
@@ -286,3 +332,7 @@ class NavierStokesFVMResult:
     elapsed_seconds: float = 0.0
     time_history: tuple[float, ...] = ()
     scalars: dict[str, np.ndarray] = field(default_factory=dict)
+    alpha_history: dict[str, list[float]] = field(default_factory=dict)
+    viscosity: np.ndarray | None = None
+    strain_rate: np.ndarray | None = None
+    mixing_index: np.ndarray | None = None

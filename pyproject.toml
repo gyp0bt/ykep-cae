@@ -25,6 +25,7 @@ nsb = ["pypardiso>=0.4"]  # nsb/（Brinkman-NS 実験パッケージ）の疎 LU
 dev = [
     "pytest>=7.0",
     "pytest-timeout>=2.0",
+    "pytest-xdist>=3.0",
     "ruff>=0.4",
     "pyyaml>=6.0",
     "pypardiso>=0.4",
@@ -32,6 +33,9 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# 重い押出テストは同じ流れ場を lru_cache で使い回す。-n で並列にするときは
+# ファイル単位で 1 ワーカーに固めないとキャッシュが効かない
+addopts = ["--dist", "loadfile"]
 markers = [
     "slow: 大規模メッシュ・長時間計算など時間がかかるテスト",
     "external: 外部依存が必要なテスト",

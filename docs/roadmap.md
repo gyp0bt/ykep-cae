@@ -149,6 +149,8 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] Phase 1.5: 粒子追跡 + RTD（G4a/G4b、status-28）
 - [x] 図解レポート 2 本を Artifact 公開（[reports/extruder](reports/extruder/README.md)）
 - [x] 文献 RTD 照合 G5（Phase 2 の前提。実機データが無いので Pinto–Tadmor 1970 との照合に差し替え、2026-09-04 通過）
+- [x] 汎用記法（`.inp`）で同じ問題を書けるようにする → [Phase 12](#phase-12-汎用記法inpで押出級の流れを書く完了status-36)。
+  `ExtruderChannelInpProcess` が諸元から汎用 .inp を生成し、専用ソルバーが検証のリファレンスになる（status-36）
 - [ ] Phase 2: 粘性発熱 `Φ = μγ̇²` + 温度依存粘度
 - [ ] Phase 3: 混練エレメント（3D、messi + OpenFOAM）
 
@@ -189,7 +191,7 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] `ykep` CLI（`-j=`, `int`, `-o=`, `-p name=value`, `--check`）+ NPZ/YAML/VTK 出力 — status-33
 - [x] 例題: Ra=1000 キャビティ（Nu=1.169）、`*INCLUDE` メッシュの平板伝熱 — status-33
 - [x] `*DARCY` の実行対応（`DarcyFlowProcess` 新設、面ベース FVM、`InpMeshProcess` の非構造メッシュ経由）— Phase 11
-- [ ] `HEAT TRANSFER=NONE` でエネルギー方程式をスキップ（`solve_energy`）— status-33 TODO
+- [x] `HEAT TRANSFER=NONE` でエネルギー方程式をスキップ（`solve_energy`、構造格子版も）— status-35
 - [ ] SYMMETRY / SLIP 面の既定緩和での発散の切り分け — status-33 TODO（非構造 NS は対称面を陰的に組んだので対象外）
 - [x] 部分面境界・`InternalFaceBC` の .inp 表現 — 部分面は `*SURFACE`、内部の吐出・吸入は要素集合 target の `*BOUNDARY`（非構造 NS）— Phase 11
 - [x] 格子の次段の方針決定 → 非構造格子（面ベース FVM）。`InpMeshProcess` を追加 — Phase 11
@@ -235,7 +237,39 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] Darcy の Forchheimer（Picard）と非定常（比貯留 `*SPECIFIC STORAGE`）。Brinkman 粘性項は NS ファミリーの抵抗で扱う — Phase 11（2026-09-06）
 - [x] 内部の吐出・吸入: 非構造 NS では要素集合を target にした `*BOUNDARY` → `InternalCellBC`（内部面 `*SURFACE` 単位の指定は保留） — Phase 11（2026-09-06）
 - [x] `core/data.BoundaryData` / `FluidProperties` / `FlowFieldData` / `SolverInputData` / `SolverResultData` / `VerifyInput` / `VerifyResult` を削除（未使用） — Phase 11（2026-09-06）
-- [ ] 圧力補正への非直交補正、`ADAPTIVE` 緩和の非構造版、2 次要素・角錐の `InpMeshProcess`、内部面 `*SURFACE` の境界条件
+- [x] 圧力補正への非直交補正（`n_nonorthogonal_correctors` / `NONORTHOGONAL_CORRECTORS`、既定 2。せん断 31°/45° で
+  α=(0.8,0.5) の発散を解消、収束解は不変）— status-35
+- [x] `ADAPTIVE` 緩和の非構造版（規則を `fvm/relaxation.py` に切り出して構造格子版と共有。停滞検出 + α_p ≤ 1 − α_u を追加）— status-35
+- [x] Rhie–Chow の D_f を緩和前の a_P で（Majumdar）。収束解の α_u 依存（2%）を解消 — status-35
+- [x] 2 次要素（頂点のみ）・角錐 C3D5 の `InpMeshProcess` — status-35
+- [x] 内部面 `*SURFACE` の境界条件 → 厚さゼロのバッフル（両側の境界面に分割、両側同条件）。例題 channel-baffle-1 — status-35
+- [ ] 非直交補正の limited 版（45° 超のメッシュ）、バッフルの片側ごとの条件・薄板の熱伝導、角錐の mirador 描画（messi に C3D5 が無い）— status-35 TODO
+- [ ] 構造格子版 `NaturalConvectionFDMProcess` の Rhie–Chow も緩和前の a_P に（収束解の α_u 依存の確認。空気実物性の不安定化調査と合わせて）— status-35 TODO
+- [ ] 非構造 NS で空気実物性（mu=1.85e-5）+ q_vol の自然対流を評価（構造格子版で未解決の mass 残差 O(1–100) が再現するか）— status-35 TODO
+
+## Phase 12: 汎用記法（.inp）で押出級の流れを書く（完了、status-36）
+
+押出専用のキーワードではなく**汎用記法**（`*NODE` / `*ELEMENT` + `*NAVIER STOKES`）で
+展開チャネル 2.5D を書けるようにする。設計は [design/inp-generic-extrusion.md](design/inp-generic-extrusion.md)。
+
+- [x] 周期境界 `*BOUNDARY, TYPE=PERIODIC`（並進。`MeshData.face_offset` + fvm 層の `neighbour_centers`。
+  `InpMeshProcess` が対の面を照合して内部面に併合）— status-36
+- [x] 一様体積力 `*DLOAD` の `BX` / `BY` / `BZ` / `BF`（圧力跳び `Δp = G·L_turn` を `P = βx + p̃` に分解）— status-36
+- [x] 非ニュートン粘度 `*VISCOSITY, TYPE=POWER LAW | CARREAU`（粘度モデルを `fvm/viscosity.py` へ、
+  非構造の γ̇ は最小二乗の速度勾配から、Picard 緩和は `RELAXATION` の `VISCOSITY=`）— status-36
+- [x] 回転壁 `*ORIENTATION` + `*MPC` + 参照節点の自由度 4-6（`VelocityPatchBC.rotating_wall`、
+  Taylor–Couette が解析解と 1.3e-3）— status-36
+- [x] Stokes モード `CONVECTION=NONE` と速度–圧力の連成 `PRESSURE_VELOCITY=COUPLED`
+  （`assemble_coupled` + `lsq_gradient_operator`。Stokes キャビティが 273 → 2 反復）— status-36
+- [x] `ExtruderChannelInpProcess`（諸元 → 汎用記法 .inp）と例題 extruder-channel-1、
+  専用 2.5D ソルバー・形状係数との照合（Q は機械精度、Q_axial 1.4e-3）— status-36
+- [x] 非構造メッシュの粒子追跡 / RTD（面流束ベースの Pollock 型）— [design/particle-tracking-fvm.md](design/particle-tracking-fvm.md)。`ParticleTrackFVMProcess`（面流束を厳密に再現するセル内アフィン場 + 面の受け渡し、周期面・壁・進行度脱出）と `ResidenceTimeProcess`。NS 結果に γ̇ と混合指数 λ を常時出す。構造格子トラッカーと t_p10/p50/p90 が 4736 セルで 2.2e-4/3.8e-4/9.6e-4 — status-37
+- [ ] `.inp` から RTD を出すキーワード（`*RTD` 相当）— いまは Python API と example のみ — status-37 TODO
+- [ ] 自己面（1 層周期）の複数回横断をまとめる最適化（押出 2.5D の追跡が 1 粒子数万ステップ）— status-37 TODO
+- [x] 後方互換の全撤去（`RegistryProxy` / `ProcessMeta.deprecated` 機構 / 再輸出シム）と 全件テストの高速化（14 分 26 秒 → 2 分 28 秒。流れ場の共有・6 件を `slow` へ・`pytest-xdist`）— status-37
+- [ ] 回転周期・螺旋周期（3D 螺旋 1 ピッチは軸方向並進で書けるので優先度は低い）
+- [ ] COUPLED の前処理付き Krylov 法（大規模向け）と `OUTFLOW` 対応
+- [ ] 粘性発熱 `Φ = μγ̇²` と温度依存粘度（専用ソルバー側の Phase 2 と合わせる）
 
 ## 将来構想
 

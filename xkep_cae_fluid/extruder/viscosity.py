@@ -1,10 +1,9 @@
-"""粘度モデル Strategy とせん断速度の評価.
+"""展開チャネル（構造格子）のせん断速度と混合指数.
 
-FluidProperties.power_law_n / power_law_k は宣言済みで未使用だった。
-非ニュートンの席は既に用意されていたので、ここに具象を座らせる。
-
-粘度は「直交する振る舞い軸」なので Process ではなく Strategy Protocol とし、
-ソルバー側は StrategySlot で受ける（core/strategies と同じ流儀）。
+粘度モデル Strategy そのものは方程式ファミリー非依存なので
+:mod:`xkep_cae_fluid.fvm.viscosity` にある（``NewtonianViscosity`` /
+``PowerLawViscosity`` / ``CarreauViscosity``）。ここには構造格子 (nx, ny) 専用の
+γ̇ と λ の評価だけを置く。
 
 せん断速度（設計文書 §2）:
 
@@ -18,8 +17,7 @@ FluidProperties.power_law_n / power_law_k は宣言済みで未使用だった�
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -27,76 +25,7 @@ if TYPE_CHECKING:
     from xkep_cae_fluid.extruder.data import ChannelGrid
 
 
-@runtime_checkable
-class ViscosityModelStrategy(Protocol):
-    """せん断速度 → 粘度の対応を規定する."""
-
-    def viscosity(self, gamma_dot: np.ndarray) -> np.ndarray:
-        """せん断速度 γ̇ [1/s] から粘度 μ [Pa·s] を返す（形状は入力と同じ）."""
-        ...
-
-
-@dataclass(frozen=True)
-class NewtonianViscosity:
-    """ニュートン流体 μ = const."""
-
-    mu: float
-
-    def viscosity(self, gamma_dot: np.ndarray) -> np.ndarray:
-        return np.full_like(np.asarray(gamma_dot, dtype=np.float64), self.mu)
-
-
-@dataclass(frozen=True)
-class PowerLawViscosity:
-    """べき乗則 μ = K·γ̇^(n−1).
-
-    n < 1 では γ̇ → 0 で発散するので gamma_min でクランプし、さらに mu_max で
-    頭を押さえる。**この 2 つは数値上の安全弁であって物理ではない**ので、
-    結果がこれらに依存しないことをテストで確認すること。
-
-    既定の gamma_min = 1e-2 s⁻¹ は 40mm 機の代表せん断速度 V/H ≈ 52 s⁻¹ の
-    2×10⁻⁴ 倍にあたる。
-    """
-
-    K: float
-    n: float
-    gamma_min: float = 1.0e-2
-    mu_max: float = 1.0e8
-
-    def __post_init__(self) -> None:
-        if self.n <= 0.0:
-            msg = f"べき乗則指数 n は正が必要: {self.n}"
-            raise ValueError(msg)
-        if self.K <= 0.0:
-            msg = f"べき乗則定数 K は正が必要: {self.K}"
-            raise ValueError(msg)
-        if self.gamma_min <= 0.0:
-            msg = f"gamma_min は正が必要: {self.gamma_min}"
-            raise ValueError(msg)
-
-    def viscosity(self, gamma_dot: np.ndarray) -> np.ndarray:
-        g = np.maximum(np.asarray(gamma_dot, dtype=np.float64), self.gamma_min)
-        return np.minimum(self.K * g ** (self.n - 1.0), self.mu_max)
-
-
-@dataclass(frozen=True)
-class CarreauViscosity:
-    """Carreau モデル μ = μ_∞ + (μ_0 − μ_∞)[1 + (λγ̇)²]^((n−1)/2).
-
-    低せん断で μ_0、高せん断で μ_∞ に漸近するのでクランプが要らない。
-    n = 1 かつ μ_0 = μ_∞ でニュートンに退化する。
-    """
-
-    mu_0: float
-    mu_inf: float
-    lam: float
-    n: float
-
-    def viscosity(self, gamma_dot: np.ndarray) -> np.ndarray:
-        g = np.asarray(gamma_dot, dtype=np.float64)
-        return self.mu_inf + (self.mu_0 - self.mu_inf) * (1.0 + (self.lam * g) ** 2) ** (
-            (self.n - 1.0) / 2.0
-        )
+__all__ = ["mixing_index", "strain_rate"]
 
 
 def _grad_x(f: np.ndarray, grid: ChannelGrid, wall: float = 0.0) -> np.ndarray:

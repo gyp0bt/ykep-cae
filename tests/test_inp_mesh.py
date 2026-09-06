@@ -8,10 +8,21 @@ import numpy as np
 import pytest
 from conftest import kuhn_tet_text
 
-from xkep_cae_fluid.core.data import CELL_TYPE_HEX, CELL_TYPE_TET, CELL_TYPE_WEDGE
+from xkep_cae_fluid.core.data import (
+    CELL_TYPE_HEX,
+    CELL_TYPE_PYRAMID,
+    CELL_TYPE_TET,
+    CELL_TYPE_WEDGE,
+)
 from xkep_cae_fluid.core.mesh import StructuredMeshInput, StructuredMeshProcess
 from xkep_cae_fluid.core.testing import binds_to
-from xkep_cae_fluid.fvm import PatchBC, diffusive_face_flux, resolve_boundary
+from xkep_cae_fluid.fvm import (
+    PatchBC,
+    diffusive_face_flux,
+    max_nonorthogonality_deg,
+    neighbour_centers,
+    resolve_boundary,
+)
 from xkep_cae_fluid.heat_transfer import HeatTransferFVMInput, HeatTransferFVMProcess
 from xkep_cae_fluid.inp.builder import build_case
 from xkep_cae_fluid.inp.grid import (
@@ -20,7 +31,7 @@ from xkep_cae_fluid.inp.grid import (
     UnsupportedMeshError,
 )
 from xkep_cae_fluid.inp.mesh import InpMeshInput, InpMeshProcess, InpMeshResult, build_inp_mesh
-from xkep_cae_fluid.inp.parser import parse_inp_file, parse_inp_text
+from xkep_cae_fluid.inp.parser import InpSyntaxError, parse_inp_file, parse_inp_text
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples" / "inp"
 
@@ -131,6 +142,128 @@ def _hex_mesh_text(
     return "\n".join(lines) + "\n"
 
 
+def _quad_sheet_text(nx: int, ny: int) -> str:
+    """CPS4 の nx×ny シート（節点 1.., 要素 1 + i + nx j、辺 S2 が +x 側）."""
+    lines = ["*NODE"]
+    for j in range(ny + 1):
+        for i in range(nx + 1):
+            lines.append(f" {1 + i + (nx + 1) * j}, {i}, {j}, 0")
+    lines.append("*ELEMENT, TYPE=CPS4, ELSET=ALL")
+    for j in range(ny):
+        for i in range(nx):
+            n0 = 1 + i + (nx + 1) * j
+            lines.append(f" {1 + i + nx * j}, {n0}, {n0 + 1}, {n0 + nx + 2}, {n0 + nx + 1}")
+    return "\n".join(lines) + "\n"
+
+
+def _pyramid_cube_text() -> str:
+    """単位立方体を中心 (0.5,0.5,0.5) を頂点とする角錐 6 個に分ける（C3D5、S1 が底面）.
+
+    要素 1（−x 面）だけ底面を裏向き（頂点が底面の法線の負側）に書き、向きの正規化を通す。
+    """
+    corners = [
+        (0, 0, 0),
+        (1, 0, 0),
+        (1, 1, 0),
+        (0, 1, 0),
+        (0, 0, 1),
+        (1, 0, 1),
+        (1, 1, 1),
+        (0, 1, 1),
+    ]
+    lines = ["*NODE"] + [f" {i + 1}, {x}, {y}, {z}" for i, (x, y, z) in enumerate(corners)]
+    lines.append(" 9, 0.5, 0.5, 0.5")
+    # 底面は外向き法線が外皮を向く並び（頂点 9 は内側 = 負側）→ 要素 1 は敢えて逆順
+    bases = {
+        1: (1, 4, 8, 5),  # −x（外向き −x: 逆順で書く）
+        2: (2, 3, 7, 6),  # +x
+        3: (1, 5, 6, 2),  # −y
+        4: (4, 3, 7, 8),  # +y（順序は面ラベル検査のため内向きでも可）
+        5: (1, 2, 3, 4),  # −z
+        6: (5, 8, 7, 6),  # +z
+    }
+    lines.append("*ELEMENT, TYPE=C3D5, ELSET=PYR")
+    for e, b in bases.items():
+        lines.append(f" {e}, " + ", ".join(map(str, b)) + ", 9")
+    lines.append("*SURFACE, NAME=BASES, TYPE=ELEMENT")
+    lines.append(" PYR, S1")
+    return "\n".join(lines) + "\n"
+
+
+_C3D20_EDGES = [
+    (0, 1),
+    (1, 2),
+    (2, 3),
+    (3, 0),
+    (4, 5),
+    (5, 6),
+    (6, 7),
+    (7, 4),
+    (0, 4),
+    (1, 5),
+    (2, 6),
+    (3, 7),
+]
+
+
+def _c3d20_from_linear(text: str) -> str:
+    """C3D8 の *NODE/*ELEMENT テキストから、辺の中点を足した C3D20 テキストを作る."""
+    case = build_case(parse_inp_text(text))
+    ids = case.nodes.ids.tolist()
+    coords = {int(n): case.nodes.coords[k] for k, n in enumerate(ids)}
+    next_id = max(ids) + 1
+    mid: dict[tuple[int, int], int] = {}
+    lines = ["*NODE"] + [f" {n}, {coords[n][0]}, {coords[n][1]}, {coords[n][2]}" for n in ids]
+    elems = []
+    for b in case.elements:
+        for eid, row in zip(b.ids.tolist(), b.connectivity.tolist(), strict=True):
+            extra = []
+            for a, c in _C3D20_EDGES:
+                key = (min(row[a], row[c]), max(row[a], row[c]))
+                if key not in mid:
+                    mid[key] = next_id
+                    xyz = 0.5 * (coords[row[a]] + coords[row[c]])
+                    lines.append(f" {next_id}, {xyz[0]}, {xyz[1]}, {xyz[2]}")
+                    next_id += 1
+                extra.append(mid[key])
+            elems.append(f" {eid}, " + ", ".join(map(str, list(row) + extra)))
+    lines += ["*ELEMENT, TYPE=C3D20, ELSET=BOX"] + elems
+    return "\n".join(lines) + "\n"
+
+
+def _cps8_sheet_text(nx: int, ny: int) -> str:
+    """CPS8（8 節点四辺形）の nx×ny シート。中間節点は辺の中点."""
+    lines = ["*NODE"]
+    nid = 1
+    corner = {}
+    for j in range(ny + 1):
+        for i in range(nx + 1):
+            corner[(i, j)] = nid
+            lines.append(f" {nid}, {i}, {j}, 0")
+            nid += 1
+    mid = {}
+
+    def mid_id(a, b):
+        key = (min(a, b), max(a, b))
+        nonlocal nid
+        if key not in mid:
+            mid[key] = nid
+            xa, ya = a
+            xb, yb = b
+            lines.append(f" {nid}, {(xa + xb) / 2}, {(ya + yb) / 2}, 0")
+            nid += 1
+        return mid[key]
+
+    elems = []
+    for j in range(ny):
+        for i in range(nx):
+            c = [(i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1)]
+            ids = [corner[q] for q in c] + [mid_id(c[k], c[(k + 1) % 4]) for k in range(4)]
+            elems.append(f" {1 + i + nx * j}, " + ", ".join(map(str, ids)))
+    lines += ["*ELEMENT, TYPE=CPS8, ELSET=ALL"] + elems
+    return "\n".join(lines) + "\n"
+
+
 def _structured_index(grid, result: InpMeshResult) -> np.ndarray:
     """InpMesh のセル順 → 構造格子のセル index."""
     nx, ny, nz = grid.dimensions
@@ -173,11 +306,100 @@ class TestInpMeshAPI:
         with pytest.raises(UnsupportedMeshError, match="S4"):
             build_inp_mesh(build_case(parse_inp_text(tri)))
 
-    def test_surface_with_internal_face_rejected(self):
+    def test_surface_with_internal_face_is_not_a_patch_unless_baffle(self):
+        """内部面を含む *SURFACE はパッチにならない。baffle_surfaces に挙げると両側の境界面に分割される."""
         text = _hex_mesh_text(2, 1, 1) + "*SURFACE, NAME=MID, TYPE=ELEMENT\n11, S4\n"
         case = build_case(parse_inp_text(text))
-        with pytest.raises(UnsupportedMeshError, match="内部面"):
-            build_inp_mesh(case)
+        res = build_inp_mesh(case)
+        assert "MID" not in (res.mesh.boundary_patches or {})
+        assert res.surface_faces["MID"].tolist() == [0] and res.mesh.n_internal_faces == 1
+        assert res.baffle_surfaces == () and len(res.baffle_faces) == 0
+        # 境界面だけの *SURFACE を挙げても何も起きない
+        same = build_inp_mesh(case, baffle_surfaces=("MID",))
+        assert same.baffle_surfaces == ("MID",) and len(same.baffle_faces) == 2
+        m = same.mesh
+        assert m.n_internal_faces == 0 and m.n_boundary_faces == 12
+        assert m.patch_faces("MID").tolist() == [10, 11]
+        # 分割した 2 面: 片方は要素 11 が owner で +x 向き、もう片方は要素 12 が owner で −x 向き
+        assert m.face_owner[10] == 0 and m.face_owner[11] == 1
+        np.testing.assert_allclose(m.face_normals[10], [1.0, 0.0, 0.0], atol=1e-12)
+        np.testing.assert_allclose(m.face_normals[11], [-1.0, 0.0, 0.0], atol=1e-12)
+        np.testing.assert_allclose(m.face_centers[10], m.face_centers[11])
+        # 予約面名 XM/XP はバッフル面を拾わない。体積・閉包は変わらない
+        assert len(m.patch_faces("XM")) == 1 and len(m.patch_faces("XP")) == 1
+        np.testing.assert_allclose(m.cell_volumes, res.mesh.cell_volumes)
+        assert _closure(m) < 1e-12
+        with pytest.raises(UnsupportedMeshError, match="SURFACE"):
+            build_inp_mesh(case, baffle_surfaces=("NOPE",))
+
+    def test_baffle_in_2d_sheet_and_surface_from_other_side(self):
+        """2D 四辺形の辺をバッフルにする。反対側の要素から指定しても両側が入る."""
+        text = _quad_sheet_text(4, 2) + "*SURFACE, NAME=MID, TYPE=ELEMENT\n2, S2\n6, S2\n"
+        case = build_case(parse_inp_text(text))
+        res = build_inp_mesh(case, baffle_surfaces=("MID",))
+        m = res.mesh
+        assert res.baffle_surfaces == ("MID",) and len(res.baffle_faces) == 4
+        assert m.n_internal_faces == 10 - 2 and set(m.patch_faces("MID").tolist()) == set(
+            res.baffle_faces.tolist()
+        )
+        np.testing.assert_allclose(np.abs(m.face_normals[res.baffle_faces][:, 0]), 1.0)
+        # 反対側（要素 3, 7 の S4）で指定しても同じ 4 面
+        other = text.replace("2, S2\n6, S2\n", "3, S4\n7, S4\n")
+        res2 = build_inp_mesh(build_case(parse_inp_text(other)), baffle_surfaces=("MID",))
+        assert set(res2.surface_faces["MID"].tolist()) == set(res.surface_faces["MID"].tolist())
+
+    def test_pyramids_fill_cube(self):
+        """立方体を中心頂点の角錐 6 個に分けたメッシュ: 体積・閉包・面数・種別・面ラベル・向きの正規化."""
+        res = build_inp_mesh(build_case(parse_inp_text(_pyramid_cube_text())))
+        m = res.mesh
+        assert m.n_cells == 6 and np.all(m.cell_types == CELL_TYPE_PYRAMID)
+        assert m.connectivity.shape == (6, 5) and np.all(m.connectivity >= 0)
+        assert m.cell_volumes.sum() == pytest.approx(1.0, rel=1e-12)
+        np.testing.assert_allclose(m.cell_volumes, 1.0 / 6.0, rtol=1e-12)
+        assert m.n_internal_faces == 12 and m.n_boundary_faces == 6
+        assert _closure(m) < 1e-12
+        for name in ("XM", "XP", "YM", "YP", "ZM", "ZP"):
+            assert len(m.patch_faces(name)) == 1
+        assert m.patch_faces("BASES").tolist() == m.patch_faces("XM").tolist() + [
+            int(i) for i in sorted(set(range(12, 18)) - set(m.patch_faces("XM").tolist()))
+        ]
+        # 頂点が底面の裏側にある（負の体積）順序の角錐も右手系に正規化される
+        p = m.node_coords[m.connectivity]
+        triple = np.einsum(
+            "ij,ij->i", np.cross(p[:, 1] - p[:, 0], p[:, 3] - p[:, 0]), p[:, 4] - p[:, 0]
+        )
+        assert np.all(triple > 0)
+
+    def test_quadratic_elements_use_corner_nodes(self):
+        """C3D20 / CPS8 は頂点だけを使い、1 次要素と同じ面リスト・体積・面ラベルになる."""
+        lin = build_inp_mesh(
+            build_case(
+                parse_inp_text(_hex_mesh_text(2, 1, 1) + "*SURFACE, NAME=R, TYPE=ELEMENT\n12, S4\n")
+            )
+        )
+        quad = build_inp_mesh(
+            build_case(
+                parse_inp_text(
+                    _c3d20_from_linear(_hex_mesh_text(2, 1, 1))
+                    + "*SURFACE, NAME=R, TYPE=ELEMENT\n12, S4\n"
+                )
+            )
+        )
+        assert quad.mesh.n_cells == 2 and quad.mesh.connectivity.shape == (2, 8)
+        assert quad.mesh.n_internal_faces == lin.mesh.n_internal_faces
+        np.testing.assert_allclose(quad.mesh.cell_volumes, lin.mesh.cell_volumes)
+        np.testing.assert_allclose(quad.mesh.face_areas, lin.mesh.face_areas)
+        assert quad.surface_faces["R"].tolist() == lin.surface_faces["R"].tolist()
+        assert quad.mesh.n_nodes == lin.mesh.n_nodes + 20  # 中間節点は座標表に残る（未使用）
+        # 2D の 8 節点四辺形
+        sheet = build_inp_mesh(build_case(parse_inp_text(_cps8_sheet_text(3, 2))))
+        assert sheet.mesh.n_cells == 6 and sheet.mesh.connectivity.shape == (6, 8)
+        assert sheet.mesh.cell_volumes.sum() == pytest.approx(6.0, rel=1e-12)
+        assert _closure(sheet.mesh) < 1e-12
+        with pytest.raises(InpSyntaxError, match="未対応"):
+            build_case(
+                parse_inp_text("*NODE\n1,0,0,0\n2,1,0,0\n3,0,1,0\n*ELEMENT, TYPE=C3D3\n1,1,2,3\n")
+            )
 
 
 class TestInpMeshPhysics:
@@ -409,3 +631,101 @@ class TestInpMeshPhysics:
         # 出力の接続は右手系に正規化されている（六面体: (n1−n0)×(n3−n0)·(n4−n0) > 0）
         p = m.node_coords[m.connectivity[0]]
         assert np.dot(np.cross(p[1] - p[0], p[3] - p[0]), p[4] - p[0]) > 0
+
+
+PERIODIC_BOX = """\
+*GRID, NX=3, NY=2, NZ=1, LX=0.3, LY=0.2, LZ=0.1
+*BOUNDARY, TYPE=PERIODIC
+ XM, XP
+"""
+
+
+class TestInpMeshPeriodic:
+    """``*BOUNDARY, TYPE=PERIODIC``: 対の境界面を内部面に併合し ``face_offset`` を付ける."""
+
+    def _mesh(self, text: str) -> InpMeshResult:
+        return build_inp_mesh(build_case(parse_inp_text(text)))
+
+    def test_merges_pair_into_internal_faces(self):
+        plain = self._mesh("*GRID, NX=3, NY=2, NZ=1, LX=0.3, LY=0.2, LZ=0.1\n")
+        res = self._mesh(PERIODIC_BOX)
+        m, m0 = res.mesh, plain.mesh
+        # XM/XP の 2 枚 × 2 セル = 4 枚が消え、2 枚の内部面になる
+        assert m.n_cells == m0.n_cells
+        assert m.n_faces == m0.n_faces - 2
+        assert m.n_internal_faces == m0.n_internal_faces + 2
+        assert res.periodic_faces.size == 2
+        assert res.periodic_surfaces == ("XM", "XP")
+        assert set(m.boundary_patches) == {"YM", "YP", "ZM", "ZP"}
+        assert m.has_periodic_faces
+
+    def test_offset_and_neighbour_centers(self):
+        m = self._mesh(PERIODIC_BOX).mesh
+        off = m.face_offset[m.n_internal_faces - 2 :]
+        # 並進 t = (+0.3, 0, 0)、オフセットは −t
+        assert np.allclose(off, [[-0.3, 0.0, 0.0], [-0.3, 0.0, 0.0]])
+        # 併合面の owner は x=0 側、neighbour（戻した位置）は owner の 1 セル手前
+        d = neighbour_centers(m) - m.cell_centers[m.face_owner[: m.n_internal_faces], :3]
+        assert np.allclose(np.linalg.norm(d[-2:], axis=1), 0.1)
+        assert max_nonorthogonality_deg(m) == pytest.approx(0.0, abs=1e-9)
+
+    def test_explicit_translation_and_z_pair(self):
+        text = (
+            "*GRID, NX=3, NY=2, NZ=1, LX=0.3, LY=0.2, LZ=0.1\n"
+            "*BOUNDARY, TYPE=PERIODIC\n XM, XP, 0.3, 0.0, 0.0\n"
+            "*BOUNDARY, TYPE=PERIODIC\n ZM, ZP, 0.0, 0.0, 0.1\n"
+        )
+        res = self._mesh(text)
+        assert res.periodic_faces.size == 2 + 6
+        assert set(res.mesh.boundary_patches) == {"YM", "YP"}
+        # z は 1 セル厚なので owner == neighbour（自己ループ面）になる
+        zf = res.periodic_faces[2:]
+        assert np.array_equal(res.mesh.face_owner[zf], res.mesh.face_neighbour[zf])
+
+    @pytest.mark.parametrize(
+        "text,match",
+        [
+            (
+                "*GRID, NX=3, NY=2, NZ=1, LX=0.3, LY=0.2, LZ=0.1\n"
+                "*BOUNDARY, TYPE=PERIODIC\n XM, XP, 0.5, 0.0, 0.0\n",
+                "一致しません",
+            ),
+            (
+                "*GRID, NX=3, NY=2, NZ=1, LX=0.3, LY=0.2, LZ=0.1\n"
+                "*BOUNDARY, TYPE=PERIODIC\n XM, YP\n",
+                "面数が一致しません",
+            ),
+            (
+                "*GRID, NX=2, NY=1, NZ=1, LX=0.2, LY=0.1, LZ=0.1\n"
+                "*ELSET, ELSET=E1\n 1\n*SURFACE, NAME=MID\n E1, S4\n"
+                "*BOUNDARY, TYPE=PERIODIC\n MID, XP\n",
+                "内部面が含まれています",
+            ),
+        ],
+    )
+    def test_rejects_bad_pairs(self, text: str, match: str):
+        with pytest.raises(UnsupportedMeshError, match=match):
+            self._mesh(text)
+
+    def test_solution_is_translation_invariant(self):
+        """周期方向に一様な熱伝導: 周期面があっても解が壁 1 枚ぶんずれない."""
+        text = (
+            "*GRID, NX=4, NY=4, NZ=1, LX=0.4, LY=0.4, LZ=0.1\n*BOUNDARY, TYPE=PERIODIC\n XM, XP\n"
+        )
+        m = self._mesh(text).mesh
+        bcs = {"YM": PatchBC.dirichlet(0.0), "YP": PatchBC.dirichlet(1.0)}
+        res = HeatTransferFVMProcess().execute(
+            HeatTransferFVMInput(
+                mesh=m,
+                conductivity=1.0,
+                T0=np.zeros(m.n_cells),
+                bcs=bcs,
+                linear_solver="direct",
+            )
+        )
+        T = res.T
+        y = m.cell_centers[:, 1]
+        assert np.allclose(T, y / 0.4, atol=1e-12)
+        # 同じ y のセルは x に依らず同じ温度
+        for y0 in np.unique(np.round(y, 12)):
+            assert np.ptp(T[np.isclose(y, y0)]) < 1e-12

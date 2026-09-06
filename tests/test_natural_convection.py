@@ -2147,6 +2147,40 @@ class TestAMGPressureSolver:
         result = NaturalConvectionFDMProcess().process(inp)
         assert result.converged
 
+    def test_solve_energy_false_keeps_temperature_field(self):
+        """solve_energy=False（HEAT TRANSFER=NONE）: T は初期場のまま、res_T は 0、流れは解かれる."""
+        base = dict(
+            Lx=0.1,
+            Ly=0.1,
+            Lz=0.05,
+            nx=4,
+            ny=4,
+            nz=2,
+            rho=1.0,
+            mu=0.01,
+            Cp=1000.0,
+            k_fluid=1.0,
+            beta=0.0,
+            T_ref=300.0,
+            bc_xm=FluidBoundarySpec(
+                condition=FluidBoundaryCondition.INLET_VELOCITY, velocity=(0.01, 0.0, 0.0)
+            ),
+            bc_xp=FluidBoundarySpec(condition=FluidBoundaryCondition.OUTLET_PRESSURE),
+            max_simple_iter=5,
+        )
+        T0 = np.full((4, 4, 2), 305.0)
+        T0[0] = 310.0
+        res = NaturalConvectionFDMProcess().process(
+            NaturalConvectionInput(T0=T0.copy(), solve_energy=False, **base)
+        )
+        np.testing.assert_array_equal(res.T, T0)
+        assert res.residual_history["T"] == [0.0] * res.n_outer_iterations
+        assert np.all(res.residual_fields["res_T"] == 0.0) and np.abs(res.u).max() > 0.0
+        with_energy = NaturalConvectionFDMProcess().process(
+            NaturalConvectionInput(T0=T0.copy(), **base)
+        )
+        assert not np.array_equal(with_energy.T, T0)
+
     def test_residual_fields_are_cell_maps_consistent_with_scalars(self):
         """残差マップ（セル別残差）の形状と、そのノルムがスカラー残差に一致すること."""
         inp = NaturalConvectionInput(

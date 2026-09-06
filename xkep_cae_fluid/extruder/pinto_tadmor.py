@@ -40,7 +40,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from xkep_cae_fluid.extruder.rtd import weighted_ecdf, weighted_quantile
+from xkep_cae_fluid.post.statistics import weighted_ecdf, weighted_quantile
 
 XI_SPLIT = 2.0 / 3.0
 """横断速度が符号反転する高さ。再循環の停留線."""

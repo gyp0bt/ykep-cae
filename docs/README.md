@@ -10,6 +10,8 @@
 | [水槽設計ロードマップ](roadmap-aquarium.md) | Phase 6 持続的水槽設計 CAE 詳細計画 |
 | [設計文書一覧](design/README.md) | 設計仕様書リンク集（コロケーション方式） |
 | [.inp 入力フォーマット](design/inp-format.md) | Abaqus 風キーワード構文の入力ファイルと `ykep -j=<job>.inp int` コマンド |
+| [汎用記法で押出級を書く](design/inp-generic-extrusion.md) | 周期境界・体積力・非ニュートン粘度・回転壁・Stokes / COUPLED（Phase 12） |
+| [非構造メッシュの粒子追跡と RTD](design/particle-tracking-fvm.md) | 面流束から再構成した Pollock 型の追跡、滞留時間分布・累積せん断ひずみ・混合指数 |
 | [3D レンダリング（messi mirador）](design/mirador-export.md) | 構造格子結果を messi の three.js ビューアで表示する `MiradorExportProcess`（断面スラブ・速度矢印、`FORMAT=HTML` / `ykep view`） |
 | [ステータス一覧](status/status-index.md) | 全statusファイル + テスト数推移 |
 | [実装計画](plans/2026-09-02-single-screw-extruder-impl.md) | 単軸押出 2.5D の実装計画（Task 0-11、ゲート G1-G4） |

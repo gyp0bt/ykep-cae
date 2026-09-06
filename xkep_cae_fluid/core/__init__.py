@@ -24,7 +24,6 @@ from xkep_cae_fluid.core.data import (
     MeshData,
 )
 from xkep_cae_fluid.core.diagnostics import (
-    DeprecatedProcessError,
     NonDefaultStrategyWarning,
     ProcessExecutionLog,
 )
@@ -72,7 +71,6 @@ __all__ = [
     "collect_strategy_types",
     "ProcessExecutionLog",
     "NonDefaultStrategyWarning",
-    "DeprecatedProcessError",
     "StructuredMeshProcess",
     "StructuredMeshInput",
     "StructuredMeshResult",

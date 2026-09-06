@@ -8,6 +8,7 @@ E_f 成分を陰的（係数行列）、T_f 成分を陽的（遅延補正）に
 from __future__ import annotations
 
 import numpy as np
+from scipy import sparse
 
 from xkep_cae_fluid.core.data import MeshData
 from xkep_cae_fluid.fvm.boundary import BoundaryFaces
@@ -25,6 +26,25 @@ def _require_faces(mesh: MeshData) -> None:
         raise ValueError("MeshData に面情報（owner/neighbour/areas/normals/centers）がありません")
 
 
+def neighbour_centers(mesh: MeshData) -> np.ndarray:
+    """内部面の neighbour セル中心を owner から見た位置で返す (n_internal_faces, ndim).
+
+    通常の面は ``cell_centers[neighbour]``。周期面（``mesh.face_offset``）は並進で戻した
+    ``cell_centers[neighbour] + face_offset``。P–N ベクトル・補間重み・スキュー・非直交分解・
+    最小二乗勾配・TVD の上流距離・Rhie–Chow は全てこれを使う。
+    """
+    _require_faces(mesh)
+    n_int = mesh.n_internal_faces
+    nd = mesh.face_normals.shape[1]
+    xn = mesh.cell_centers[mesh.face_neighbour, :nd]
+    if mesh.face_offset is None:
+        return xn
+    off = np.asarray(mesh.face_offset, dtype=np.float64)
+    if off.shape[0] != n_int:
+        raise ValueError(f"face_offset は (n_internal_faces={n_int}, ndim) が必要: {off.shape}")
+    return xn + off[:, :nd]
+
+
 def face_interpolation_weights(mesh: MeshData) -> np.ndarray:
     """内部面の線形補間重み w_f（φ_f = w_f φ_P + (1 − w_f) φ_N）.
 
@@ -34,10 +54,10 @@ def face_interpolation_weights(mesh: MeshData) -> np.ndarray:
     _require_faces(mesh)
     n_int = mesh.n_internal_faces
     owner = mesh.face_owner[:n_int]
-    neighbour = mesh.face_neighbour
-    fc = mesh.face_centers[:n_int]
-    d_pf = np.linalg.norm(fc - mesh.cell_centers[owner], axis=1)
-    d_fn = np.linalg.norm(mesh.cell_centers[neighbour] - fc, axis=1)
+    nd = mesh.face_normals.shape[1]
+    fc = mesh.face_centers[:n_int, :nd]
+    d_pf = np.linalg.norm(fc - mesh.cell_centers[owner, :nd], axis=1)
+    d_fn = np.linalg.norm(neighbour_centers(mesh) - fc, axis=1)
     denom = d_pf + d_fn
     w = np.where(denom > 0, d_fn / np.where(denom > 0, denom, 1.0), 0.5)
     return w
@@ -59,9 +79,8 @@ def face_skewness(mesh: MeshData) -> tuple[np.ndarray, np.ndarray]:
     n_int = mesh.n_internal_faces
     nd = mesh.face_normals.shape[1]
     owner = mesh.face_owner[:n_int]
-    nb = mesh.face_neighbour
     xp = mesh.cell_centers[owner, :nd]
-    d = mesh.cell_centers[nb, :nd] - xp
+    d = neighbour_centers(mesh) - xp
     n_f = mesh.face_normals[:n_int, :nd]
     xf = mesh.face_centers[:n_int, :nd]
     denom = np.sum(n_f * d, axis=1)
@@ -87,7 +106,7 @@ def face_decomposition(mesh: MeshData) -> tuple[np.ndarray, np.ndarray, np.ndarr
     _require_faces(mesh)
     n_int = mesh.n_internal_faces
     nd = mesh.face_normals.shape[1]
-    d_vec = mesh.cell_centers[mesh.face_neighbour] - mesh.cell_centers[mesh.face_owner[:n_int]]
+    d_vec = neighbour_centers(mesh) - mesh.cell_centers[mesh.face_owner[:n_int], :nd]
     d_pn = np.linalg.norm(d_vec, axis=1)
     e = d_vec / np.where(d_pn > 0, d_pn, 1.0)[:, None]
     n = mesh.face_normals[:n_int, :nd]
@@ -107,7 +126,7 @@ def max_nonorthogonality_deg(mesh: MeshData) -> float:
     if n_int == 0:
         return 0.0
     nd = mesh.face_normals.shape[1]
-    d_vec = mesh.cell_centers[mesh.face_neighbour] - mesh.cell_centers[mesh.face_owner[:n_int]]
+    d_vec = neighbour_centers(mesh) - mesh.cell_centers[mesh.face_owner[:n_int], :nd]
     d_pn = np.linalg.norm(d_vec, axis=1)
     e = d_vec / np.where(d_pn > 0, d_pn, 1.0)[:, None]
     cos = np.clip(np.sum(mesh.face_normals[:n_int, :nd] * e, axis=1), -1.0, 1.0)
@@ -302,6 +321,61 @@ def cell_gradient(
     return grad
 
 
+def lsq_gradient_operator(
+    mesh: MeshData, bfaces: BoundaryFaces | None = None
+) -> tuple[list[sparse.csr_matrix], np.ndarray]:
+    """:func:`cell_gradient_lsq` の線形作用素形 (∇φ)_c = G_c φ + g0_c.
+
+    Returns
+    -------
+    (G, g0) : 成分ごとの疎行列 G_c (n_cells × n_cells) のリスト（長さ ndim）と、Dirichlet 境界値の
+        定数寄与 g0 (n_cells, ndim)。速度–圧力の連成組み立て（:func:`~xkep_cae_fluid.fvm.momentum.assemble_coupled`）
+        が圧力勾配と Rhie–Chow 流束を陰的に書くために使う
+    """
+    _require_faces(mesh)
+    n = mesh.n_cells
+    n_int = mesh.n_internal_faces
+    nd = mesh.face_normals.shape[1]
+    owner = mesh.face_owner[:n_int]
+    nb = mesh.face_neighbour
+    xc = mesh.cell_centers[:, :nd]
+    r = neighbour_centers(mesh) - xc[owner]
+    w = 1.0 / np.maximum(np.sum(r * r, axis=1), 1e-300)
+    G = np.zeros((n, nd, nd))
+    outer = w[:, None, None] * r[:, :, None] * r[:, None, :]
+    np.add.at(G, owner, outer)
+    np.add.at(G, nb, outer)
+    has_dir = bfaces is not None and bool(np.any(bfaces.is_dirichlet))
+    if has_dir:
+        d = bfaces.is_dirichlet
+        own_b = bfaces.owner[d]
+        r_b = mesh.face_centers[bfaces.faces[d], :nd] - xc[own_b]
+        w_b = 1.0 / np.maximum(np.sum(r_b * r_b, axis=1), 1e-300)
+        np.add.at(G, own_b, w_b[:, None, None] * r_b[:, :, None] * r_b[:, None, :])
+    scale = np.maximum(np.max(np.abs(G).reshape(n, -1), axis=1), 1e-300)
+    G_inv = np.linalg.pinv(G / scale[:, None, None], rcond=1e-10) / scale[:, None, None]
+    # 内部面: owner 行に c_P (φ_N − φ_P)、neighbour 行に c_N (φ_N − φ_P)
+    wr = w[:, None] * r  # (n_int, nd)
+    c_own = np.einsum("nij,nj->ni", G_inv[owner], wr)
+    c_nb = np.einsum("nij,nj->ni", G_inv[nb], wr)
+    rows = np.concatenate([owner, owner, nb, nb])
+    cols = np.concatenate([nb, owner, nb, owner])
+    g0 = np.zeros((n, nd))
+    mats: list[sparse.csr_matrix] = []
+    for c in range(nd):
+        vals = np.concatenate([c_own[:, c], -c_own[:, c], c_nb[:, c], -c_nb[:, c]])
+        r_c = rows
+        c_c = cols
+        if has_dir:
+            cb = np.einsum("nij,nj->ni", G_inv[own_b], w_b[:, None] * r_b)
+            r_c = np.concatenate([rows, own_b])
+            c_c = np.concatenate([cols, own_b])
+            vals = np.concatenate([vals, -cb[:, c]])
+            np.add.at(g0[:, c], own_b, cb[:, c] * bfaces.value[d])
+        mats.append(sparse.coo_matrix((vals, (r_c, c_c)), shape=(n, n)).tocsr())
+    return mats, g0
+
+
 def cell_gradient_lsq(
     mesh: MeshData,
     phi: np.ndarray,
@@ -322,7 +396,7 @@ def cell_gradient_lsq(
     owner = mesh.face_owner[:n_int]
     nb = mesh.face_neighbour
     xc = mesh.cell_centers[:, :nd]
-    r = xc[nb] - xc[owner]
+    r = neighbour_centers(mesh) - xc[owner]
     dphi = phi[nb] - phi[owner]
     w = 1.0 / np.maximum(np.sum(r * r, axis=1), 1e-300)
     G = np.zeros((n, nd, nd))

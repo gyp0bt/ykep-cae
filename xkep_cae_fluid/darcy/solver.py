@@ -23,6 +23,7 @@ from xkep_cae_fluid.fvm import (
     assemble_scalar_transport,
     diffusive_face_flux,
     make_linear_solver,
+    neighbour_centers,
     resolve_boundary,
     solve_corrected,
 )
@@ -64,8 +65,8 @@ def cell_velocity_from_face_flux(mesh: MeshData, q: np.ndarray) -> np.ndarray:
     """
     n_int = mesh.n_internal_faces
     nd = mesh.face_centers.shape[1]
-    r_owner = mesh.face_centers - mesh.cell_centers[mesh.face_owner]
-    r_nb = mesh.face_centers[:n_int] - mesh.cell_centers[mesh.face_neighbour]
+    r_owner = mesh.face_centers[:, :nd] - mesh.cell_centers[mesh.face_owner, :nd]
+    r_nb = mesh.face_centers[:n_int, :nd] - neighbour_centers(mesh)
     u = np.zeros((mesh.n_cells, nd))
     np.add.at(u, mesh.face_owner, q[:, None] * r_owner)
     np.add.at(u, mesh.face_neighbour, -q[:n_int, None] * r_nb)

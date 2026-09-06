@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
+from functools import cache
 
 import numpy as np
 import pytest
@@ -16,13 +17,15 @@ from xkep_cae_fluid.extruder.data import (
 )
 from xkep_cae_fluid.extruder.solver import ExtruderFlowProcess
 from xkep_cae_fluid.extruder.tracker import ParticleTrackerProcess
-from xkep_cae_fluid.extruder.viscosity import NewtonianViscosity
+from xkep_cae_fluid.fvm.viscosity import NewtonianViscosity
 
 MU = 1000.0
 _BASE = ScrewSpec(D=0.040, lead=0.040, H=0.004, e=0.004, delta=0.0, N=100.0 / 60.0)
 
 
+@cache
 def flow_of(spec: ScrewSpec, G: float):
+    """収束済みの流れ場（同じ諸元なら解き直さない。返り値は読み取り専用）."""
     proc = ExtruderFlowProcess()
     proc.viscosity = NewtonianViscosity(mu=MU)
     return proc.process(ExtruderFlowInput(spec=spec, G=G))
@@ -43,8 +46,21 @@ def flow_with_gap(ny: int = 16, n_gap: int = 6, nx_channel: int = 40):
     return flow_of(spec, 5.0e6)
 
 
+_TRACKS: dict[tuple, object] = {}
+
+
 def track(flow, z_axial: float, **kw):
-    return ParticleTrackerProcess().process(ParticleTrackInput(flow=flow, z_axial=z_axial, **kw))
+    """追跡結果（同じ流れ場・同じ設定なら使い回す。返り値は読み取り専用）.
+
+    ``flow`` は numpy 配列を含む frozen dataclass で hash できないが、
+    :func:`flow_of` が同じ諸元に同じインスタンスを返すので id で引ける。
+    """
+    key = (id(flow), z_axial, tuple(sorted(kw.items())))
+    if key not in _TRACKS:
+        _TRACKS[key] = ParticleTrackerProcess().process(
+            ParticleTrackInput(flow=flow, z_axial=z_axial, **kw)
+        )
+    return _TRACKS[key]
 
 
 @binds_to(ParticleTrackerProcess)
@@ -233,6 +249,7 @@ class TestTrackerPhysics:
         assert np.all(tr.escaped[tr.extrapolated])
 
 
+@pytest.mark.slow
 class TestStreamlineDrift:
     """時間刻みと流線ドリフトの関係（G5 で見つかった機構の記録）.
 

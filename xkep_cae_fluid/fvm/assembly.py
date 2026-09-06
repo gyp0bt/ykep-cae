@@ -27,6 +27,7 @@ from xkep_cae_fluid.fvm.geometry import (
     face_diffusivity,
     face_gradient,
     is_orthogonal,
+    neighbour_centers,
 )
 from xkep_cae_fluid.fvm.linear import relative_residual
 
@@ -327,7 +328,9 @@ def tvd_deferred_correction(
     pos = mf >= 0.0
     up = np.where(pos, owner, nb)
     down = np.where(pos, nb, owner)
-    d_ud = mesh.cell_centers[down, :nd] - mesh.cell_centers[up, :nd]
+    # 上流 → 下流のセル中心間ベクトル（周期面は neighbour を並進で戻した位置）
+    d_pn = neighbour_centers(mesh) - mesh.cell_centers[owner, :nd]
+    d_ud = np.where(pos[:, None], d_pn, -d_pn)
     delta = phi[down] - phi[up]
     g = np.sum(np.asarray(grad, dtype=np.float64)[up, :nd] * d_ud, axis=1)
     eps = 1e-30

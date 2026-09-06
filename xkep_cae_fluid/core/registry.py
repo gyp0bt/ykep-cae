@@ -7,10 +7,6 @@ AbstractProcess._registry (dict) を ProcessRegistry クラスに昇格させる
 2. 依存グラフクエリ（uses / used_by の横断検索）
 3. テスト時のレジストリ隔離（isolate()）
 4. カテゴリ・stability によるフィルタリング
-
-後方互換:
-- AbstractProcess._registry は ProcessRegistry.default()._store への
-  プロキシとして維持される（RegistryProxy クラス経由）。
 """
 
 from __future__ import annotations
@@ -110,14 +106,6 @@ class ProcessRegistry:
             if hasattr(cls, "meta") and cls.meta.stability == stability
         ]
 
-    def non_deprecated(self) -> list[tuple[str, type[AbstractProcess]]]:
-        """deprecated でないプロセスを返す."""
-        return [
-            (name, cls)
-            for name, cls in sorted(self._store.items())
-            if not (hasattr(cls, "meta") and cls.meta.deprecated)
-        ]
-
     def exclude_test_fixtures(self) -> list[tuple[str, type[AbstractProcess]]]:
         """テスト用フィクスチャを除外したプロセスを返す."""
         return [
@@ -162,54 +150,6 @@ class ProcessRegistry:
 
     def __repr__(self) -> str:
         return f"ProcessRegistry({len(self._store)} processes)"
-
-
-class RegistryProxy(dict):
-    """AbstractProcess._registry の後方互換プロキシ.
-
-    AbstractProcess._registry への直接アクセスを ProcessRegistry.default() に転送する。
-    """
-
-    def __init__(self, registry_fn: Any) -> None:
-        super().__init__()
-        self._registry_fn = registry_fn
-
-    @property
-    def _store(self) -> dict:
-        return self._registry_fn()._store
-
-    def __contains__(self, key: object) -> bool:
-        return key in self._store
-
-    def __getitem__(self, key: str) -> Any:
-        return self._store[key]
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        self._store[key] = value
-
-    def __delitem__(self, key: str) -> None:
-        del self._store[key]
-
-    def __iter__(self) -> Iterator:
-        return iter(self._store)
-
-    def __len__(self) -> int:
-        return len(self._store)
-
-    def items(self) -> Any:
-        return self._store.items()
-
-    def keys(self) -> Any:
-        return self._store.keys()
-
-    def values(self) -> Any:
-        return self._store.values()
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return self._store.get(key, default)
-
-    def __repr__(self) -> str:
-        return f"RegistryProxy({len(self._store)} processes)"
 
 
 def _is_test_fixture(cls: type) -> bool:

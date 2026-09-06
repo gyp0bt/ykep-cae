@@ -38,6 +38,10 @@ ykep のソルバーを 3 層に分ける。
 
 ### `fvm/geometry.py` — 幾何演算
 
+- `neighbour_centers(mesh)`: 内部面の neighbour セル中心を **owner から見た位置**で返す
+  （`cell_centers[neighbour] + face_offset`）。周期面（`.inp` の `*BOUNDARY, TYPE=PERIODIC` で
+  内部面に併合した対）はここで並進を戻すだけで、以降の幾何（補間重み・スキュー・over-relaxed 分解・
+  最小二乗勾配・TVD の上流距離・Rhie–Chow）が普通の内部面と同じ式で通る
 - `face_interpolation_weights(mesh)`: 内部面の距離重み（等間隔で 0.5）
 - `face_diffusivity(mesh, gamma)`: 内部面の調和平均
 - `face_mass_flux(mesh, velocity, rho, blocked_cells=, boundary_normal_velocity=)`:
@@ -49,6 +53,19 @@ ykep のソルバーを 3 層に分ける。
   （直交メッシュは 1 回、Kuhn 四面体で 1 反復あたり 0.15 倍。線形場で厳密）
 - `cell_gradient_lsq(mesh, phi, bfaces=, gamma=)`: 重み付き最小二乗勾配（内部隣接 + Dirichlet 面。線形場で厳密、
   圧力・圧力補正の勾配に使う）
+- `lsq_gradient_operator(mesh, bfaces=)`: 同じ勾配を線形作用素 (∇φ)_c = G_c φ + g0_c として返す
+  （成分ごとの疎行列と Dirichlet 境界の定数項）。速度–圧力の連成組み立て `assemble_coupled` が
+  圧力勾配と Rhie–Chow 流束を陰的に書くために使う
+
+### `fvm/viscosity.py` — 粘度モデルとせん断速度
+
+`ViscosityModelStrategy` Protocol（`viscosity(gamma_dot) -> mu`）の具象
+`NewtonianViscosity` / `PowerLawViscosity`（μ = K γ̇^(n−1)、`gamma_min` / `mu_max` は数値上の安全弁）/
+`CarreauViscosity`。非構造メッシュのせん断速度は `velocity_gradient_cells`（最小二乗の速度勾配テンソル
+∇u。壁・流入は Dirichlet 面として点集合に入る）+ `strain_rate_from_gradient`（γ̇ = sqrt(2 D:D)）。
+`mixing_index_from_gradient`（λ = |D|/(|D|+|Ω|)）と、変粘度で拡散項 ∇·(μ∇u) に入らない
+`viscous_stress_transpose_source`（Σ_j ∂_i u_j ∂_j μ）も置く。押出専用の
+`extruder/viscosity.py` はここから再輸出する（構造格子専用の γ̇ 評価だけ残る）。
 
 ### `fvm/assembly.py` — 係数行列
 
@@ -89,8 +106,22 @@ ykep のソルバーを 3 層に分ける。
 `assemble_momentum`（有界形の風上対流 + TVD 遅延補正・拡散 + 非直交補正・時間項 Euler / BDF2・圧力勾配・抵抗・陰的緩和、
 固体セルと速度固定セル `fixed_mask` の行置換 `fix_rows`）、Rhie–Chow 面質量流束 `rhie_chow_mass_flux`
 （OUTFLOW 面は流入と釣り合うスケーリング）、圧力補正 `pressure_correction_coefficients` /
-`assemble_pressure_correction(pinned=)` / `correct_mass_flux`。圧力勾配には最小二乗勾配
-`geometry.cell_gradient_lsq`（境界セルでも線形場で厳密）を使う。詳細は [navier-stokes-fvm.md](navier-stokes-fvm.md)。
+`assemble_pressure_correction(pinned=, explicit_flux=)` / `correct_mass_flux(explicit_flux=)`、圧力補正の
+非直交補正流束 `pressure_correction_nonorthogonal`（c_f = ρ D_f (∇p')_f·T_f、前回の p' で陽的に評価）。
+速度と圧力を 1 つの線形系にまとめる `assemble_coupled`（圧力勾配を `lsq_gradient_operator`、
+連続式を Rhie–Chow 流束で陰的に書く鞍点系。緩和係数を使わず、Stokes なら 1 回の直接解で厳密解）。
+`VelocityPatchBC.rotating_wall(angular_velocity, center=, velocity=)` は面ごとに
+u = v + ω × (x_f − center) を割り当てる（回転するバレル・インペラ。`.inp` では `*MPC` + 参照節点）。
+圧力勾配には最小二乗勾配 `geometry.cell_gradient_lsq`（境界セルでも線形場で厳密）を使う。
+詳細は [navier-stokes-fvm.md](navier-stokes-fvm.md)。
+
+### `fvm/relaxation.py` — 緩和係数の適応的調整
+
+`adapt_relaxation_factors(alpha_u, alpha_p, max_res, prev_max_res, bounds, min_res=, simple_cap=)`:
+残差の推移から (α_u, α_p) を返す純関数。前回比 `improve_ratio`（0.8）未満で `grow`（1.1 倍、上限 0.9 / 0.5）、
+`worsen_ratio`（1.2）超か**最小残差の `stall_ratio`（5）倍超**で `shrink`（0.8 倍、下限 0.1 / 0.05）、
+`simple_cap` で α_p ≤ 1 − α_u。構造格子の `NaturalConvectionFDMProcess`（status-16 の適応緩和）と非構造の
+`NavierStokesFVMProcess` が同じ規則を使う（`RelaxationBounds` で閾値を差し替え可）。
 
 ### `fvm/linear.py` — 線形ソルバー Strategy
 

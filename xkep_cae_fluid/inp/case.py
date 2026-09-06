@@ -82,9 +82,145 @@ class SurfaceDefinition:
     entries: tuple[SurfaceEntry, ...]
 
 
+class OrientationSystem(Enum):
+    """``*ORIENTATION, SYSTEM=`` の語彙."""
+
+    RECTANGULAR = "RECTANGULAR"
+    CYLINDRICAL = "CYLINDRICAL"
+
+
+@dataclass(frozen=True)
+class OrientationDefinition:
+    """``*ORIENTATION``: 速度・角速度の成分を解釈する局所座標系.
+
+    データ行は Abaqus と同じ ``ax, ay, az, bx, by, bz``。
+
+    - ``SYSTEM=RECTANGULAR``（既定）: a は局所 1 軸上の点、b は局所 1–2 平面上の点
+    - ``SYSTEM=CYLINDRICAL``: a と b は**軸上の 2 点**。局所 3 軸が軸方向（b − a）になる
+      （回転体の軸。局所 1・2 軸は軸に直交する任意の正規直交基底）
+
+    Parameters
+    ----------
+    name : str
+    system : OrientationSystem
+    point_a, point_b : tuple[float, float, float]
+    """
+
+    name: str
+    system: OrientationSystem
+    point_a: tuple[float, float, float]
+    point_b: tuple[float, float, float]
+
+    def basis(self) -> np.ndarray:
+        """局所基底 (3, 3)（行が局所 1/2/3 軸の単位ベクトル、右手系）を返す."""
+        a = np.asarray(self.point_a, dtype=float)
+        b = np.asarray(self.point_b, dtype=float)
+        if self.system == OrientationSystem.CYLINDRICAL:
+            axis = b - a
+            norm = float(np.linalg.norm(axis))
+            if norm == 0.0:
+                raise ValueError(f"*ORIENTATION {self.name}: 軸上の 2 点が同一です")
+            e3 = axis / norm
+            # 軸に直交する任意の単位ベクトル（最も軸成分の小さい全体軸から作る）
+            seed = np.zeros(3)
+            seed[int(np.argmin(np.abs(e3)))] = 1.0
+            e1 = seed - float(np.dot(seed, e3)) * e3
+            e1 /= float(np.linalg.norm(e1))
+            return np.stack([e1, np.cross(e3, e1), e3])
+        n_a = float(np.linalg.norm(a))
+        if n_a == 0.0:
+            raise ValueError(f"*ORIENTATION {self.name}: 局所 1 軸の点が原点です")
+        e1 = a / n_a
+        v = b - float(np.dot(b, e1)) * e1
+        n_v = float(np.linalg.norm(v))
+        if n_v == 0.0:
+            raise ValueError(f"*ORIENTATION {self.name}: 局所 1–2 平面の点が 1 軸上にあります")
+        e2 = v / n_v
+        return np.stack([e1, e2, np.cross(e1, e2)])
+
+    def to_global(self, components: tuple[float, ...]) -> tuple[float, float, float]:
+        """局所成分 (v1, v2, v3) を全体座標系のベクトルにする."""
+        v = np.zeros(3)
+        v[: len(components)] = np.asarray(components, dtype=float)[:3]
+        g = v @ self.basis()
+        return (float(g[0]), float(g[1]), float(g[2]))
+
+
+class MPCKind(Enum):
+    """``*MPC`` の拘束種別（面を参照節点の剛体運動に従わせる）."""
+
+    BEAM = "BEAM"  # 並進 + 回転を伝える剛体リンク（Abaqus 互換）
+    RIGID = "RIGID"  # BEAM の別名
+    TIE = "TIE"  # BEAM の別名
+
+
+@dataclass(frozen=True)
+class MPCDefinition:
+    """``*MPC``: 面（従属）を参照節点（独立）の剛体運動に拘束する.
+
+    データ行は ``kind, slave, master``。``slave`` は ``*SURFACE`` 名か予約面名、
+    ``master`` は参照節点の ``*NSET`` 名か節点 ID。面上の速度は
+
+        u(x) = v_ref + ω_ref × (x − x_ref)
+
+    になる（``v_ref`` / ``ω_ref`` は参照節点への ``*BOUNDARY`` の自由度 1-3 / 4-6）。
+    """
+
+    kind: MPCKind
+    slave: str
+    master: str
+
+
+@dataclass(frozen=True)
+class PeriodicDefinition:
+    """``*BOUNDARY, TYPE=PERIODIC`` の 1 行: 2 つの面を並進で対応付ける周期境界.
+
+    Parameters
+    ----------
+    master, slave : str
+        ``*SURFACE`` 名（または予約面名 XM..ZP）。slave の面は master の面を ``translation`` だけ
+        並進した位置にある（x_slave = x_master + t）
+    translation : tuple[float, float, float] | None
+        並進ベクトル [m]。None なら両面の面中心の平均の差から自動決定
+    """
+
+    master: str
+    slave: str
+    translation: tuple[float, float, float] | None = None
+
+
 # ---------------------------------------------------------------------------
 # 物性・セクション
 # ---------------------------------------------------------------------------
+
+
+class ViscosityModel(Enum):
+    """``*VISCOSITY, TYPE=`` の語彙."""
+
+    NEWTONIAN = "NEWTONIAN"
+    POWER_LAW = "POWER LAW"
+    CARREAU = "CARREAU"
+
+
+@dataclass(frozen=True)
+class ViscosityLaw:
+    """``*VISCOSITY, TYPE=POWER LAW | CARREAU`` の粘度モデルとパラメータ.
+
+    Parameters
+    ----------
+    model : ViscosityModel
+    parameters : tuple[float, ...]
+        POWER LAW: ``K, n[, gamma_min, mu_max]``（μ = K γ̇^(n−1)）、
+        CARREAU: ``mu_0, mu_inf, lambda, n``
+    """
+
+    model: ViscosityModel
+    parameters: tuple[float, ...]
+
+    @property
+    def nominal_viscosity(self) -> float:
+        """参照粘度 [Pa·s]（POWER LAW は K = μ(γ̇=1)、CARREAU は μ_0）。ログと初期化に使う."""
+        return float(self.parameters[0])
 
 
 @dataclass(frozen=True)
@@ -96,7 +232,9 @@ class MaterialDefinition:
     density : float | None
         ``*DENSITY`` [kg/m³]
     viscosity : float | None
-        ``*VISCOSITY`` 粘度 [Pa·s]
+        ``*VISCOSITY`` 粘度 [Pa·s]（非ニュートンでは参照粘度 ``ViscosityLaw.nominal_viscosity``）
+    viscosity_law : ViscosityLaw | None
+        ``*VISCOSITY, TYPE=POWER LAW | CARREAU``（None ならニュートン）
     conductivity : float | None
         ``*CONDUCTIVITY`` [W/(m·K)]
     specific_heat : float | None
@@ -114,6 +252,7 @@ class MaterialDefinition:
     name: str
     density: float | None = None
     viscosity: float | None = None
+    viscosity_law: ViscosityLaw | None = None
     conductivity: float | None = None
     specific_heat: float | None = None
     expansion: float | None = None
@@ -173,15 +312,30 @@ class BoundaryKind(Enum):
     OUTLET = "outlet"  # 対流流出（非反射）
     SYMMETRY = "symmetry"
     TEMPERATURE = "temperature"  # 温度固定
+    ROTATION = "rotation"  # 角速度 [rad/s]（自由度 4-6。参照節点に与えて *MPC で面に伝える）
 
 
 @dataclass(frozen=True)
 class BoundaryCondition:
-    """``*BOUNDARY`` の 1 行."""
+    """``*BOUNDARY`` の 1 行.
 
-    target: str  # surface 名（予約名 XM/XP/YM/YP/ZM/ZP を含む）
+    Parameters
+    ----------
+    target : str
+        ``*SURFACE`` 名（予約名 XM/XP/YM/YP/ZM/ZP を含む）、``*ELSET`` 名（内部の吐出・吸入）、
+        ``*NSET`` 名 / 節点 ID（参照節点。``*MPC`` で面に伝える）
+    kind : BoundaryKind
+    values : tuple[float, ...]
+        速度なら (ux, uy, uz)、角速度なら (ωx, ωy, ωz) [rad/s]、圧力・温度なら 1 値
+    orientation : str
+        ``ORIENTATION=`` で指定した ``*ORIENTATION`` 名（空なら全体座標系）。
+        速度・角速度の成分をその局所座標系で解釈する
+    """
+
+    target: str
     kind: BoundaryKind
     values: tuple[float, ...] = ()
+    orientation: str = ""
 
 
 @dataclass(frozen=True)
@@ -207,18 +361,35 @@ class DistributedFlux:
     magnitude: float
 
 
+BODY_FORCE_LABELS: tuple[str, ...] = ("BX", "BY", "BZ", "BF")
+"""``*DLOAD`` の体積力ラベル（Abaqus の BX/BY/BZ = 成分ごと、BF = ベクトル 3 成分）."""
+
+
 @dataclass(frozen=True)
 class DistributedLoad:
-    """``*DLOAD`` の 1 行（現状 GRAV のみ）."""
+    """``*DLOAD`` の 1 行.
+
+    - ``GRAV``: 重力（``magnitude`` × 方向余弦 ``direction``）
+    - ``BX`` / ``BY`` / ``BZ``: 体積力の 1 成分 [N/m³]（``direction`` は単位軸、``magnitude`` が値）
+    - ``BF``: 体積力ベクトル [N/m³]（``direction`` にそのまま入り、``magnitude`` = 1）
+    """
 
     target: str
-    label: str  # "GRAV"
+    label: str  # "GRAV" / "BX" / "BY" / "BZ" / "BF"
     magnitude: float
     direction: tuple[float, float, float]
 
     @property
+    def is_body_force(self) -> bool:
+        return self.label in BODY_FORCE_LABELS
+
+    @property
     def vector(self) -> tuple[float, float, float]:
+        """重力なら大きさ × 単位方向、体積力ならベクトルそのもの [N/m³]."""
         d = np.asarray(self.direction, dtype=float)
+        if self.is_body_force:
+            g = self.magnitude * d
+            return (float(g[0]), float(g[1]), float(g[2]))
         norm = float(np.linalg.norm(d))
         if norm == 0.0:
             raise ValueError("*DLOAD, GRAV の方向ベクトルがゼロです")
@@ -343,6 +514,12 @@ class CaseDefinition:
     boundaries : tuple[BoundaryCondition, ...]
         モデルレベル（``*STEP`` の外）の境界条件。全ステップに適用
     films, fluxes, loads : モデルレベルの ``*SFILM`` / ``*DFLUX`` / ``*DLOAD``
+    periodic : tuple[PeriodicDefinition, ...]
+        ``*BOUNDARY, TYPE=PERIODIC``（モデルレベルのみ。メッシュの位相なので全ステップ共通）
+    orientations : Mapping[str, OrientationDefinition]
+        ``*ORIENTATION``（名前は大文字に正規化）
+    mpcs : tuple[MPCDefinition, ...]
+        ``*MPC``（面 → 参照節点の剛体拘束）
     steps : tuple[StepDefinition, ...]
     parameters : Mapping[str, object]
         ``*PARAMETER`` の最終値（記録用）
@@ -363,6 +540,9 @@ class CaseDefinition:
     films: tuple[FilmCondition, ...] = ()
     fluxes: tuple[DistributedFlux, ...] = ()
     loads: tuple[DistributedLoad, ...] = ()
+    periodic: tuple[PeriodicDefinition, ...] = ()
+    orientations: Mapping[str, OrientationDefinition] = field(default_factory=dict)
+    mpcs: tuple[MPCDefinition, ...] = ()
     steps: tuple[StepDefinition, ...] = ()
     parameters: Mapping[str, object] = field(default_factory=dict)
     source: str = ""

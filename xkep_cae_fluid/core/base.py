@@ -12,13 +12,12 @@ import functools
 import hashlib
 import inspect
 import time
-import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, ClassVar, Generic, TypeVar
 
-from xkep_cae_fluid.core.registry import ProcessRegistry, RegistryProxy
+from xkep_cae_fluid.core.registry import ProcessRegistry
 
 TIn = TypeVar("TIn")
 TOut = TypeVar("TOut")
@@ -34,10 +33,8 @@ class ProcessMeta:
     name: str
     module: str  # "pre", "solve", "post", "verify", "batch" 等
     version: str = "0.1.0"
-    deprecated: bool = False
-    deprecated_by: str | None = None
     document_path: str = ""
-    stability: str = "stable"  # experimental / stable / frozen / deprecated
+    stability: str = "stable"  # experimental / stable / frozen
     support_tier: str = "ci-required"  # ci-required / compat-only / dev-only
 
 
@@ -62,15 +59,6 @@ class ProcessMetaclass(type(ABC)):
             def traced_process(self, input_data):  # noqa: ANN001
                 cls_name = type(self).__name__
 
-                meta = getattr(type(self), "meta", None)
-                if meta is not None and getattr(meta, "deprecated", False):
-                    from xkep_cae_fluid.core.diagnostics import DeprecatedProcessError
-
-                    successor = getattr(meta, "deprecated_by", None) or "不明"
-                    raise DeprecatedProcessError(
-                        f"{cls_name} は deprecated です。 後継プロセス: {successor}"
-                    )
-
                 from xkep_cae_fluid.core.diagnostics import ProcessExecutionLog
 
                 log = ProcessExecutionLog.instance()
@@ -80,21 +68,8 @@ class ProcessMetaclass(type(ABC)):
 
                 ProcessMetaclass._call_stack.append(cls_name)
                 t0 = time.perf_counter()
-                warning_type = None
                 try:
-                    with warnings.catch_warnings(record=True) as caught:
-                        warnings.simplefilter("always")
-                        result = original(self, input_data)
-                    for w in caught:
-                        warnings.warn_explicit(
-                            w.message,
-                            w.category,
-                            w.filename,
-                            w.lineno,
-                        )
-                        wname = type(w.message).__name__
-                        if "Deprecated" in wname:
-                            warning_type = "deprecated"
+                    result = original(self, input_data)
                 finally:
                     elapsed = time.perf_counter() - t0
                     ProcessMetaclass._call_stack.pop()
@@ -103,7 +78,7 @@ class ProcessMetaclass(type(ABC)):
                     ProcessMetaclass._profile_data[cls_name].append(elapsed)
 
                     if ctx is not None and log.enabled:
-                        log.record_end(ctx, warning_type=warning_type)
+                        log.record_end(ctx)
 
                 return result
 
@@ -147,7 +122,6 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
     meta: ClassVar[ProcessMeta]
     uses: ClassVar[list[type[AbstractProcess]]] = []
 
-    _registry: ClassVar[dict[str, type[AbstractProcess]]] = RegistryProxy(ProcessRegistry.default)  # type: ignore[assignment]
     _used_by: ClassVar[list[type[AbstractProcess]]] = []
     _test_class: ClassVar[str | None] = None
     _verify_scripts: ClassVar[list[str]] = []
@@ -173,15 +147,6 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
         doc_full = (src_dir / _doc_path).resolve()
         if not doc_full.is_file():
             raise FileNotFoundError(f"{cls.__name__}: ドキュメントが見つかりません: {doc_full}")
-
-        for dep in cls.uses:
-            if hasattr(dep, "meta") and dep.meta.deprecated:
-                warnings.warn(
-                    f"{cls.__name__} は deprecated な {dep.__name__} を使用。"
-                    f" 後継: {dep.meta.deprecated_by}",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
 
         if getattr(cls, "_skip_registry", False):
             cls._used_by = []
@@ -280,8 +245,6 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
         doc_path = cls._resolve_document_path()
         if doc_path:
             lines.append(f"- **設計文書**: `{doc_path}`")
-        if cls.meta.deprecated:
-            lines.append(f"- **DEPRECATED** → {cls.meta.deprecated_by}")
         if cls.uses:
             lines.append(f"- **依存**: {', '.join(d.__name__ for d in cls.uses)}")
         if cls._used_by:
@@ -301,8 +264,6 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
         sections: list[str] = []
 
         sections.append(f"{indent} {cls.__name__} (v{cls.meta.version})")
-        if cls.meta.deprecated:
-            sections.append(f"> **DEPRECATED** → {cls.meta.deprecated_by}")
         sections.append("")
 
         doc_full = cls._resolve_document_fullpath()
