@@ -311,8 +311,12 @@ class NavierStokesFVMResult:
         追加スカラーの最終場（``ScalarSpec.name`` → (n_cells,)）
     alpha_history : dict[str, list[float]]
         ``adaptive_relaxation`` のときの外部反復ごとの ``alpha_u`` / ``alpha_p``（それ以外は空）
-    viscosity, strain_rate : np.ndarray | None
-        ``viscosity_model`` のときのセル粘度 μ [Pa·s] とせん断速度 γ̇ [1/s] (n_cells,)（それ以外は None）
+    viscosity : np.ndarray | None
+        ``viscosity_model`` のときのセル粘度 μ [Pa·s] (n_cells,)（それ以外は None）
+    strain_rate, mixing_index : np.ndarray | None
+        収束後の速度勾配から作るせん断速度 γ̇ = sqrt(2 D:D) [1/s] と
+        混合指数 λ = |D|/(|D|+|Ω|)（0: 純回転、0.5: 単純せん断、1: 純伸長）(n_cells,)。
+        粘度モデルの有無に関わらず出す（混練性・滞留時間分布の評価に使う）
     elapsed_seconds : float
     """
 
@@ -331,3 +335,4 @@ class NavierStokesFVMResult:
     alpha_history: dict[str, list[float]] = field(default_factory=dict)
     viscosity: np.ndarray | None = None
     strain_rate: np.ndarray | None = None
+    mixing_index: np.ndarray | None = None

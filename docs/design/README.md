@@ -53,6 +53,7 @@
 | 文書 | 配置先 | 内容 | 状態 |
 |------|--------|------|------|
 | [inp-generic-extrusion.md](inp-generic-extrusion.md) | `docs/design/` | 汎用記法（.inp）で押出級の流れを書く（周期境界・体積力・非ニュートン粘度・回転壁・Stokes / COUPLED、`ExtruderChannelInpProcess`） | 完了（Phase 12） |
+| [particle-tracking-fvm.md](particle-tracking-fvm.md) | `docs/design/` | 非構造メッシュの粒子追跡と滞留時間分布（面流束から再構成したセル内アフィン場を辿る Pollock 型、周期面・壁・進行度脱出、`ParticleTrackFVMProcess` / `ResidenceTimeProcess`） | 完了（experimental） |
 | [single-screw-extruder.md](single-screw-extruder.md) | `docs/design/` | 単軸押出 展開チャネル 2.5D（混練性・RTD） | **設計完了・未実装** |
 
 ## 水槽モジュール設計文書（Phase 6）

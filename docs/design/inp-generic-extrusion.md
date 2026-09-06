@@ -212,7 +212,10 @@ e=4 mm, δ=0.2 mm, N=1 s⁻¹, μ=1000 Pa·s, G=1e5 Pa/m）で照合した結果
 
 - 周期は**並進のみ**（回転周期・螺旋周期は未対応。3D 螺旋 1 ピッチは軸方向並進で書ける）
 - `COUPLED` は直接法固定・`OUTFLOW` 非対応
-- 非構造メッシュの**粒子追跡 / RTD** は未対応（構造格子の ψ 双一次補間のみ）。
-  汎用経路で RTD を出すには面流束ベースの追跡（Pollock 型）が要る
+- 非構造メッシュの**粒子追跡 / RTD** は
+  [particle-tracking-fvm.md](particle-tracking-fvm.md)（`ParticleTrackFVMProcess` /
+  `ResidenceTimeProcess`、面流束から再構成した Pollock 型）で対応済み。
+  ただし `.inp` のキーワードからは呼べず、Python API か
+  [`examples/extruder_generic_rtd.py`](../../examples/extruder_generic_rtd.py) を使う
 - 粘性発熱 `Φ = μγ̇²` と温度依存粘度は未対応（専用ソルバー側も Phase 2）
 - `*MPC` は面 → 参照節点の剛体拘束だけ（節点対節点の一般 MPC ではない）

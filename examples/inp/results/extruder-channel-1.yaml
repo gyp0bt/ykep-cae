@@ -4,7 +4,7 @@ step: channel
 procedure: NAVIER STOKES
 steady: true
 turbulence: LAMINAR
-commit: 096283a
+commit: 17506e8
 parameters: {}
 mesh:
   n_cells: 2016
@@ -45,12 +45,13 @@ final_residuals:
   w: 1.4756547307768287e-16
   T: 0.0
   mass: 7.514052454413555e-12
-elapsed_seconds: 0.1769292140000971
+elapsed_seconds: 0.36653229400053533
 max_abs_velocity: 0.11936705164059262
 temperature_range:
   - 300.0
   - 300.0
-wall_seconds: 0.18535717000008844
+max_strain_rate: 667.6772786669303
+wall_seconds: 0.3736201310002798
 output_files:
   - extruder-channel-1.npz
   - extruder-channel-1.vtk
@@ -64,3 +65,5 @@ variables:
   - res_w
   - res_mass
   - res_T
+  - GAMMA
+  - LAMBDA

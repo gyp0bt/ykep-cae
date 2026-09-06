@@ -39,7 +39,7 @@ from xkep_cae_fluid.extruder.pinto_tadmor import (
     compare_rtd,
     pinto_tadmor_rtd,
 )
-from xkep_cae_fluid.extruder.rtd import RTDProcess, weighted_ecdf
+from xkep_cae_fluid.extruder.rtd import RTDProcess
 from xkep_cae_fluid.extruder.shape_factors import (
     metering_flow_rate,
     shape_factor_drag,
@@ -47,17 +47,9 @@ from xkep_cae_fluid.extruder.shape_factors import (
 )
 from xkep_cae_fluid.extruder.solver import ExtruderFlowProcess
 from xkep_cae_fluid.extruder.tracker import ParticleTrackerProcess
-from xkep_cae_fluid.extruder.viscosity import (
-    CarreauViscosity,
-    NewtonianViscosity,
-    PowerLawViscosity,
-    ViscosityModelStrategy,
-    mixing_index,
-    strain_rate,
-)
+from xkep_cae_fluid.extruder.viscosity import mixing_index, strain_rate
 
 __all__ = [
-    "CarreauViscosity",
     "ChannelGrid",
     "CrossChannelInput",
     "CrossChannelResult",
@@ -68,19 +60,16 @@ __all__ = [
     "ExtruderFlowInput",
     "ExtruderFlowProcess",
     "ExtruderFlowResult",
-    "NewtonianViscosity",
     "ParticleTrackInput",
     "ParticleTrackResult",
     "ParticleTrackerProcess",
     "PintoTadmorRTD",
-    "PowerLawViscosity",
     "RTDComparison",
     "RTDInput",
     "RTDProcess",
     "RTDResult",
     "ScrewGeometryProcess",
     "ScrewSpec",
-    "ViscosityModelStrategy",
     "compare_rtd",
     "metering_flow_rate",
     "mixing_index",
@@ -88,5 +77,4 @@ __all__ = [
     "shape_factor_drag",
     "shape_factor_pressure",
     "strain_rate",
-    "weighted_ecdf",
 ]

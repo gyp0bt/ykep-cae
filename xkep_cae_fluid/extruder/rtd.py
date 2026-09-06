@@ -13,6 +13,9 @@ E(t) は滞留時間の確率密度、F(t) はその累積。押出では「ど�
 
 分布統計は全て**流束重み付き**で取る。粒子は流体セル 1 個につき 1 個しか
 置いていないが、それぞれが ζ=0 面を通る体積流束を重みとして持っているため。
+重み付き分位点・経験分布そのものは :mod:`xkep_cae_fluid.post.statistics` にあり、
+非構造メッシュ版（:class:`~xkep_cae_fluid.post.rtd.ResidenceTimeProcess`）と共有する。
+ここは展開チャネル 2.5D 専用で、``⟨t⟩ = z_axial·A_free/(sinφ·Q)`` の形に特殊化してある。
 """
 
 from __future__ import annotations
@@ -25,40 +28,9 @@ import numpy as np
 from xkep_cae_fluid.core.base import AbstractProcess, ProcessMeta
 from xkep_cae_fluid.core.categories import PostProcess
 from xkep_cae_fluid.extruder.data import RTDInput, RTDResult
+from xkep_cae_fluid.post.statistics import weighted_quantile
 
-
-def weighted_quantile(values: np.ndarray, weights: np.ndarray, q: float | np.ndarray) -> np.ndarray:
-    """重み付き分位点（線形内挿）.
-
-    values を昇順に並べ、累積重みが q に達する位置を線形内挿で求める。
-    """
-    order = np.argsort(values)
-    v = values[order]
-    w = weights[order]
-    total = w.sum()
-    if total <= 0.0:
-        msg = "重みの総和が 0 以下"
-        raise ValueError(msg)
-    # 区間中点の累積割合（重み付き経験分布の標準的な定義）
-    cum = (np.cumsum(w) - 0.5 * w) / total
-    return np.interp(q, cum, v)
-
-
-def weighted_ecdf(values: np.ndarray, weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """重み付き経験分布（昇順の値と区間中点の累積割合）.
-
-    ヒストグラムの F と違ってビン幅に依存しないので、文献曲線との max|ΔF| の
-    比較（ゲート G5）に使う。`weighted_quantile` と同じ中点流儀なので分位点が
-    逆算で一致する。
-    """
-    order = np.argsort(values)
-    v = values[order]
-    w = weights[order]
-    total = w.sum()
-    if total <= 0.0:
-        msg = "重みの総和が 0 以下"
-        raise ValueError(msg)
-    return v, (np.cumsum(w) - 0.5 * w) / total
+__all__ = ["RTDProcess"]
 
 
 class RTDProcess(PostProcess["RTDInput", "RTDResult"]):

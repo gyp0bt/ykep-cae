@@ -38,7 +38,7 @@ class MyProcess(SolverProcess[MyInput, MyOutput]):
         module="solve",
         version="0.1.0",
         document_path="docs/my_process.md",
-        stability="experimental",   # experimental / stable / frozen / deprecated
+        stability="experimental",   # experimental / stable / frozen
         support_tier="ci-required", # ci-required / compat-only / dev-only
     )
     uses = [DependencyProcess]
@@ -53,8 +53,6 @@ class MyProcess(SolverProcess[MyInput, MyOutput]):
 
 1. **実行トレース**: `ProcessExecutionLog` に呼び出し記録
 2. **プロファイリング**: `_profile_data` に実行時間を蓄積
-3. **deprecated 検出**: `ProcessMeta.deprecated=True` のプロセス実行時にエラー送出
-4. **警告キャプチャ**: `warnings.catch_warnings` で警告を記録
 
 ## StrategySlot
 

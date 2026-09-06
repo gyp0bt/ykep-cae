@@ -58,6 +58,7 @@ from xkep_cae_fluid.fvm.momentum import (
     rhie_chow_mass_flux,
 )
 from xkep_cae_fluid.fvm.viscosity import (
+    mixing_index_from_gradient,
     strain_rate_from_gradient,
     velocity_gradient_cells,
     viscous_stress_transpose_source,
@@ -262,13 +263,16 @@ class NavierStokesFVMProcess(SolverProcess["NavierStokesFVMInput", "NavierStokes
                 float(np.max(state.mu)),
                 float(np.max(state.gamma_dot)),
             )
+        # γ̇ と混合指数 λ は粘度モデルの有無に関わらず出す（混練性・RTD の評価に要る）
+        grad_u = state.final_velocity_gradient()
         return NavierStokesFVMResult(
             velocity=state.u,
             p=state.p,
             T=state.T,
             mass_flux=state.mass_flux,
             viscosity=None if state.model is None else np.asarray(state.mu).copy(),
-            strain_rate=None if state.model is None else state.gamma_dot.copy(),
+            strain_rate=strain_rate_from_gradient(grad_u),
+            mixing_index=mixing_index_from_gradient(grad_u),
             converged=bool(converged),
             n_outer_iterations=n_outer,
             n_timesteps=n_steps,
@@ -405,6 +409,17 @@ class _State:
         )
         if self.model is not None:
             self._update_viscosity(alpha=1.0)
+
+    def final_velocity_gradient(self) -> np.ndarray:
+        """収束後の速度場の速度勾配テンソル L_ij = ∂u_j/∂x_i (n_cells, 3, 3).
+
+        Picard の途中で作る ``velocity_gradient`` は 1 反復前の速度のものなので、
+        後処理（γ̇・混合指数・粒子追跡）にはここで取り直す。
+        """
+        L = velocity_gradient_cells(self.mesh, self.u, self.vb)
+        if self.blocked is not None:
+            L[self.blocked] = 0.0
+        return L
 
     @property
     def drag(self) -> np.ndarray | None:

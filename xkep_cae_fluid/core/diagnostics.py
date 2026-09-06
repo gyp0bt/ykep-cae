@@ -30,7 +30,6 @@ class ProcessExecutionEntry:
     parent_process: str | None
     elapsed_seconds: float
     timestamp: float
-    warning_type: str | None = None
 
 
 class ProcessExecutionLog:
@@ -89,12 +88,7 @@ class ProcessExecutionLog:
             t0=time.perf_counter(),
         )
 
-    def record_end(
-        self,
-        ctx: _CallContext,
-        *,
-        warning_type: str | None = None,
-    ) -> None:
+    def record_end(self, ctx: _CallContext) -> None:
         """プロセス実行完了を記録する."""
         elapsed = time.perf_counter() - ctx.t0
         if self._call_stack and self._call_stack[-1] == ctx.process_class:
@@ -109,7 +103,6 @@ class ProcessExecutionLog:
             parent_process=ctx.parent_process,
             elapsed_seconds=elapsed,
             timestamp=time.time(),
-            warning_type=warning_type,
         )
         self._entries.append(entry)
 
@@ -131,26 +124,21 @@ class ProcessExecutionLog:
 
         lines.append("## プロセス別サマリー")
         lines.append("")
-        lines.append("| Process | 呼出回数 | 合計時間(s) | 平均時間(s) | 警告 |")
-        lines.append("|---------|---------|------------|------------|------|")
+        lines.append("| Process | 呼出回数 | 合計時間(s) | 平均時間(s) |")
+        lines.append("|---------|---------|------------|------------|")
 
         call_counts: Counter[str] = Counter()
         total_times: dict[str, float] = defaultdict(float)
-        warning_counts: Counter[str] = Counter()
 
         for entry in self._entries:
             call_counts[entry.process_class] += 1
             total_times[entry.process_class] += entry.elapsed_seconds
-            if entry.warning_type:
-                warning_counts[entry.process_class] += 1
 
         for proc_name in sorted(call_counts.keys()):
             n = call_counts[proc_name]
             total = total_times[proc_name]
             avg = total / n
-            warn = warning_counts.get(proc_name, 0)
-            warn_str = str(warn) if warn > 0 else ""
-            lines.append(f"| {proc_name} | {n} | {total:.3f} | {avg:.3f} | {warn_str} |")
+            lines.append(f"| {proc_name} | {n} | {total:.3f} | {avg:.3f} |")
 
         return "\n".join(lines)
 
@@ -219,12 +207,6 @@ def _find_repo_root() -> Path:
         if (parent / ".git").exists() or (parent / "pyproject.toml").exists():
             return parent
     return current
-
-
-class DeprecatedProcessError(RuntimeError):
-    """deprecated プロセスの実行時エラー."""
-
-    pass
 
 
 class NonDefaultStrategyWarning(UserWarning):

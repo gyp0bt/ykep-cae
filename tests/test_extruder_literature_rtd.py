@@ -34,7 +34,7 @@ from xkep_cae_fluid.extruder.rtd import RTDProcess
 from xkep_cae_fluid.extruder.shape_factors import shape_factor_drag
 from xkep_cae_fluid.extruder.solver import ExtruderFlowProcess
 from xkep_cae_fluid.extruder.tracker import ParticleTrackerProcess
-from xkep_cae_fluid.extruder.viscosity import NewtonianViscosity
+from xkep_cae_fluid.fvm.viscosity import NewtonianViscosity
 
 MU = 1000.0
 Z_AXIAL = 0.5

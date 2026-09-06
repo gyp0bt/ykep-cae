@@ -49,6 +49,9 @@ VARIABLE_ALIASES: dict[str, str] = {
     "GAMMA": "GAMMA",  # せん断速度 γ̇
     "SR": "GAMMA",
     "STRAIN_RATE": "GAMMA",
+    "LAMBDA": "LAMBDA",  # 混合指数 λ = |D|/(|D|+|Ω|)
+    "MIX": "LAMBDA",
+    "MIXING_INDEX": "LAMBDA",
     "RES": "res_*",  # 残差マップ全部（res_u / res_v / res_w / res_T / res_mass …）
     "RESIDUAL": "res_*",
 }

@@ -358,9 +358,12 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
             logger.info("ステップ %s: *NAVIER STOKES → NavierStokesFVMProcess（非構造）", step.name)
             res_ns = NavierStokesFVMProcess().execute(ns_input)
             fields = {"U": res_ns.velocity, "P": res_ns.p, "T": res_ns.T, **res_ns.residual_fields}
+            if res_ns.strain_rate is not None:
+                fields["GAMMA"] = res_ns.strain_rate
+            if res_ns.mixing_index is not None:
+                fields["LAMBDA"] = res_ns.mixing_index
             if res_ns.viscosity is not None:
                 fields["MU"] = res_ns.viscosity
-                fields["GAMMA"] = res_ns.strain_rate
             last = {k: (v[-1] if v else None) for k, v in res_ns.residual_history.items()}
             summary = {
                 **base_summary,
@@ -377,6 +380,7 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
                     float(res_ns.viscosity.min()),
                     float(res_ns.viscosity.max()),
                 ]
+            if res_ns.strain_rate is not None:
                 summary["max_strain_rate"] = float(res_ns.strain_rate.max())
             n_iter = int(res_ns.n_outer_iterations)
             converged = bool(res_ns.converged)

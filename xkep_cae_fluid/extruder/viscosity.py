@@ -1,10 +1,9 @@
-"""粘度モデル Strategy とせん断速度の評価.
+"""展開チャネル（構造格子）のせん断速度と混合指数.
 
-FluidProperties.power_law_n / power_law_k は宣言済みで未使用だった。
-非ニュートンの席は既に用意されていたので、ここに具象を座らせる。
-
-粘度は「直交する振る舞い軸」なので Process ではなく Strategy Protocol とし、
-ソルバー側は StrategySlot で受ける（core/strategies と同じ流儀）。
+粘度モデル Strategy そのものは方程式ファミリー非依存なので
+:mod:`xkep_cae_fluid.fvm.viscosity` にある（``NewtonianViscosity`` /
+``PowerLawViscosity`` / ``CarreauViscosity``）。ここには構造格子 (nx, ny) 専用の
+γ̇ と λ の評価だけを置く。
 
 せん断速度（設計文書 §2）:
 
@@ -26,22 +25,7 @@ if TYPE_CHECKING:
     from xkep_cae_fluid.extruder.data import ChannelGrid
 
 
-# 粘度モデル本体は方程式ファミリー非依存の fvm 層に置き、ここから再輸出する
-from xkep_cae_fluid.fvm.viscosity import (  # noqa: E402
-    CarreauViscosity,
-    NewtonianViscosity,
-    PowerLawViscosity,
-    ViscosityModelStrategy,
-)
-
-__all__ = [
-    "ViscosityModelStrategy",
-    "NewtonianViscosity",
-    "PowerLawViscosity",
-    "CarreauViscosity",
-    "strain_rate",
-    "mixing_index",
-]
+__all__ = ["mixing_index", "strain_rate"]
 
 
 def _grad_x(f: np.ndarray, grid: ChannelGrid, wall: float = 0.0) -> np.ndarray:

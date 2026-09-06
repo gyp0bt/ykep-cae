@@ -263,7 +263,10 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
   （`assemble_coupled` + `lsq_gradient_operator`。Stokes キャビティが 273 → 2 反復）— status-36
 - [x] `ExtruderChannelInpProcess`（諸元 → 汎用記法 .inp）と例題 extruder-channel-1、
   専用 2.5D ソルバー・形状係数との照合（Q は機械精度、Q_axial 1.4e-3）— status-36
-- [ ] 非構造メッシュの粒子追跡 / RTD（面流束ベースの Pollock 型）— 汎用経路で混練性・RTD を出すために必要
+- [x] 非構造メッシュの粒子追跡 / RTD（面流束ベースの Pollock 型）— [design/particle-tracking-fvm.md](design/particle-tracking-fvm.md)。`ParticleTrackFVMProcess`（面流束を厳密に再現するセル内アフィン場 + 面の受け渡し、周期面・壁・進行度脱出）と `ResidenceTimeProcess`。NS 結果に γ̇ と混合指数 λ を常時出す。構造格子トラッカーと t_p10/p50/p90 が 4736 セルで 2.2e-4/3.8e-4/9.6e-4 — status-37
+- [ ] `.inp` から RTD を出すキーワード（`*RTD` 相当）— いまは Python API と example のみ — status-37 TODO
+- [ ] 自己面（1 層周期）の複数回横断をまとめる最適化（押出 2.5D の追跡が 1 粒子数万ステップ）— status-37 TODO
+- [x] 後方互換の全撤去（`RegistryProxy` / `ProcessMeta.deprecated` 機構 / 再輸出シム）と 全件テストの高速化（14 分 26 秒 → 2 分 28 秒。流れ場の共有・6 件を `slow` へ・`pytest-xdist`）— status-37
 - [ ] 回転周期・螺旋周期（3D 螺旋 1 ピッチは軸方向並進で書けるので優先度は低い）
 - [ ] COUPLED の前処理付き Krylov 法（大規模向け）と `OUTFLOW` 対応
 - [ ] 粘性発熱 `Φ = μγ̇²` と温度依存粘度（専用ソルバー側の Phase 2 と合わせる）

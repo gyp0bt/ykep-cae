@@ -108,7 +108,7 @@ neighbour セル中心を並進で戻した位置で幾何を評価するだけ�
 | | 内容 |
 |---|---|
 | `NavierStokesFVMInput` | `mesh`、`rho`、`mu`、`bcs`（パッチ → `FlowPatchBC`）、`solve_energy`、`Cp`、`k_fluid`、`beta`、`T_ref`、`gravity`、`T0`/`u0`/`p0`、`solid_mask`、`k_solid`、`heat_source`、`permeability`、`dt`/`t_end`、`max_outer_iter`、`tol`、`alpha_u`/`alpha_p`/`alpha_T`、`adaptive_relaxation`、`coupling`（simple / simplec / piso / coupled）、`viscosity_model`、`alpha_mu`、`body_force`、`n_piso_correctors`、`n_nonorthogonal_correctors`（既定 2）、`convection`（upwind / tvd / none）、`limiter`（van_leer / superbee）、`time_scheme`（euler / bdf2）、`scalars`（`ScalarSpec`）、`internal_bcs`（`InternalCellBC`）、`linear_solver`/`pressure_solver`、`tol_inner`/`max_inner_iter` |
-| `NavierStokesFVMResult` | `velocity (n_cells, 3)`、`p`、`T`、`mass_flux (n_faces,)`、`scalars`（名前 → 場）、`converged`、`n_outer_iterations`、`n_timesteps`、`residual_history`（u/v/w/T/mass/スカラー名）、`residual_fields`（res_u/res_v/res_w/res_T/res_mass/res_<名前>）、`alpha_history`（適応緩和のときの alpha_u / alpha_p）、`viscosity` / `strain_rate`（`viscosity_model` のときの μ と γ̇） |
+| `NavierStokesFVMResult` | `velocity (n_cells, 3)`、`p`、`T`、`mass_flux (n_faces,)`、`scalars`（名前 → 場）、`converged`、`n_outer_iterations`、`n_timesteps`、`residual_history`（u/v/w/T/mass/スカラー名）、`residual_fields`（res_u/res_v/res_w/res_T/res_mass/res_<名前>）、`alpha_history`（適応緩和のときの alpha_u / alpha_p）、`viscosity`（`viscosity_model` のときの μ）、`strain_rate` / `mixing_index`（収束後の速度勾配から作る γ̇ = sqrt(2 D:D) と λ = |D|/(|D|+|Ω|)。粘度モデルの有無に依らず常に出す。`*OUTPUT` の `GAMMA` / `LAMBDA`、[粒子追跡と RTD](particle-tracking-fvm.md) の経路積分に使う） |
 
 `FlowPatchBC.wall(temperature=, heat_flux=, film=(h, T_inf), velocity=)` /
 `rotating_wall(angular_velocity, center=, velocity=, …)`（u = v + ω × (x − center)）/

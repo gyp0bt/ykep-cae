@@ -109,8 +109,6 @@ def check_c3_test_binding(registry: dict[str, type]) -> list[str]:
     """C3: テスト未紐付けのプロセスを検出."""
     errors = []
     for name, cls in sorted(registry.items()):
-        if hasattr(cls, "meta") and cls.meta.deprecated:
-            continue
         if _is_test_fixture(cls):
             continue
         if cls._test_class is None:
@@ -124,9 +122,6 @@ def check_c5_undeclared_deps(registry: dict[str, type]) -> list[str]:
     registry_names = set(registry.keys())
 
     for name, cls in sorted(registry.items()):
-        meta = getattr(cls, "meta", None)
-        if meta is not None and getattr(meta, "deprecated", False):
-            continue
         method = getattr(cls, "process", None)
         if method is None:
             continue
@@ -172,9 +167,7 @@ def check_c9_frozen_immutability(registry: dict[str, type]) -> list[str]:
     try:
         source = inspect.getsource(AbstractProcess.execute)
         if "checksum" not in source and "hash" not in source:
-            errors.append(
-                "C9: AbstractProcess.execute() に入力データ不変性チェックが未実装"
-            )
+            errors.append("C9: AbstractProcess.execute() に入力データ不変性チェックが未実装")
     except (OSError, TypeError):
         errors.append("C9: AbstractProcess.execute() のソースを取得できない")
     return errors

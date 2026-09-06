@@ -8,29 +8,40 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pytest
 
 from xkep_cae_fluid.core.testing import binds_to
-from xkep_cae_fluid.extruder.data import ExtruderFlowInput, ScrewSpec
+from xkep_cae_fluid.extruder.data import (
+    ExtruderFlowInput,
+    ParticleTrackInput,
+    RTDInput,
+    ScrewSpec,
+)
 from xkep_cae_fluid.extruder.inp_export import (
     ExtruderChannelInpProcess,
     ExtruderInpInput,
     ExtruderInpResult,
     axial_throughput,
 )
+from xkep_cae_fluid.extruder.rtd import RTDProcess
 from xkep_cae_fluid.extruder.shape_factors import (
     metering_flow_rate,
     shape_factor_drag,
     shape_factor_pressure,
 )
 from xkep_cae_fluid.extruder.solver import ExtruderFlowProcess
+from xkep_cae_fluid.extruder.tracker import ParticleTrackerProcess
 from xkep_cae_fluid.fvm.viscosity import CarreauViscosity, NewtonianViscosity, PowerLawViscosity
 from xkep_cae_fluid.incompressible import NavierStokesFVMProcess
 from xkep_cae_fluid.inp.builder import build_case
 from xkep_cae_fluid.inp.mapping import InpMeshMappingInput, InpToNavierStokesFVMProcess
 from xkep_cae_fluid.inp.mesh import InpMeshInput, InpMeshProcess
 from xkep_cae_fluid.inp.parser import parse_inp_text
+from xkep_cae_fluid.post.rtd import ResidenceTimeInput, ResidenceTimeProcess
+from xkep_cae_fluid.post.tracking import ParticleTrackFVMInput, ParticleTrackFVMProcess
 
 MU = 1000.0
 
@@ -212,3 +223,76 @@ class TestExtruderGenericPathPhysics:
         assert out.viscosity[near_barrel].mean() < out.viscosity[~near_barrel].mean()
         q, _, q_axial = axial_throughput(out.velocity, mesh.mesh.cell_volumes, res.depth_z, spec)
         assert q > 0.0 and q_axial > 0.0
+
+
+class TestExtruderGenericRTDPhysics:
+    """汎用記法 + 面流束ベースの粒子追跡が、構造格子専用トラッカーと同じ RTD を出す.
+
+    参照は :class:`~xkep_cae_fluid.extruder.tracker.ParticleTrackerProcess`
+    （節点流れ関数 ψ の双一次補間 + 適応 RK4、ゲート G4a/G4b/G5 通過済み）。
+    汎用側は :class:`~xkep_cae_fluid.post.tracking.ParticleTrackFVMProcess`
+    （面流束から再構成したセル内アフィン場を辿る Pollock 型）で、**流れ場の作り方も
+    追跡の原理も別物**なので、滞留時間分布が揃えば両方の実装を同時に検証できる。
+    """
+
+    Z_AXIAL = 0.02
+
+    def _reference(self, spec: ScrewSpec):
+        proc = ExtruderFlowProcess()
+        proc.viscosity = NewtonianViscosity(MU)
+        flow = proc.execute(ExtruderFlowInput(spec=spec, G=1.0e5))
+        assert flow.converged
+        track = ParticleTrackerProcess().execute(
+            ParticleTrackInput(flow=flow, z_axial=self.Z_AXIAL, cfl=0.25, max_steps=50_000)
+        )
+        return RTDProcess().execute(RTDInput(track=track, flow=flow, z_axial=self.Z_AXIAL))
+
+    def _generic(self, spec: ScrewSpec):
+        res = _export(spec, 1.0e5)
+        case = build_case(parse_inp_text(res.text))
+        mesh = InpMeshProcess().execute(InpMeshInput(case=case))
+        ns = InpToNavierStokesFVMProcess().execute(
+            InpMeshMappingInput(case=case, mesh=mesh, step_index=0)
+        )
+        out = NavierStokesFVMProcess().execute(ns)
+        assert out.converged
+        track = ParticleTrackFVMProcess().execute(
+            ParticleTrackFVMInput(
+                mesh=mesh.mesh,
+                face_flux=out.mass_flux,
+                density=ns.rho,
+                seed="axial",
+                axis=(math.cos(spec.phi), 0.0, math.sin(spec.phi)),
+                length=self.Z_AXIAL,
+                max_steps=40_000,
+                scalars={"gamma": out.strain_rate, "lam": out.mixing_index},
+            )
+        )
+        return track, ResidenceTimeProcess().execute(
+            ResidenceTimeInput(track=track, rate_scalars=("lam",))
+        )
+
+    @pytest.mark.slow
+    def test_rtd_matches_the_structured_tracker(self):
+        spec = _spec()
+        ref = self._reference(spec)
+        track, rtd = self._generic(spec)
+
+        # ⟨t⟩ = length·V/Σw は離散化に依らず成り立つ厳密関係（種まき重み・面の受け渡し・
+        # 周期の巻き戻し・脱出時刻の内挿が全部合っていないと壊れる）
+        assert rtd.t_mean == pytest.approx(rtd.t_mean_theory, rel=1e-2)
+        assert ref.t_mean == pytest.approx(ref.t_mean_theory, rel=1e-2)
+        # 2 つの独立な実装が同じ滞留時間分布を出す
+        assert rtd.t_mean == pytest.approx(ref.t_mean, rel=2e-2)
+        assert rtd.t_p10 == pytest.approx(ref.t_p10, rel=3e-2)
+        assert rtd.t_p50 == pytest.approx(ref.t_p50, rel=3e-2)
+        assert rtd.t_p90 == pytest.approx(ref.t_p90, rel=5e-2)
+        # 混合指数は単純せん断が支配的（λ ≈ 0.5）
+        assert rtd.scalar_mean["lam"] == pytest.approx(ref.lambda_mean, rel=1e-2)
+        assert rtd.scalar_mean["lam"] == pytest.approx(0.5, abs=0.02)
+        # 累積せん断ひずみは γ̇ の評価が違う（最小二乗勾配 vs 構造格子差分）ので緩め
+        assert rtd.scalar_mean["gamma"] == pytest.approx(ref.gamma_mean, rel=0.15)
+        assert rtd.unresolved_weight_fraction < 1e-3
+        # 周期を何周も回っている（x のフライト越えと z の下流方向）
+        assert np.abs(track.shift_total[:, 0]).max() > spec.W_t
+        assert track.shift_total[:, 2].max() > self.Z_AXIAL

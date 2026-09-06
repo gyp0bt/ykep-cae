@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from functools import cache
 
 import numpy as np
 import pytest
@@ -15,7 +16,7 @@ from xkep_cae_fluid.extruder.shape_factors import (
     shape_factor_pressure,
 )
 from xkep_cae_fluid.extruder.solver import ExtruderFlowProcess
-from xkep_cae_fluid.extruder.viscosity import (
+from xkep_cae_fluid.fvm.viscosity import (
     CarreauViscosity,
     NewtonianViscosity,
     PowerLawViscosity,
@@ -42,7 +43,9 @@ def spec_gap(ny: int = 40, n_gap: int = 16, nx_channel: int = 160) -> ScrewSpec:
     return replace(_BASE, delta=1.0e-4, nx_channel=nx_channel, nx_land=40, ny_bulk=ny, n_gap=n_gap)
 
 
+@cache
 def run(spec: ScrewSpec, G: float, model, **kw):
+    """同じ (spec, G, 粘度モデル, 追加引数) なら解を使い回す（返り値は読み取り専用）."""
     proc = ExtruderFlowProcess()
     proc.viscosity = model
     return proc.process(ExtruderFlowInput(spec=spec, G=G, **kw))
@@ -144,6 +147,7 @@ class TestNonNewtonian:
         assert res.gamma_dot[i_land, -1] > res.gamma_dot[0, g.ny // 2]
         assert res.mu[i_land, -1] < res.mu[0, g.ny // 2]
 
+    @pytest.mark.slow
     def test_gamma_min_does_not_change_the_answer(self):
         """γ̇ クランプは数値上の安全弁であり、結果を動かさないこと."""
         spec = spec_gap()
@@ -154,6 +158,7 @@ class TestNonNewtonian:
         assert qs[1] == pytest.approx(qs[0], rel=1e-3)
         assert qs[2] == pytest.approx(qs[0], rel=1e-3)
 
+    @pytest.mark.slow
     def test_relaxation_does_not_change_the_fixed_point(self):
         """緩和係数を変えても収束先（不動点）は同じであること.
 
