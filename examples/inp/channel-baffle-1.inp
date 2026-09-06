@@ -1,0 +1,47 @@
+** =====================================================================
+**  厚さゼロのバッフル（内部面の *SURFACE）を持つ 2D 流路
+**  *GRID の箱格子（32×8×1）の中央 x = 0.85 に、下半分を塞ぐ薄板を置く。
+**  内部面を含む *SURFACE を *BOUNDARY, TYPE=WALL の target にすると、ykep はその面を
+**  両側の境界面に分割し（InpMeshProcess の baffle_surfaces）、非構造経路
+**  （NavierStokesFVMProcess）で解く（箱格子でも構造格子経路には落とさない）。
+**  期待: 板の上の隙間で平均流速が入口の約 2 倍、流入 = 流出、板の面の質量流束 0。
+**  実行: ykep -j=examples/inp/channel-baffle-1.inp int -o=examples/inp/results
+** =====================================================================
+*HEADING
+ Channel with a zero-thickness baffle blocking the lower half (unstructured FVM path)
+*PARAMETER
+ U_in = 0.01
+ rho  = 1.0
+ mu   = 0.01
+*GRID, NX=32, NY=8, NZ=1, LX=1.6, LY=0.4, LZ=0.05
+** 板を持つ要素（列 i = 16、下半分 j = 0..3）。要素 ID = 1 + i + 32 j、S4 が +x 面
+*ELSET, ELSET=PLATE_CELLS
+ 17, 49, 81, 113
+*SURFACE, NAME=PLATE, TYPE=ELEMENT
+ PLATE_CELLS, S4
+*MATERIAL, NAME=WATER
+*DENSITY
+ <rho>
+*VISCOSITY
+ <mu>
+*FLUID SECTION, ELSET=ALL, MATERIAL=WATER
+*STEP, NAME=Steady
+*NAVIER STOKES, TURBULENCE=LAMINAR, STEADY STATE, HEAT TRANSFER=NONE
+*BOUNDARY, TYPE=VELOCITY
+ XM, <U_in>, 0.0, 0.0
+*BOUNDARY, TYPE=PRESSURE
+ XP, 0.0
+*BOUNDARY, TYPE=WALL
+ YM
+ YP
+ PLATE
+*CONTROLS, PARAMETERS=DISCRETIZATION
+ CONVECTION=UPWIND, PRESSURE_VELOCITY=SIMPLE
+*CONTROLS, PARAMETERS=RELAXATION
+ VELOCITY=0.7, PRESSURE=0.3
+*CONTROLS, PARAMETERS=SOLVER
+ PRESSURE=DIRECT, MOMENTUM=DIRECT, MAX_OUTER=500, TOL=1e-5
+*OUTPUT, FIELD, FORMAT=VTK
+*ELEMENT OUTPUT
+ U, P, RES
+*END STEP

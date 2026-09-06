@@ -27,12 +27,17 @@
    （`convection="tvd"`、van Leer / Superbee、`tvd_deferred_correction`）+ 拡散 μ（over-relaxed
    非直交補正付き）+ 時間項（陰的 Euler / BDF2）+ 圧力勾配 −∂p/∂x_c V + 浮力 + 抵抗 μ/K V（対角）、
    陰的緩和 α_u → u*
-3. Rhie–Chow 面質量流束: ṁ_f = ρ[ ū_f·S_f − D_f((p_N − p_P)|E_f|/d_PN − (∇p)_f·E_f) ]、
-   D_f = interp(V/a_P)（SIMPLEC は V/(a_P − Σ|a_nb|)）。境界: INLET ρ u_in·S、OUTLET ρ u_P·S、壁・対称 0、
-   OUTFLOW は ρ u_P·S を他の境界の正味流入と釣り合うようスケーリング
-4. 圧力補正 Σ_f a_f (p'_P − p'_N) = −Σ_f ṁ_f、a_f = ρ D_f |E_f|/d_PN。OUTLET は p' = 0、内部吐出・吸入セルは
-   p' = 0 に固定、どちらも無い閉領域はセル 0 を基準
-5. p += α_p p'、u −= (V/a_P)∇p'、ṁ_f −= a_f (p'_N − p'_P)
+3. Rhie–Chow 面質量流束: ṁ_f = ρ[ ū_f·S_f − D⁰_f((p_N − p_P)|E_f|/d_PN − (∇p)_f·E_f) ]、
+   D⁰_f = interp(V/a⁰_P)、a⁰_P = α_u a_P は**緩和前**の対角（Majumdar 1988。緩和後の a_P を使うと収束解が
+   α_u に依存する。16×16 の Stokes 的キャビティで α_u = 0.5 と 0.7 の差が 2% → 3e-8 に）。
+   境界: INLET ρ u_in·S、OUTLET ρ u_P·S、壁・対称 0、OUTFLOW は ρ u_P·S を他の境界の正味流入と釣り合うよう
+   スケーリング
+4. 圧力補正 Σ_f a_f (p'_P − p'_N) = −Σ_f ṁ_f + Σ_f c_f、a_f = ρ D_f |E_f|/d_PN、D_f = interp(V/a_P)
+   （SIMPLEC は V/(a_P − Σ|a_nb|)）。**非直交補正**: c_f = ρ D_f (∇p')_f·T_f を前回の p'
+   （最小二乗勾配）で陽的に評価し、`n_nonorthogonal_correctors` 回（既定 2、直交メッシュでは 1 回）
+   p' を解き直す。OUTLET は p' = 0、内部吐出・吸入セルは p' = 0 に固定、どちらも無い閉領域はセル 0 を基準
+5. p += α_p p'、u −= (V/a_P)∇p'、ṁ_f −= a_f (p'_N − p'_P) + c_f（同じ c_f を使うので修正後の流束の
+   発散は解いた線形系と厳密に整合する）
    - PISO（`coupling="piso"`、α_p = 1）: 修正した速度で隣接項 H(u) = b − A_off u を再評価し、新しい圧力勾配で
      u** = H/a_P を作って 3–4 を繰り返す（`n_piso_correctors` 回、Issa 1986）。非定常で外部反復 1 回の
      時間進行に使う
@@ -58,14 +63,21 @@
 
 収束判定: 運動量 3 成分の相対初期残差 ‖b − A u‖/max(‖b‖, ‖A u‖, ‖a_P‖U_ref)、質量不整合
 Σ|Σ_f ṁ_f| /(Σ_f|ṁ_f|/2)、エネルギー連成なら温度残差、の最大値が `tol` 未満（2 反復目から）。
-追加スカラーは判定に含めない（構造格子版と同じ）。
+追加スカラーは判定に含めない（構造格子版と同じ）。NaN か 1e20 超で発散として打ち切る。
+反復 1〜5 と 10 反復ごとに残差をログに出す（`ykep ... int` で端末にも）。
+
+適応緩和（`adaptive_relaxation`）: 構造格子版と同じ規則を [`fvm/relaxation.py`](fvm-layer.md) に切り出して
+共有する。前回比 0.8 未満で α_u, α_p を 1.1 倍（上限 0.9 / 0.5）、1.2 超で 0.8 倍（下限 0.1 / 0.05）、
+加えて**最小残差の 5 倍を超えたら保守化**（前回比は小さいがじわじわ発散する型。cavity-nc-2 で
+旧規則は 75 → 474 反復に悪化していた）、SIMPLE では α_p ≤ 1 − α_u。`alpha_history` に反復ごとの値を残す。
+実測: cavity-nc-2（非直交 14°）75 → 62 反復、cavity-nc-1 の非構造経路 275 → 219 反復。
 
 ## 入出力
 
 | | 内容 |
 |---|---|
-| `NavierStokesFVMInput` | `mesh`、`rho`、`mu`、`bcs`（パッチ → `FlowPatchBC`）、`solve_energy`、`Cp`、`k_fluid`、`beta`、`T_ref`、`gravity`、`T0`/`u0`/`p0`、`solid_mask`、`k_solid`、`heat_source`、`permeability`、`dt`/`t_end`、`max_outer_iter`、`tol`、`alpha_u`/`alpha_p`/`alpha_T`、`coupling`（simple / simplec / piso）、`n_piso_correctors`、`convection`（upwind / tvd）、`limiter`（van_leer / superbee）、`time_scheme`（euler / bdf2）、`scalars`（`ScalarSpec`）、`internal_bcs`（`InternalCellBC`）、`linear_solver`/`pressure_solver`、`tol_inner`/`max_inner_iter` |
-| `NavierStokesFVMResult` | `velocity (n_cells, 3)`、`p`、`T`、`mass_flux (n_faces,)`、`scalars`（名前 → 場）、`converged`、`n_outer_iterations`、`n_timesteps`、`residual_history`（u/v/w/T/mass/スカラー名）、`residual_fields`（res_u/res_v/res_w/res_T/res_mass/res_<名前>） |
+| `NavierStokesFVMInput` | `mesh`、`rho`、`mu`、`bcs`（パッチ → `FlowPatchBC`）、`solve_energy`、`Cp`、`k_fluid`、`beta`、`T_ref`、`gravity`、`T0`/`u0`/`p0`、`solid_mask`、`k_solid`、`heat_source`、`permeability`、`dt`/`t_end`、`max_outer_iter`、`tol`、`alpha_u`/`alpha_p`/`alpha_T`、`adaptive_relaxation`、`coupling`（simple / simplec / piso）、`n_piso_correctors`、`n_nonorthogonal_correctors`（既定 2）、`convection`（upwind / tvd）、`limiter`（van_leer / superbee）、`time_scheme`（euler / bdf2）、`scalars`（`ScalarSpec`）、`internal_bcs`（`InternalCellBC`）、`linear_solver`/`pressure_solver`、`tol_inner`/`max_inner_iter` |
+| `NavierStokesFVMResult` | `velocity (n_cells, 3)`、`p`、`T`、`mass_flux (n_faces,)`、`scalars`（名前 → 場）、`converged`、`n_outer_iterations`、`n_timesteps`、`residual_history`（u/v/w/T/mass/スカラー名）、`residual_fields`（res_u/res_v/res_w/res_T/res_mass/res_<名前>）、`alpha_history`（適応緩和のときの alpha_u / alpha_p） |
 
 `FlowPatchBC.wall(temperature=, heat_flux=, film=(h, T_inf), velocity=)` / `inlet(velocity, temperature=)` /
 `outlet(pressure=, temperature=)` / `outflow(temperature=)` / `symmetry()`。
@@ -88,11 +100,25 @@
   - 内部セル吐出・吸入: 吐出セルの速度・温度が固定、他のセルは質量保存（1e-12）、湧き出し = 吸い込み、
     温度が [初期, 吐出] に収まる（有界形）
   - 追加スカラー: 流路で流入値が全域に運ばれる、閉じたキャビティのトレーサ（非定常、TVD）の総量保存と 0 ≤ c ≤ 1
+  - 圧力補正の非直交補正: せん断 0.6（31°）の Stokes 的キャビティ 1 ステップを α_u = 0.8, α_p = 0.5 で解くと、
+    補正 1 回は 60 反復で収束せず、2 回は直交メッシュ並みの反復数で収束して解は保守的な緩和の収束解と 1e-5 で一致。
+    直交メッシュでは補正回数によらず同じ反復数（余分な圧力解法をしない）
+  - 適応緩和: Poiseuille 流路で収束し、`alpha_history` が反復ごとに記録され、上下限と α_p ≤ 1 − α_u を守る
+
+実測（`docs/status/status-35.md`）: 圧力補正の非直交補正は定常 SIMPLE の**収束解を変えず**（p' → 0）、
+効くのは緩和が強いとき・歪みが大きいときの安定性。せん断 0.6 / 1.0（31° / 45°）で α = (0.8, 0.5) は
+補正 1 回だと発散、2 回で 28〜30 反復。**3 回は 45° で発散**（遅延補正の反復の縮小率が tan θ ≈ 1 で
+縮小しない）ので既定は 2。cavity-nc-2（14°）は補正回数によらず 75 反復。
 
 ## 制限と TODO
 
-- 圧力補正に非直交補正は入れていない（歪んだメッシュでは外部反復で吸収）
+- 圧力補正の非直交補正は無制限（unlimited）の遅延補正。45° を超えるメッシュでは OpenFOAM の `limited ψ`
+  相当（T_f を ψ 倍）が要る
 - OUTFLOW は流出流束のスケーリング（Fluent の outflow 相当）で、非定常の非反射条件 ∂u/∂t + U_c ∂u/∂n = 0 ではない
-- `ADAPTIVE`（適応緩和）、乱流モデルなし
+- 乱流モデルなし。CFL 適応 dt は構造格子版のみ
+- 構造格子版 `NaturalConvectionFDMProcess` の Rhie–Chow は緩和後の a_P を使っている（収束解の α_u 依存が
+  残っている可能性。空気実物性の不安定化調査と合わせて確認する）
 - 内部セル境界は `.inp` では要素集合を target にした `*BOUNDARY`（TYPE=VELOCITY / PRESSURE / TEMPERATURE）で与える
-  （[inp-format.md](inp-format.md)）。内部面（`*SURFACE`）単位の指定は無い（セル単位で十分なので保留）
+  （[inp-format.md](inp-format.md)）。内部面（`*SURFACE`）はバッフル（厚さゼロの壁、両側同条件。
+  WALL / SLIP / SYMMETRY / TEMPERATURE と `*DFLUX` / `*SFILM`）として `InpMeshProcess` が両側の境界面に
+  分割する（[unstructured-inp-mesh.md](unstructured-inp-mesh.md)）。内部面の流入・流出（ファン・圧力ジャンプ）は無い

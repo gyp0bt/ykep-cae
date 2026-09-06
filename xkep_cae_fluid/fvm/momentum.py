@@ -466,6 +466,33 @@ def pressure_correction_coefficients(
     return a_int, a_b
 
 
+def pressure_correction_nonorthogonal(
+    mesh: MeshData,
+    d_cells: np.ndarray,
+    grad_pp: np.ndarray,
+    rho: float,
+    blocked: np.ndarray | None = None,
+) -> np.ndarray:
+    """圧力補正の非直交（遅延）補正の面流束 c_f = ρ D_f (∇p')_f·T_f (n_internal_faces,).
+
+    圧力補正の面流束 ṁ'_f = −ρ D_f ∇p'_f·S_f を over-relaxed 分解 S_f = E_f + T_f で
+    −a_f (p'_N − p'_P) − c_f に分け、E_f 部分を陰的（:func:`pressure_correction_coefficients`）、
+    T_f 部分 c_f を前回の p' の勾配（:func:`~xkep_cae_fluid.fvm.geometry.cell_gradient_lsq`）で
+    陽的に評価する。直交メッシュではゼロ。固体に接する面はゼロ。
+    """
+    n_int = mesh.n_internal_faces
+    owner = mesh.face_owner[:n_int]
+    nb = mesh.face_neighbour
+    w = face_interpolation_weights(mesh)
+    _e_mag, t_vec, _d_pn = face_decomposition(mesh)
+    nd = t_vec.shape[1]
+    d_f = w * d_cells[owner] + (1.0 - w) * d_cells[nb]
+    grad_f = w[:, None] * grad_pp[owner, :nd] + (1.0 - w)[:, None] * grad_pp[nb, :nd]
+    c = rho * d_f * np.sum(grad_f * t_vec, axis=1)
+    c[_touching_faces(mesh, blocked)[:n_int]] = 0.0
+    return c
+
+
 def assemble_pressure_correction(
     mesh: MeshData,
     mass_flux: np.ndarray,
@@ -473,12 +500,15 @@ def assemble_pressure_correction(
     a_b: np.ndarray,
     vb: VelocityBoundaryFaces,
     pinned: np.ndarray | None = None,
+    explicit_flux: np.ndarray | None = None,
 ) -> tuple[sparse.csr_matrix, np.ndarray, np.ndarray]:
-    """圧力補正方程式 Σ_f a_f (p'_P − p'_N) = −Σ_f ṁ_f を組む.
+    """圧力補正方程式 Σ_f a_f (p'_P − p'_N) = −Σ_f ṁ_f + Σ_f c_f を組む.
 
     OUTLET 面は p' = 0 の Dirichlet（係数 a_b）。``pinned`` のセル（内部の吐出・吸入セル）は
     p' = 0 に固定（質量の湧き出し・吸い込みを許す）。Dirichlet 面もピン留めセルも無い
     （閉じた領域）ときはセル 0 を基準（p' = 0）にする。
+    ``explicit_flux`` は内部面の非直交補正流束 c_f（:func:`pressure_correction_nonorthogonal`。
+    owner に +、neighbour に − で右辺へ。:func:`correct_mass_flux` にも同じ配列を渡す）。
 
     Returns
     -------
@@ -500,6 +530,9 @@ def assemble_pressure_correction(
     vals = np.concatenate([-a_int, -a_int, diag])
     A = sparse.coo_matrix((vals, (rows, cols)), shape=(n, n)).tocsr()
     b = (-imbalance).copy()
+    if explicit_flux is not None:
+        np.add.at(b, owner, explicit_flux)
+        np.add.at(b, nb, -explicit_flux)
     pin = np.zeros(n, dtype=bool)
     if pinned is not None:
         pin |= np.asarray(pinned, dtype=bool)
@@ -520,11 +553,18 @@ def correct_mass_flux(
     a_int: np.ndarray,
     a_b: np.ndarray,
     vb: VelocityBoundaryFaces,
+    explicit_flux: np.ndarray | None = None,
 ) -> np.ndarray:
-    """面質量流束を p' で修正する（内部面 −a_f (p'_N − p'_P)、OUTLET 面 +a_b p'_P）."""
+    """面質量流束を p' で修正する（内部面 −a_f (p'_N − p'_P) − c_f、OUTLET 面 +a_b p'_P）.
+
+    ``explicit_flux`` は :func:`assemble_pressure_correction` に渡した非直交補正流束 c_f
+    （同じ配列を渡すと修正後の流束の発散が解いた線形系と厳密に整合する）。
+    """
     n_int = mesh.n_internal_faces
     out = np.asarray(mass_flux, dtype=np.float64).copy()
     out[:n_int] -= a_int * (p_prime[mesh.face_neighbour] - p_prime[mesh.face_owner[:n_int]])
+    if explicit_flux is not None:
+        out[:n_int] -= explicit_flux
     out[vb.faces] += a_b * p_prime[vb.owner]
     return out
 
@@ -562,6 +602,7 @@ __all__ = [
     "rhie_chow_mass_flux",
     "pressure_correction_coefficients",
     "assemble_pressure_correction",
+    "pressure_correction_nonorthogonal",
     "correct_mass_flux",
     "fix_rows",
     "velocity_patch_from_kind",

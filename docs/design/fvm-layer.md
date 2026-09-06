@@ -89,8 +89,18 @@ ykep のソルバーを 3 層に分ける。
 `assemble_momentum`（有界形の風上対流 + TVD 遅延補正・拡散 + 非直交補正・時間項 Euler / BDF2・圧力勾配・抵抗・陰的緩和、
 固体セルと速度固定セル `fixed_mask` の行置換 `fix_rows`）、Rhie–Chow 面質量流束 `rhie_chow_mass_flux`
 （OUTFLOW 面は流入と釣り合うスケーリング）、圧力補正 `pressure_correction_coefficients` /
-`assemble_pressure_correction(pinned=)` / `correct_mass_flux`。圧力勾配には最小二乗勾配
-`geometry.cell_gradient_lsq`（境界セルでも線形場で厳密）を使う。詳細は [navier-stokes-fvm.md](navier-stokes-fvm.md)。
+`assemble_pressure_correction(pinned=, explicit_flux=)` / `correct_mass_flux(explicit_flux=)`、圧力補正の
+非直交補正流束 `pressure_correction_nonorthogonal`（c_f = ρ D_f (∇p')_f·T_f、前回の p' で陽的に評価）。
+圧力勾配には最小二乗勾配 `geometry.cell_gradient_lsq`（境界セルでも線形場で厳密）を使う。
+詳細は [navier-stokes-fvm.md](navier-stokes-fvm.md)。
+
+### `fvm/relaxation.py` — 緩和係数の適応的調整
+
+`adapt_relaxation_factors(alpha_u, alpha_p, max_res, prev_max_res, bounds, min_res=, simple_cap=)`:
+残差の推移から (α_u, α_p) を返す純関数。前回比 `improve_ratio`（0.8）未満で `grow`（1.1 倍、上限 0.9 / 0.5）、
+`worsen_ratio`（1.2）超か**最小残差の `stall_ratio`（5）倍超**で `shrink`（0.8 倍、下限 0.1 / 0.05）、
+`simple_cap` で α_p ≤ 1 − α_u。構造格子の `NaturalConvectionFDMProcess`（status-16 の適応緩和）と非構造の
+`NavierStokesFVMProcess` が同じ規則を使う（`RelaxationBounds` で閾値を差し替え可）。
 
 ### `fvm/linear.py` — 線形ソルバー Strategy
 

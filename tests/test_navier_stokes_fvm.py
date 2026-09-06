@@ -384,6 +384,84 @@ class TestNavierStokesFVMPhysics:
         assert errs[1] < errs[0] / 3.0 and errs[2] < errs[1], f"errs={errs}"
         assert errs[2] < 0.01
 
+    def test_pressure_nonorthogonal_correction_stabilizes_sheared_cavity(self):
+        """せん断 0.6（非直交 31°）の Stokes 的キャビティ 1 ステップ: 圧力補正の非直交補正で収束が安定する.
+
+        α_u = 0.8, α_p = 0.5 では補正なし（1 回）だと 60 反復で収束せず、2 回で直交メッシュ並みの
+        反復数で収束する。収束解は補正回数によらない（保守的な緩和で収束させた解と一致）。
+        非直交角 45° 付近では遅延補正の反復自体が縮小しないので 3 回にはしない（設計文書）。
+        """
+        n = 16
+        mesh = _sheared(n, n, 1.0, 1.0, 1.0 / n, 0.6)
+        bcs = {
+            "YP": FlowPatchBC.wall(velocity=(1.0, 0.0, 0.0)),
+            "ZM": FlowPatchBC.symmetry(),
+            "ZP": FlowPatchBC.symmetry(),
+        }
+        kw = dict(mu=1.0, dt=0.002, t_end=0.002, tol=1e-9)
+        ref = _run(mesh, bcs, max_outer_iter=300, alpha_u=0.7, alpha_p=0.3, **kw)
+        assert ref.converged
+        one = _run(
+            mesh,
+            bcs,
+            max_outer_iter=60,
+            alpha_u=0.8,
+            alpha_p=0.5,
+            n_nonorthogonal_correctors=1,
+            **kw,
+        )
+        two = _run(
+            mesh,
+            bcs,
+            max_outer_iter=60,
+            alpha_u=0.8,
+            alpha_p=0.5,
+            n_nonorthogonal_correctors=2,
+            **kw,
+        )
+        assert not one.converged
+        assert two.converged and two.n_outer_iterations <= 40, two.n_outer_iterations
+        scale = np.abs(ref.velocity).max()
+        assert np.abs(two.velocity - ref.velocity).max() / scale < 1e-5
+        # 直交メッシュでは補正回数によらず同じ反復数（余分な圧力解法をしない）
+        box = _box(n, n, 1, 1.0, 1.0, 1.0 / n)
+        a = _run(
+            box,
+            bcs,
+            max_outer_iter=100,
+            alpha_u=0.8,
+            alpha_p=0.5,
+            n_nonorthogonal_correctors=1,
+            **kw,
+        )
+        b = _run(
+            box,
+            bcs,
+            max_outer_iter=100,
+            alpha_u=0.8,
+            alpha_p=0.5,
+            n_nonorthogonal_correctors=3,
+            **kw,
+        )
+        assert a.converged and b.converged and a.n_outer_iterations == b.n_outer_iterations
+        np.testing.assert_allclose(a.velocity, b.velocity)
+
+    def test_adaptive_relaxation_converges_and_records_history(self):
+        """適応緩和: Poiseuille 流路で収束し、α の履歴が反復ごとに記録され、上下限と SIMPLE の目安を守る."""
+        mesh = _box(16, 8, 1, LX, H, 0.01)
+        res = _run(mesh, _channel_bcs(), adaptive_relaxation=True, alpha_u=0.5, alpha_p=0.2)
+        assert res.converged
+        au = np.array(res.alpha_history["alpha_u"])
+        ap = np.array(res.alpha_history["alpha_p"])
+        assert len(au) == len(ap) == res.n_outer_iterations
+        assert np.all((au >= 0.1) & (au <= 0.9)) and np.all((ap >= 0.05) & (ap <= 0.5))
+        assert np.all(ap <= 1.0 - au + 1e-12)
+        assert au.max() > 0.5  # 収束が順調なので積極化された
+        plain = _run(mesh, _channel_bcs(), alpha_u=0.5, alpha_p=0.2)
+        assert plain.converged and not plain.alpha_history
+        scale = np.abs(plain.velocity).max()
+        assert np.abs(res.velocity - plain.velocity).max() / scale < 1e-4
+
     def test_bdf2_conduction_more_accurate_than_euler(self):
         """静止流体の 1D 熱伝導（sin(πx) の減衰）: BDF2 の誤差が Euler の 1/5 未満."""
         n = 20

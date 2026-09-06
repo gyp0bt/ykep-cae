@@ -9,14 +9,16 @@
 1. 圧力勾配 ∇p（最小二乗、OUTLET は Dirichlet、他はゼロ勾配）
 2. 運動量 3 成分（対流 1 次風上 + TVD 遅延補正、拡散 + 非直交補正、浮力・抵抗、時間項 Euler / BDF2、
    陰的緩和 α_u）→ u*
-3. Rhie–Chow の面質量流束 ṁ*、圧力補正 Σ a_f (p'_P − p'_N) = −Σ ṁ*
-4. p += α_p p'、u −= (V/a_P) ∇p'、ṁ −= a_f Δp'（PISO は α_p = 1 で 3–4 を ``n_piso_correctors`` 回）
+3. Rhie–Chow の面質量流束 ṁ*、圧力補正 Σ a_f (p'_P − p'_N) = −Σ ṁ* + Σ c_f
+   （c_f = ρ D_f ∇p'_f·T_f は前回の p' で評価する非直交の遅延補正。``n_nonorthogonal_correctors`` 回）
+4. p += α_p p'、u −= (V/a_P) ∇p'、ṁ −= a_f Δp' + c_f（PISO は α_p = 1 で 3–4 を ``n_piso_correctors`` 回）
 5. エネルギー（対流 ṁ + 拡散 k、固体は k_solid、陰的緩和 α_T）
 6. 追加スカラー（同じ ṁ、``ScalarSpec``）
 
 Brinkman 抵抗（透過率 K）は運動量の対角に μ/K V、Boussinesq 浮力は −ρ β (T − T_ref) g V。
 領域内部の吐出・吸入（``InternalCellBC``）は速度固定セル + 圧力補正のピン留め。
-設計は ``docs/design/navier-stokes-fvm.md``。
+``adaptive_relaxation`` は構造格子版と同じ規則（:mod:`xkep_cae_fluid.fvm.relaxation`）で
+α_u / α_p を残差の推移から動かす。設計は ``docs/design/navier-stokes-fvm.md``。
 """
 
 from __future__ import annotations
@@ -35,8 +37,10 @@ from xkep_cae_fluid.fvm import (
     CONVECTION_SCHEMES,
     TVD_LIMITERS,
     PatchBC,
+    adapt_relaxation_factors,
     assemble_scalar_transport,
     cell_gradient_lsq,
+    is_orthogonal,
     make_linear_solver,
     resolve_boundary,
 )
@@ -48,6 +52,7 @@ from xkep_cae_fluid.fvm.momentum import (
     fix_rows,
     pressure_boundary,
     pressure_correction_coefficients,
+    pressure_correction_nonorthogonal,
     resolve_velocity_boundary,
     rhie_chow_mass_flux,
 )
@@ -116,6 +121,8 @@ class NavierStokesFVMProcess(SolverProcess["NavierStokesFVMInput", "NavierStokes
             raise ValueError(f"time_scheme は {_TIME_SCHEMES} のみ: {inp.time_scheme!r}")
         if inp.coupling.lower() == "piso" and inp.n_piso_correctors < 1:
             raise ValueError("n_piso_correctors は 1 以上")
+        if inp.n_nonorthogonal_correctors < 1:
+            raise ValueError("n_nonorthogonal_correctors は 1 以上")
         names = [sp.name for sp in inp.scalars]
         if len(set(names)) != len(names):
             raise ValueError(f"scalars の名前が重複しています: {names}")
@@ -132,16 +139,64 @@ class NavierStokesFVMProcess(SolverProcess["NavierStokesFVMInput", "NavierStokes
         times: list[float] = []
 
         keys = (*_COMPONENTS, "mass", "T") if inp.solve_energy else (*_COMPONENTS, "mass")
+        alpha_history: dict[str, list[float]] = (
+            {"alpha_u": [], "alpha_p": []} if inp.adaptive_relaxation else {}
+        )
+        logger.info(
+            "NavierStokesFVM: セル %d / %s / 対流 %s / 時間 %s / 非直交補正 %d 回 / α_u=%.2f α_p=%.2f%s",
+            inp.mesh.n_cells,
+            inp.coupling.upper(),
+            inp.convection,
+            "定常" if not inp.is_transient else f"dt={inp.dt:.3e}, t_end={inp.t_end:.3e}",
+            state.n_nonorth,
+            state.alpha_u,
+            state.alpha_p,
+            "（適応）" if inp.adaptive_relaxation else "",
+        )
+
+        def _after_iteration(res: dict[str, float], prev: float) -> float:
+            """残差の記録・ログ・適応緩和。戻り値は判定に使う最大残差（発散なら inf）."""
+            for k, v in res.items():
+                residual_history[k].append(v)
+            max_res = max(res[k] for k in keys)
+            if n_outer <= 5 or n_outer % 10 == 0:
+                logger.info(
+                    "SIMPLE iter %d: mass=%.2e, u=%.2e, v=%.2e, w=%.2e, T=%.2e",
+                    n_outer,
+                    res["mass"],
+                    res["u"],
+                    res["v"],
+                    res["w"],
+                    res["T"],
+                )
+            if not np.isfinite(max_res) or max_res > 1e20:
+                logger.warning("SIMPLE 発散: iter %d, max_residual=%.2e", n_outer, max_res)
+                return float("inf")
+            if inp.adaptive_relaxation:
+                if state.adapt(max_res, prev):
+                    logger.info(
+                        "適応緩和: iter %d → α_u=%.3f, α_p=%.3f",
+                        n_outer,
+                        state.alpha_u,
+                        state.alpha_p,
+                    )
+                alpha_history["alpha_u"].append(state.alpha_u)
+                alpha_history["alpha_p"].append(state.alpha_p)
+            return max_res
 
         if not inp.is_transient:
+            prev_max = 0.0
             for it in range(inp.max_outer_iter):
                 res, residual_fields = state.iterate(None, None)
                 n_outer += 1
-                for k, v in res.items():
-                    residual_history[k].append(v)
+                max_res = _after_iteration(res, prev_max)
+                if not np.isfinite(max_res):
+                    break
+                prev_max = max_res
                 # 1 反復目は初期場（静止・一様温度）の残差がゼロになり得るので判定しない
-                if it >= 1 and max(res[k] for k in keys) < inp.tol:
+                if it >= 1 and max_res < inp.tol:
                     converged = True
+                    logger.info("SIMPLE 収束: %d 反復, max_residual=%.2e", n_outer, max_res)
                     break
             n_steps = 0
         else:
@@ -150,22 +205,45 @@ class NavierStokesFVMProcess(SolverProcess["NavierStokesFVMInput", "NavierStokes
             t = 0.0
             old2: dict[str, np.ndarray] | None = None
             bdf2 = inp.time_scheme.lower() == "bdf2"
+            diverged = False
             for step in range(n_steps):
                 t += inp.dt
                 old = state.snapshot()
                 step_ok = False
+                prev_max = 0.0
+                n_inner = 0
                 for it in range(inp.max_outer_iter):
                     res, residual_fields = state.iterate(old, old2 if bdf2 else None)
                     n_outer += 1
-                    for k, v in res.items():
-                        residual_history[k].append(v)
-                    if it >= 1 and max(res[k] for k in keys) < inp.tol:
+                    n_inner += 1
+                    max_res = _after_iteration(res, prev_max)
+                    if not np.isfinite(max_res):
+                        diverged = True
+                        break
+                    prev_max = max_res
+                    if it >= 1 and max_res < inp.tol:
                         step_ok = True
                         break
                 converged &= step_ok
+                if not step_ok and not diverged:
+                    logger.warning(
+                        "タイムステップ %d (t=%.4f): SIMPLE 未収束 (max_res=%.2e)",
+                        step + 1,
+                        t,
+                        prev_max,
+                    )
                 old2 = old
                 if (step + 1) % max(inp.output_interval, 1) == 0 or step == n_steps - 1:
                     times.append(t)
+                    logger.info(
+                        "t=%.4f (dt=%.3e): SIMPLE %d iter, mass=%.2e",
+                        t,
+                        inp.dt,
+                        n_inner,
+                        res["mass"],
+                    )
+                if diverged:
+                    break
 
         return NavierStokesFVMResult(
             velocity=state.u,
@@ -180,6 +258,7 @@ class NavierStokesFVMProcess(SolverProcess["NavierStokesFVMInput", "NavierStokes
             elapsed_seconds=time.perf_counter() - t0,
             time_history=tuple(times),
             scalars={k: v.copy() for k, v in state.phi.items()},
+            alpha_history=alpha_history,
         )
 
 
@@ -226,6 +305,11 @@ class _State:
                 raise ValueError("permeability は正の値が必要（抵抗なしは inf）")
             self.drag = inp.mu / K
         self.gravity = np.asarray(inp.gravity, dtype=np.float64)
+        self.alpha_u = float(inp.alpha_u)
+        self.alpha_p = float(inp.alpha_p)
+        self.min_res = 0.0
+        self.orthogonal = is_orthogonal(mesh)
+        self.n_nonorth = 1 if self.orthogonal else max(1, int(inp.n_nonorthogonal_correctors))
         self.mom_solver = _solver(inp.linear_solver, inp.tol_inner, inp.max_inner_iter)
         self.p_solver = _solver(inp.pressure_solver, inp.tol_inner, inp.max_inner_iter)
         self.T_solver = _solver(inp.linear_solver, inp.tol_inner, inp.max_inner_iter)
@@ -278,6 +362,28 @@ class _State:
             mesh, self.u, self.p, np.zeros(n), np.zeros((n, 3)), self.vb, inp.rho, self.blocked
         )
 
+    def adapt(self, max_res: float, prev_max_res: float) -> bool:
+        """適応緩和（構造格子版と同じ規則）。係数が変わったら True.
+
+        最小残差 ``min_res`` を保持し、じわじわ発散（前回比は小さいが最小値の 5 倍超）も保守化の
+        対象にする。保守化したら最小残差を今の値に置き直す。SIMPLE では α_p ≤ 1 − α_u。
+        """
+        new_u, new_p = adapt_relaxation_factors(
+            self.alpha_u,
+            self.alpha_p,
+            max_res,
+            prev_max_res,
+            min_res=self.min_res,
+            simple_cap=self.inp.coupling.lower() == "simple",
+        )
+        changed = new_u != self.alpha_u or new_p != self.alpha_p
+        if new_u < self.alpha_u or new_p < self.alpha_p:
+            self.min_res = max_res
+        elif np.isfinite(max_res) and max_res > 0.0:
+            self.min_res = max_res if self.min_res <= 0.0 else min(self.min_res, max_res)
+        self.alpha_u, self.alpha_p = new_u, new_p
+        return changed
+
     def snapshot(self) -> dict[str, np.ndarray]:
         out = {"u": self.u.copy(), "T": self.T.copy()}
         for k, v in self.phi.items():
@@ -325,7 +431,7 @@ class _State:
                 vb=self.vb,
                 grad_p=grad_p,
                 rho=inp.rho,
-                alpha=inp.alpha_u,
+                alpha=self.alpha_u,
                 source=None if buoy is None else buoy[:, c],
                 drag=self.drag,
                 dt=dt,
@@ -358,10 +464,14 @@ class _State:
         else:
             d_cells = mesh.cell_volumes / ap_mean
         d_cells = np.where(np.isfinite(d_cells), d_cells, 0.0)
+        # Rhie–Chow の D_f は緩和前の対角 a_P⁰ = α_u a_P で作る（Majumdar 1988）。緩和後の a_P を
+        # 使うと収束解が α_u に依存する（16×16 の Stokes 的キャビティで α_u 0.5 と 0.7 の差 2%）
+        d_rc = mesh.cell_volumes / (self.alpha_u * ap_mean)
+        d_rc = np.where(np.isfinite(d_rc), d_rc, 0.0)
 
         # Rhie–Chow 面流束と圧力補正（PISO は α_p = 1 で複数回）
         a_int, a_b = pressure_correction_coefficients(mesh, d_cells, self.vb, inp.rho, self.blocked)
-        alpha_p = 1.0 if coupling == "piso" else inp.alpha_p
+        alpha_p = 1.0 if coupling == "piso" else self.alpha_p
         n_corr = inp.n_piso_correctors if coupling == "piso" else 1
         u_new = u_star
         imbalance = np.zeros(n)
@@ -383,22 +493,35 @@ class _State:
                     u_hat[finite, c] = rhs[finite] / diag[finite]
                 u_new = self._enforce_fixed(u_hat)
             m_star = rhie_chow_mass_flux(
-                mesh, u_new, self.p, d_cells, grad_p, self.vb, inp.rho, self.blocked
+                mesh, u_new, self.p, d_rc, grad_p, self.vb, inp.rho, self.blocked
             )
-            A_pc, b_pc, imb = assemble_pressure_correction(
-                mesh, m_star, a_int, a_b, self.vb, pinned=self.pinned
-            )
+            # 非直交補正: 前回の p' の勾配で T_f 流束 c_f を陽的に評価し、p' を解き直す
+            # （1 回目は c_f = 0。直交メッシュでは 1 回で終わる）
+            c_f: np.ndarray | None = None
+            p_prime = np.zeros(n)
+            imb = np.zeros(n)
+            for k_no in range(self.n_nonorth):
+                if k_no > 0:
+                    grad_pp = cell_gradient_lsq(mesh, p_prime, self.bpc)
+                    c_f = pressure_correction_nonorthogonal(
+                        mesh, d_cells, grad_pp, inp.rho, self.blocked
+                    )
+                A_pc, b_pc, imb = assemble_pressure_correction(
+                    mesh, m_star, a_int, a_b, self.vb, pinned=self.pinned, explicit_flux=c_f
+                )
+                p_prime = self.p_solver.solve(A_pc, b_pc, x0=p_prime)
+                if self.blocked is not None:
+                    p_prime[self.blocked] = 0.0
             if corr == 0:
                 imbalance = imb
-            p_prime = self.p_solver.solve(A_pc, b_pc, x0=np.zeros(n))
-            if self.blocked is not None:
-                p_prime[self.blocked] = 0.0
             self.p = self.p + alpha_p * p_prime
             grad_pp = cell_gradient_lsq(mesh, p_prime, self.bpc)
             u_new = u_new.copy()
             u_new[:, :nd] -= d_cells[:, None] * grad_pp[:, :nd]
             u_new = self._enforce_fixed(u_new)
-            self.mass_flux = correct_mass_flux(mesh, m_star, p_prime, a_int, a_b, self.vb)
+            self.mass_flux = correct_mass_flux(
+                mesh, m_star, p_prime, a_int, a_b, self.vb, explicit_flux=c_f
+            )
         self.u = u_new
 
         # 質量残差: Σ|Σ_f ṁ_f| / (Σ_f |ṁ_f| / 2)（内部吐出・吸入セルは湧き出しなので除く）

@@ -189,7 +189,7 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] `ykep` CLI（`-j=`, `int`, `-o=`, `-p name=value`, `--check`）+ NPZ/YAML/VTK 出力 — status-33
 - [x] 例題: Ra=1000 キャビティ（Nu=1.169）、`*INCLUDE` メッシュの平板伝熱 — status-33
 - [x] `*DARCY` の実行対応（`DarcyFlowProcess` 新設、面ベース FVM、`InpMeshProcess` の非構造メッシュ経由）— Phase 11
-- [ ] `HEAT TRANSFER=NONE` でエネルギー方程式をスキップ（`solve_energy`）— status-33 TODO
+- [x] `HEAT TRANSFER=NONE` でエネルギー方程式をスキップ（`solve_energy`、構造格子版も）— status-35
 - [ ] SYMMETRY / SLIP 面の既定緩和での発散の切り分け — status-33 TODO（非構造 NS は対称面を陰的に組んだので対象外）
 - [x] 部分面境界・`InternalFaceBC` の .inp 表現 — 部分面は `*SURFACE`、内部の吐出・吸入は要素集合 target の `*BOUNDARY`（非構造 NS）— Phase 11
 - [x] 格子の次段の方針決定 → 非構造格子（面ベース FVM）。`InpMeshProcess` を追加 — Phase 11
@@ -235,7 +235,15 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] Darcy の Forchheimer（Picard）と非定常（比貯留 `*SPECIFIC STORAGE`）。Brinkman 粘性項は NS ファミリーの抵抗で扱う — Phase 11（2026-09-06）
 - [x] 内部の吐出・吸入: 非構造 NS では要素集合を target にした `*BOUNDARY` → `InternalCellBC`（内部面 `*SURFACE` 単位の指定は保留） — Phase 11（2026-09-06）
 - [x] `core/data.BoundaryData` / `FluidProperties` / `FlowFieldData` / `SolverInputData` / `SolverResultData` / `VerifyInput` / `VerifyResult` を削除（未使用） — Phase 11（2026-09-06）
-- [ ] 圧力補正への非直交補正、`ADAPTIVE` 緩和の非構造版、2 次要素・角錐の `InpMeshProcess`、内部面 `*SURFACE` の境界条件
+- [x] 圧力補正への非直交補正（`n_nonorthogonal_correctors` / `NONORTHOGONAL_CORRECTORS`、既定 2。せん断 31°/45° で
+  α=(0.8,0.5) の発散を解消、収束解は不変）— status-35
+- [x] `ADAPTIVE` 緩和の非構造版（規則を `fvm/relaxation.py` に切り出して構造格子版と共有。停滞検出 + α_p ≤ 1 − α_u を追加）— status-35
+- [x] Rhie–Chow の D_f を緩和前の a_P で（Majumdar）。収束解の α_u 依存（2%）を解消 — status-35
+- [x] 2 次要素（頂点のみ）・角錐 C3D5 の `InpMeshProcess` — status-35
+- [x] 内部面 `*SURFACE` の境界条件 → 厚さゼロのバッフル（両側の境界面に分割、両側同条件）。例題 channel-baffle-1 — status-35
+- [ ] 非直交補正の limited 版（45° 超のメッシュ）、バッフルの片側ごとの条件・薄板の熱伝導、角錐の mirador 描画（messi に C3D5 が無い）— status-35 TODO
+- [ ] 構造格子版 `NaturalConvectionFDMProcess` の Rhie–Chow も緩和前の a_P に（収束解の α_u 依存の確認。空気実物性の不安定化調査と合わせて）— status-35 TODO
+- [ ] 非構造 NS で空気実物性（mu=1.85e-5）+ q_vol の自然対流を評価（構造格子版で未解決の mass 残差 O(1–100) が再現するか）— status-35 TODO
 
 ## 将来構想
 

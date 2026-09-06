@@ -485,7 +485,11 @@ class TestInpToHeatTransferFVMAPI:
                 "*BOUNDARY, TYPE=TEMPERATURE\n LID, 400.",
                 "予約面名",
             ),
-            ("*BOUNDARY, TYPE=TEMPERATURE\n XM, 400.", "*BOUNDARY, TYPE=WALL\n XM", "TEMPERATURE"),
+            (
+                "*BOUNDARY, TYPE=TEMPERATURE\n XM, 400.",
+                "*BOUNDARY, TYPE=VELOCITY\n XM, 1., 0., 0.",
+                "TEMPERATURE",
+            ),
             (" XP, S, 250.", " XM, S, 250.", "同時"),
             ("METHOD=BICGSTAB", "METHOD=JACOBI", "METHOD"),
             (
@@ -620,7 +624,6 @@ class TestInpToNavierStokesFVMAPI:
                 "PRESSURE_VELOCITY=PISO, PISO_CORRECTORS=0",
                 "PISO_CORRECTORS",
             ),
-            ("TEMPERATURE=0.8", "TEMPERATURE=0.8, ADAPTIVE=YES", "ADAPTIVE"),
             ("PRESSURE=DIRECT", "PRESSURE=JACOBI", "PRESSURE"),
             ("*BOUNDARY, TYPE=SYMMETRY\n YP", "*BOUNDARY, TYPE=SYMMETRY\n LID", "予約面名"),
             (" YM, S, 100.", " XM, S, 100.", "同時"),
@@ -704,3 +707,66 @@ class TestInpToNavierStokesFVMAPI:
         text = NS_FVM_TEXT.replace(old, "*BOUNDARY, TYPE=OUTLET\n YP")
         inp = InpToNavierStokesFVMProcess().execute(_darcy_input(text))
         assert inp.bcs["YP"].velocity.kind == VelocityBCKind.OUTFLOW
+
+
+class TestInpMeshBaffleMapping:
+    """内部面の *SURFACE（バッフル）と NONORTHOGONAL_CORRECTORS / ADAPTIVE の非構造 NS マッピング."""
+
+    BAFFLE = "*SURFACE, NAME=PLATE, TYPE=ELEMENT\n 2, S4\n*BOUNDARY, TYPE=WALL\n PLATE\n"
+
+    def _text(self, extra: str = "") -> str:
+        text = NS_FVM_TEXT.replace(
+            "*INITIAL CONDITIONS", self.BAFFLE + extra + "*INITIAL CONDITIONS"
+        )
+        assert "PLATE" in text
+        return text
+
+    def test_internal_surface_requires_baffle_split(self):
+        text = self._text()
+        with pytest.raises(UnsupportedFeatureError, match="内部面"):
+            InpToNavierStokesFVMProcess().execute(_darcy_input(text))
+        case = build_case(parse_inp_text(text))
+        mesh = InpMeshProcess().execute(InpMeshInput(case=case, baffle_surfaces=("PLATE",)))
+        assert mesh.baffle_surfaces == ("PLATE",) and len(mesh.baffle_faces) == 2
+        inp = InpToNavierStokesFVMProcess().execute(InpMeshMappingInput(case=case, mesh=mesh))
+        assert inp.bcs["PLATE"].velocity.kind.name == "WALL"
+        assert inp.n_nonorthogonal_correctors == 2 and not inp.adaptive_relaxation
+
+    def test_flow_bc_on_baffle_rejected(self):
+        text = self._text().replace(
+            "*BOUNDARY, TYPE=WALL\n PLATE\n", "*BOUNDARY, TYPE=VELOCITY\n PLATE, 0.1, 0, 0\n"
+        )
+        case = build_case(parse_inp_text(text))
+        mesh = InpMeshProcess().execute(InpMeshInput(case=case, baffle_surfaces=("PLATE",)))
+        with pytest.raises(UnsupportedFeatureError, match="バッフル"):
+            InpToNavierStokesFVMProcess().execute(InpMeshMappingInput(case=case, mesh=mesh))
+
+    def test_nonorthogonal_correctors_and_adaptive(self):
+        old = "CONVECTION=UPWIND, PRESSURE_VELOCITY=SIMPLEC"
+        text = NS_FVM_TEXT.replace(old, old + ", NONORTHOGONAL_CORRECTORS=3").replace(
+            "TEMPERATURE=0.8", "TEMPERATURE=0.8, ADAPTIVE=YES"
+        )
+        inp = InpToNavierStokesFVMProcess().execute(_darcy_input(text))
+        assert inp.n_nonorthogonal_correctors == 3 and inp.adaptive_relaxation
+        with pytest.raises(UnsupportedFeatureError, match="NONORTHOGONAL_CORRECTORS"):
+            InpToNavierStokesFVMProcess().execute(
+                _darcy_input(NS_FVM_TEXT.replace(old, old + ", NONORTHOGONAL_CORRECTORS=0"))
+            )
+        # 構造格子（NaturalConvectionFDM）では意味が無いので明示エラー
+        with pytest.raises(UnsupportedFeatureError, match="NONORTHOGONAL_CORRECTORS"):
+            InpToNaturalConvectionProcess().execute(
+                _mapping_input(
+                    NS_HEAD
+                    + "*STEP\n*NAVIER STOKES, STEADY STATE\n*CONTROLS, PARAMETERS=DISCRETIZATION\n"
+                    " NONORTHOGONAL_CORRECTORS=2\n*END STEP\n"
+                )
+            )
+
+    def test_heat_transfer_none_skips_energy_on_structured_grid(self):
+        text = NS_HEAD + "*STEP\n*NAVIER STOKES, STEADY STATE, HEAT TRANSFER=NONE\n*END STEP\n"
+        inp = InpToNaturalConvectionProcess().execute(_mapping_input(text))
+        assert not inp.solve_energy and inp.beta == 0.0
+        coupled = (
+            NS_HEAD + "*STEP\n*NAVIER STOKES, STEADY STATE, HEAT TRANSFER=COUPLED\n*END STEP\n"
+        )
+        assert InpToNaturalConvectionProcess().execute(_mapping_input(coupled)).solve_energy

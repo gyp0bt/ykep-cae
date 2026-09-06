@@ -38,3 +38,4 @@
 | 32 | 2026-09-04 | 531 | nsb を xkep_cae_fluid から切り離し（`data`/`assembly` のコピー方式 + 同期スクリプト）+ 高速化見積り実測（LU 分解が 70〜81%）+ PARDISO 化（後方互換なし、分解/三角解のスレッド分割、`KMP_BLOCKTIME=0`）+ 前処理 LU の遅延更新（144×96: 40 s → 17 s） |
 | 33 | 2026-09-05 | 598 | ykep .inp 入力フォーマット（Abaqus 風キーワード構文、`*PARAMETER`/`*CONTROLS`/`*GRID`、`CaseDefinition` 中立表現、`ykep -j=<job>.inp int` CLI）+ NS/伝熱マッピング + 例題 2 本（Ra=1000 キャビティ Nu=1.169） |
 | 34 | 2026-09-05 | 615 | 3D レンダリング: messi mirador 連携 `MiradorExportProcess`（断面スラブ + 速度矢印 + 残差マップ + 任意平面の view cut `--cut`、`FORMAT=HTML` 自動出力 / `ykep view`）+ messi v0.10.0（要素場カラーマップ Abaqus レインボー・矢印・`.vtk` リーダ・操作パネル畳み込み・断面 view cut） |
+| 35 | 2026-09-06 | 775 | ソルバー体験の現在地整理 + Phase 11 残 TODO 消化（圧力補正の非直交補正・適応緩和の共有規則・Rhie–Chow の緩和非依存化・2 次要素/角錐/バッフルの `InpMeshProcess`・`solve_energy`・CI skip） |

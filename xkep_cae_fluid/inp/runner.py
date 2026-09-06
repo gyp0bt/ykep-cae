@@ -34,7 +34,7 @@ from xkep_cae_fluid.heat_transfer.fvm import HeatTransferFVMProcess
 from xkep_cae_fluid.heat_transfer.solver import HeatTransferFDMProcess
 from xkep_cae_fluid.incompressible.solver import NavierStokesFVMProcess
 from xkep_cae_fluid.inp.builder import InpCaseBuildProcess
-from xkep_cae_fluid.inp.case import CaseDefinition, EquationFamily, StepDefinition
+from xkep_cae_fluid.inp.case import CaseDefinition, EquationFamily, FluxLabel, StepDefinition
 from xkep_cae_fluid.inp.grid import (
     StructuredGridInput,
     StructuredGridMap,
@@ -123,6 +123,35 @@ def _velocity_field(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> np.ndarray:
     return np.stack([u, v, w], axis=-1)
 
 
+def _boundary_surfaces(case: CaseDefinition) -> tuple[str, ...]:
+    """境界条件（``*BOUNDARY`` / ``*DFLUX, S`` / ``*SFILM``）の target になっている ``*SURFACE`` 名.
+
+    内部面を含むものは :class:`InpMeshProcess` が両側の境界面（バッフル）に分割する。
+    """
+    names: set[str] = set()
+    steps = list(case.steps)
+    for bc in list(case.boundaries) + [b for st in steps for b in st.boundaries]:
+        names.add(bc.target.strip().upper())
+    for fl in list(case.fluxes) + [f for st in steps for f in st.fluxes]:
+        if fl.label == FluxLabel.SURFACE:
+            names.add(fl.target.strip().upper())
+    for film in list(case.films) + [f for st in steps for f in st.films]:
+        names.add(film.target.strip().upper())
+    return tuple(sorted(n for n in names if n in case.surfaces))
+
+
+def _internal_bc_surface(case: CaseDefinition, grid: StructuredGridMap) -> str | None:
+    """境界条件の target になった ``*SURFACE`` のうち、箱格子の外皮に無い面を含む最初の名前."""
+    for name in _boundary_surfaces(case):
+        try:
+            grid.resolve_surface_face(case.surfaces[name], case)
+        except UnsupportedMeshError as exc:
+            if "領域境界にありません" in str(exc):
+                return name
+            raise
+    return None
+
+
 class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
     """.inp を読み、ステップごとにソルバーを実行して出力する BatchProcess."""
 
@@ -180,6 +209,13 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
                 if mode == "structured":
                     raise
                 logger.info("箱格子として復元できないため非構造メッシュで解きます: %s", exc)
+        if grid is not None and mode != "structured":
+            baffle = _internal_bc_surface(case, grid)
+            if baffle is not None:
+                logger.info(
+                    "*SURFACE %s が内部面を含む（バッフル）ため非構造メッシュで解きます", baffle
+                )
+                grid = None
         if grid is not None:
             nx, ny, nz = grid.dimensions
             logger.info(
@@ -195,7 +231,16 @@ class InpCaseRunnerProcess(BatchProcess["InpJobInput", "InpJobResult"]):
         mesh: InpMeshResult | None = None
         wants_mesh = EquationFamily.DARCY in families or (wants_grid and grid is None)
         if wants_mesh:
-            mesh = InpMeshProcess().execute(InpMeshInput(case=case))
+            mesh = InpMeshProcess().execute(
+                InpMeshInput(case=case, baffle_surfaces=_boundary_surfaces(case))
+            )
+            if mesh.baffle_surfaces:
+                logger.info(
+                    "ジョブ %s: バッフル（内部面を両側の境界面に分割）: %s（%d 面）",
+                    job_name,
+                    ", ".join(mesh.baffle_surfaces),
+                    len(mesh.baffle_faces),
+                )
             logger.info(
                 "ジョブ %s: %s / 非構造メッシュ セル %d・面 %d（境界 %d、パッチ %s、最大非直交角 %.1f°）"
                 "/ ステップ %d",

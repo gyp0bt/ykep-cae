@@ -9,3 +9,22 @@ CONVERGED: step Steady (NAVIER STOKES), 75 iterations, 1.06 s
   -> examples/inp/results/cavity-nc-2.html
   -> examples/inp/results/cavity-nc-2.yaml
 [ProcessDiagnostics] レポート出力: /home/user/ykep-cae/docs/generated/process_usage_report.md
+2026-09-06 05:02:35,511 INFO ykep: ykep -j=examples/inp/cavity-nc-2.inp int -o=examples/inp/results
+2026-09-06 05:02:35,543 INFO xkep_cae_fluid.inp.runner: 箱格子として復元できないため非構造メッシュで解きます: 節点数 338 が箱格子の 1586 と一致しません（非構造・欠損・非直交メッシュは未対応）
+2026-09-06 05:02:35,658 INFO xkep_cae_fluid.inp.runner: ジョブ cavity-nc-2: Differentially heated parallelogram cavity, Ra ~ 1e3 (unstructured FVM path) / 非構造メッシュ セル 144・面 600（境界 336、パッチ XM, XP, YM, YP, ZM, ZP、最大非直交角 14.0°）/ ステップ 1
+2026-09-06 05:02:35,663 INFO xkep_cae_fluid.inp.runner: ステップ Steady: *NAVIER STOKES → NavierStokesFVMProcess（非構造）
+2026-09-06 05:02:35,666 INFO xkep_cae_fluid.incompressible.solver: NavierStokesFVM: セル 144 / SIMPLE / 対流 upwind / 時間 定常 / 非直交補正 2 回 / α_u=0.50 α_p=0.20
+2026-09-06 05:02:35,682 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 1: mass=0.00e+00, u=0.00e+00, v=0.00e+00, w=0.00e+00, T=1.24e-02
+2026-09-06 05:02:35,693 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 2: mass=6.45e-01, u=0.00e+00, v=1.00e+00, w=0.00e+00, T=5.46e-03
+2026-09-06 05:02:35,705 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 3: mass=3.66e-01, u=4.22e-02, v=5.73e-01, w=0.00e+00, T=2.85e-03
+2026-09-06 05:02:35,716 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 4: mass=2.23e-01, u=4.19e-02, v=2.58e-01, w=0.00e+00, T=1.77e-03
+2026-09-06 05:02:35,726 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 5: mass=1.42e-01, u=4.05e-02, v=1.58e-01, w=0.00e+00, T=1.27e-03
+2026-09-06 05:02:35,779 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 10: mass=2.81e-02, u=2.51e-02, v=4.15e-02, w=0.00e+00, T=4.91e-04
+2026-09-06 05:02:35,885 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 20: mass=4.59e-03, u=9.55e-03, v=1.19e-02, w=0.00e+00, T=1.15e-04
+2026-09-06 05:02:35,991 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 30: mass=1.40e-03, u=4.00e-03, v=4.54e-03, w=0.00e+00, T=3.23e-05
+2026-09-06 05:02:36,096 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 40: mass=5.51e-04, u=1.70e-03, v=1.84e-03, w=0.00e+00, T=1.14e-05
+2026-09-06 05:02:36,199 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 50: mass=2.33e-04, u=7.37e-04, v=7.81e-04, w=0.00e+00, T=4.77e-06
+2026-09-06 05:02:36,303 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 60: mass=1.01e-04, u=3.22e-04, v=3.38e-04, w=0.00e+00, T=2.10e-06
+2026-09-06 05:02:36,406 INFO xkep_cae_fluid.incompressible.solver: SIMPLE iter 70: mass=4.45e-05, u=1.41e-04, v=1.47e-04, w=0.00e+00, T=9.43e-07
+2026-09-06 05:02:36,456 INFO xkep_cae_fluid.incompressible.solver: SIMPLE 収束: 75 反復, max_residual=9.75e-05
+2026-09-06 05:02:36,467 INFO xkep_cae_fluid.inp.runner: ステップ Steady 完了: converged=True, 反復 75, 0.79 s → cavity-nc-2.npz, cavity-nc-2.vtk, cavity-nc-2.yaml

@@ -233,6 +233,36 @@ class TestHeatTransferFVMPhysics:
         assert res.converged
         np.testing.assert_allclose(res.T, exact(mesh.cell_centers), rtol=1e-6)
 
+    def test_adiabatic_baffle_decouples_halves(self):
+        """内部面を分割した断熱バッフルで、左右の半分が熱的に切り離される.
+
+        4×1 の 2D 板、XM = 1, XP = 0 の Dirichlet。中央の辺をバッフル（既定ゼロ勾配 = 断熱）に
+        すると左 2 セルは 1、右 2 セルは 0 になる（バッフル無しなら線形分布）。
+        """
+        lines = ["*NODE"]
+        for j in range(2):
+            for i in range(5):
+                lines.append(f" {1 + i + 5 * j}, {i}, {j}, 0")
+        lines.append("*ELEMENT, TYPE=CPS4, ELSET=ALL")
+        for i in range(4):
+            lines.append(f" {1 + i}, {1 + i}, {2 + i}, {7 + i}, {6 + i}")
+        text = "\n".join(lines) + "\n*SURFACE, NAME=MID, TYPE=ELEMENT\n 2, S2\n"
+        case = build_case(parse_inp_text(text))
+        bcs = {"XM": PatchBC.dirichlet(1.0), "XP": PatchBC.dirichlet(0.0)}
+
+        def solve(baffles):
+            mesh = build_inp_mesh(case, baffle_surfaces=baffles).mesh
+            res = HeatTransferFVMProcess().execute(
+                HeatTransferFVMInput(
+                    mesh=mesh, conductivity=1.0, T0=np.zeros(4), bcs=bcs, linear_solver="direct"
+                )
+            )
+            assert res.converged
+            return res.T
+
+        np.testing.assert_allclose(solve(()), [0.875, 0.625, 0.375, 0.125], atol=1e-10)
+        np.testing.assert_allclose(solve(("MID",)), [1.0, 1.0, 0.0, 0.0], atol=1e-10)
+
     def test_sheared_mesh_without_correction_is_not_linear(self):
         """補正を切る（max_nonorthogonal_iter=1 でも直交判定で 1 回目は補正入り）代わりに、
         非直交角が実際に付いていることと、補正が結果を変えていることを確認する."""

@@ -188,10 +188,17 @@ class NavierStokesFVMInput:
         収束判定（運動量の相対初期残差と質量不整合の最大値）
     alpha_u, alpha_p, alpha_T : float
         緩和係数
+    adaptive_relaxation : bool
+        残差の推移で α_u / α_p を動かす（:func:`~xkep_cae_fluid.fvm.relaxation.adapt_relaxation_factors`、
+        構造格子版と同じ規則。非定常では各ステップ内で調整し、ステップを跨いで引き継ぐ）
     coupling : str
         ``simple`` / ``simplec`` / ``piso``（PISO は α_p = 1 で ``n_piso_correctors`` 回の圧力補正）
     n_piso_correctors : int
         PISO の圧力補正回数（既定 2）
+    n_nonorthogonal_correctors : int
+        圧力補正の非直交補正の反復回数（既定 2。1 = 補正なし。2 以上で前回の p' の勾配から
+        陽的な T_f 流束を右辺に足して p' を解き直す。直交メッシュでは常に 1 回。
+        非直交角 45° 付近では遅延補正の反復自体が縮小しないので 3 以上にしない）
     convection, limiter : str
         対流スキーム ``upwind``（既定）/ ``tvd`` と TVD リミッタ ``van_leer`` / ``superbee``
         （運動量・エネルギー・追加スカラーに共通、遅延補正）
@@ -233,6 +240,8 @@ class NavierStokesFVMInput:
     alpha_T: float = 0.9
     coupling: str = "simple"
     n_piso_correctors: int = 2
+    n_nonorthogonal_correctors: int = 2
+    adaptive_relaxation: bool = False
     convection: str = "upwind"
     limiter: str = "van_leer"
     time_scheme: str = "euler"
@@ -271,6 +280,8 @@ class NavierStokesFVMResult:
         最終反復のセル別残差 res_u / res_v / res_w / res_T / res_mass（/ res_<スカラー名>）
     scalars : dict[str, np.ndarray]
         追加スカラーの最終場（``ScalarSpec.name`` → (n_cells,)）
+    alpha_history : dict[str, list[float]]
+        ``adaptive_relaxation`` のときの外部反復ごとの ``alpha_u`` / ``alpha_p``（それ以外は空）
     elapsed_seconds : float
     """
 
@@ -286,3 +297,4 @@ class NavierStokesFVMResult:
     elapsed_seconds: float = 0.0
     time_history: tuple[float, ...] = ()
     scalars: dict[str, np.ndarray] = field(default_factory=dict)
+    alpha_history: dict[str, list[float]] = field(default_factory=dict)

@@ -268,12 +268,14 @@ def _handle_element(b: _Builder, block: KeywordBlock) -> None:
         conn.append(nodes)
     if not ids:
         return
-    allowed = (4, 6, 8) if "3D" in etype else (3, 4)
+    allowed = (4, 5, 6, 8, 10, 15, 20) if "3D" in etype else (3, 4, 6, 8)
     if width not in allowed:
         raise InpSyntaxError(
             f"要素タイプ {etype}（節点数 {width}）は未対応です。"
-            "3D は四面体 C3D4 / 楔 C3D6 / 六面体 C3D8 系（4 / 6 / 8 節点）、"
-            "2D は三角形 CPS3 / 四辺形 CPS4 系（3 / 4 節点）のみ（2 次要素は不可）",
+            "3D は四面体 C3D4/C3D10 / 角錐 C3D5 / 楔 C3D6/C3D15 / 六面体 C3D8/C3D20 系"
+            "（4 / 10 / 5 / 6 / 15 / 8 / 20 節点）、"
+            "2D は三角形 CPS3/CPS6 / 四辺形 CPS4/CPS8 系（3 / 6 / 4 / 8 節点）のみ"
+            "（2 次要素は頂点だけを使う。非構造メッシュ経路のみ）",
             block.source,
             block.line_no,
         )

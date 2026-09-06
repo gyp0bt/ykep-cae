@@ -1,0 +1,64 @@
+job: channel-baffle-1
+inp: examples/inp/channel-baffle-1.inp
+step: Steady
+procedure: NAVIER STOKES
+steady: true
+turbulence: LAMINAR
+commit: 40c8e8f
+parameters:
+  U_in: 0.01
+  rho: 1.0
+  mu: 0.01
+mesh:
+  n_cells: 256
+  n_faces: 1068
+  n_boundary_faces: 600
+  patches:
+    - PLATE
+    - XM
+    - XP
+    - YM
+    - YP
+    - ZM
+    - ZP
+  max_nonorthogonality_deg: 0.0
+solver:
+  process: NavierStokesFVMProcess
+  coupling: simple
+  convection: upwind
+  time_scheme: euler
+  pressure_solver: direct
+  momentum_solver: direct
+  alpha_u: 0.7
+  alpha_p: 0.3
+  alpha_T: 0.9
+  heat_transfer: NONE
+  dt: 0.0
+  t_end: 0.0
+converged: true
+n_outer_iterations: 26
+n_timesteps: 0
+final_residuals:
+  u: 1.8713857979499805e-06
+  v: 3.0658269227945116e-07
+  w: 3.5047526067273686e-23
+  T: 0.0
+  mass: 8.009776268691533e-06
+elapsed_seconds: 0.23954259599986472
+max_abs_velocity: 0.02213346191339351
+temperature_range:
+  - 300.0
+  - 300.0
+wall_seconds: 0.2450459570000021
+output_files:
+  - channel-baffle-1.npz
+  - channel-baffle-1.vtk
+  - channel-baffle-1.yaml
+variables:
+  - U
+  - P
+  - res_u
+  - res_v
+  - res_w
+  - res_mass
+  - res_T

@@ -2,3 +2,7 @@
 2026-09-05 01:22:11,659 INFO xkep_cae_fluid.inp.runner: ジョブ plate-ht-1: Steady conduction in a plate with internal heating and film cooling / 格子 4×2×2 (3D 要素) / ステップ 1
 2026-09-05 01:22:11,671 INFO xkep_cae_fluid.inp.runner: ステップ Steady: *HEAT TRANSFER → HeatTransferFDMProcess(direct)
 2026-09-05 01:22:11,674 INFO xkep_cae_fluid.inp.runner: ステップ Steady 完了: converged=True, 反復 1, 0.00 s → plate-ht-1.npz, plate-ht-1.vtk, plate-ht-1.yaml
+2026-09-06 05:02:37,100 INFO ykep: ykep -j=examples/inp/plate-ht-1.inp int -o=examples/inp/results
+2026-09-06 05:02:37,125 INFO xkep_cae_fluid.inp.runner: ジョブ plate-ht-1: Steady conduction in a plate with internal heating and film cooling / 格子 4×2×2 (3D 要素) / ステップ 1
+2026-09-06 05:02:37,130 INFO xkep_cae_fluid.inp.runner: ステップ Steady: *HEAT TRANSFER → HeatTransferFDMProcess(direct)
+2026-09-06 05:02:37,136 INFO xkep_cae_fluid.inp.runner: ステップ Steady 完了: converged=True, 反復 1, 0.00 s → plate-ht-1.npz, plate-ht-1.vtk, plate-ht-1.yaml

@@ -16,6 +16,8 @@ from xkep_cae_fluid.fvm import (
     BiCGSTABSolver,
     DirectSolver,
     PatchBC,
+    RelaxationBounds,
+    adapt_relaxation_factors,
     assemble_convection,
     assemble_diffusion,
     assemble_scalar_transport,
@@ -476,3 +478,45 @@ class TestNonorthogonalPhysics:
         part = diffusive_face_flux(mesh, phi, 1.0, bf, corrected=False)
         n_int = mesh.n_internal_faces
         assert np.abs(full[:n_int] - part[:n_int]).max() > 1e-6
+
+
+class TestAdaptiveRelaxation:
+    """緩和係数の適応規則（構造格子版 / 非構造版で共有）."""
+
+    def test_grow_shrink_and_unchanged(self):
+        assert adapt_relaxation_factors(0.5, 0.2, 0.5, 1.0) == (
+            pytest.approx(0.55),
+            pytest.approx(0.22),
+        )
+        assert adapt_relaxation_factors(0.5, 0.2, 2.0, 1.0) == (
+            pytest.approx(0.4),
+            pytest.approx(0.16),
+        )
+        assert adapt_relaxation_factors(0.5, 0.2, 0.95, 1.0) == (0.5, 0.2)
+        # 初回（前回残差なし）・非有限は変えない
+        assert adapt_relaxation_factors(0.5, 0.2, 0.1, 0.0) == (0.5, 0.2)
+        assert adapt_relaxation_factors(0.5, 0.2, float("nan"), 1.0) == (0.5, 0.2)
+
+    def test_bounds_are_respected(self):
+        assert adapt_relaxation_factors(0.9, 0.5, 0.1, 1.0) == (0.9, 0.5)
+        assert adapt_relaxation_factors(0.1, 0.05, 9.0, 1.0) == (0.1, 0.05)
+        b = RelaxationBounds(alpha_u_max=0.6, alpha_p_max=0.3)
+        assert adapt_relaxation_factors(0.58, 0.29, 0.1, 1.0, b) == (0.6, 0.3)
+
+    def test_stall_detection_shrinks_even_if_ratio_is_mild(self):
+        """前回比 1.05（規則の不感帯）でも、最小残差の 5 倍を超えていれば保守化する."""
+        assert adapt_relaxation_factors(0.5, 0.2, 1.05, 1.0) == (0.5, 0.2)
+        assert adapt_relaxation_factors(0.5, 0.2, 1.05, 1.0, min_res=0.1) == (
+            pytest.approx(0.4),
+            pytest.approx(0.16),
+        )
+        assert adapt_relaxation_factors(0.5, 0.2, 1.05, 1.0, min_res=0.5) == (0.5, 0.2)
+
+    def test_pressure_cap_for_simple(self):
+        """SIMPLE の目安 α_p ≤ 1 − α_u を（新しい α_u で）上限にできる。下限より小さい cap は下限."""
+        assert adapt_relaxation_factors(0.85, 0.3, 0.1, 1.0, simple_cap=True) == (
+            0.9,
+            pytest.approx(0.1),
+        )
+        b = RelaxationBounds(alpha_p_min=0.2)
+        assert adapt_relaxation_factors(0.85, 0.3, 0.1, 1.0, b, simple_cap=True) == (0.9, 0.2)

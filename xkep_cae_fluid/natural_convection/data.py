@@ -193,6 +193,9 @@ class NaturalConvectionInput:
     pressure_solver : str
         圧力方程式の線形ソルバー。"bicgstab"（BiCGSTAB+ILU）または "amg"（PyAMG前処理+CG）。
         圧力補正方程式は対称正定値ラプラシアンなので、AMG+CGが最適。
+    solve_energy : bool
+        False ならエネルギー方程式を解かず T を初期場のまま保つ（等温流れ。``*NAVIER STOKES,
+        HEAT TRANSFER=NONE``）。浮力は β (T − T_ref) のまま評価するので β = 0 と組み合わせる
     adaptive_relaxation : bool
         適応的緩和係数の有効化。残差の減少率に応じて alpha_u, alpha_p を
         自動調整し、収束を加速する。
@@ -247,6 +250,7 @@ class NaturalConvectionInput:
     time_scheme: str = "euler"
     pressure_solver: str = "bicgstab"
     adaptive_relaxation: bool = False
+    solve_energy: bool = True
     max_pressure_iter: int = 0
     extra_scalars: tuple[ExtraScalarSpec, ...] = ()
     internal_face_bcs: tuple[InternalFaceBC, ...] = ()

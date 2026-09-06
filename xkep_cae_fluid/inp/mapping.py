@@ -318,7 +318,14 @@ _TIME_NC: dict[str, str] = {"EULER": "euler", "BACKWARD_EULER": "euler", "BDF2":
 _COUPLING_NC: dict[str, str] = {"SIMPLE": "simple", "SIMPLEC": "simplec", "PISO": "piso"}
 _PRESSURE_SOLVER_NC: dict[str, str] = {"BICGSTAB": "bicgstab", "AMG": "amg"}
 
-_NC_DISCRETIZATION_KEYS = {"CONVECTION", "TIME", "PRESSURE_VELOCITY", "PISO_CORRECTORS", "LIMITER"}
+_NC_DISCRETIZATION_KEYS = {
+    "CONVECTION",
+    "TIME",
+    "PRESSURE_VELOCITY",
+    "PISO_CORRECTORS",
+    "LIMITER",
+    "NONORTHOGONAL_CORRECTORS",
+}
 _NC_RELAXATION_KEYS = {"VELOCITY", "PRESSURE", "TEMPERATURE", "ADAPTIVE"}
 _NC_SOLVER_KEYS = {"PRESSURE", "MAX_OUTER", "MAX_INNER", "MAX_PRESSURE_ITER", "TOL", "TOL_INNER"}
 _TIME_INC_KEYS = {"OUTPUT_INTERVAL"}
@@ -473,6 +480,10 @@ def map_navier_stokes(
         raise UnsupportedFeatureError(
             "LIMITER= は NaturalConvectionFDM では未対応（TVD は CONVECTION= で選択）"
         )
+    if "NONORTHOGONAL_CORRECTORS" in disc:
+        raise UnsupportedFeatureError(
+            "NONORTHOGONAL_CORRECTORS= は非構造 NS（NavierStokesFVM）のみ（箱格子では意味が無い）"
+        )
     time_scheme = "euler"
     if "TIME" in disc:
         key = _norm_value(disc["TIME"])
@@ -560,6 +571,7 @@ def map_navier_stokes(
         time_scheme=time_scheme,
         pressure_solver=pressure_solver,
         adaptive_relaxation=adaptive,
+        solve_energy=coupled,
         max_pressure_iter=max_pressure_iter,
     )
 
@@ -602,9 +614,12 @@ def _ht_bc(
             if not bc.values:
                 raise UnsupportedFeatureError(f"面 {face} の TYPE=TEMPERATURE に値がありません")
             spec = HTBoundarySpec(HTBoundaryCondition.DIRICHLET, value=float(bc.values[0]))
+        elif bc.kind == BoundaryKind.WALL:
+            # 伝熱では壁 = 断熱（既定と同じ）。バッフルを *BOUNDARY, TYPE=WALL で置くために受理する
+            continue
         else:
             raise UnsupportedFeatureError(
-                f"面 {face} の {bc.kind.name} 境界は *HEAT TRANSFER では使えません（TEMPERATURE のみ）"
+                f"面 {face} の {bc.kind.name} 境界は *HEAT TRANSFER では使えません（TEMPERATURE / WALL のみ）"
             )
     if flux is not None:
         if spec.condition == HTBoundaryCondition.DIRICHLET:
@@ -739,11 +754,28 @@ def _resolve_patch_name(target: str, mesh: InpMeshResult) -> str:
     name = target.strip().upper()
     patches = mesh.mesh.boundary_patches or {}
     if name not in patches:
+        if name in mesh.surface_faces:
+            raise UnsupportedFeatureError(
+                f"*SURFACE {name} は内部面を含むのでパッチではありません（バッフルにするには"
+                f" InpMeshInput.baffle_surfaces に渡す。ykep ランナーは境界条件の target を自動で渡す）"
+            )
         raise UnsupportedFeatureError(
             f"境界 target {target!r} は *SURFACE でも予約面名（{', '.join(FACE_NAMES)}）"
             f"でもありません（定義済み: {sorted(patches)}）"
         )
     return name
+
+
+_BAFFLE_FLOW_KINDS = (BoundaryKind.VELOCITY, BoundaryKind.PRESSURE, BoundaryKind.OUTLET)
+
+
+def _reject_flow_bc_on_baffle(name: str, bc: BoundaryCondition, mesh: InpMeshResult) -> None:
+    """バッフル（厚さゼロ、両側が同じ条件）に流入・流出条件は置けない."""
+    if name in mesh.baffle_surfaces and bc.kind in _BAFFLE_FLOW_KINDS:
+        raise UnsupportedFeatureError(
+            f"バッフル {name}（内部面の *SURFACE）に {bc.kind.name} は置けません"
+            f"（WALL / SLIP / SYMMETRY / TEMPERATURE と *DFLUX / *SFILM のみ）"
+        )
 
 
 def _ht_patch_bcs(
@@ -993,7 +1025,9 @@ def map_navier_stokes_fvm(
     for bc in case.boundaries + step.boundaries:
         if bc.target.strip().upper() in case.elsets and bc.target.strip().upper() not in patches:
             continue
-        bcs_by.setdefault(_resolve_patch_name(bc.target, mesh), []).append(bc)
+        pname = _resolve_patch_name(bc.target, mesh)
+        _reject_flow_bc_on_baffle(pname, bc, mesh)
+        bcs_by.setdefault(pname, []).append(bc)
     flux: dict[str, float] = {}
     for fl in case.fluxes + step.fluxes:
         if fl.label != FluxLabel.SURFACE:
@@ -1066,8 +1100,10 @@ def map_navier_stokes_fvm(
     alpha_u = _as_float(relax.get("VELOCITY", "0.7"), "VELOCITY")
     alpha_p = _as_float(relax.get("PRESSURE", "0.3"), "PRESSURE")
     alpha_T = _as_float(relax.get("TEMPERATURE", "0.9"), "TEMPERATURE")
-    if _as_bool(relax.get("ADAPTIVE", "NO"), "ADAPTIVE"):
-        raise UnsupportedFeatureError("RELAXATION ADAPTIVE=YES は非構造 NS では未対応")
+    adaptive = _as_bool(relax.get("ADAPTIVE", "NO"), "ADAPTIVE")
+    nonorth = _as_int(disc.get("NONORTHOGONAL_CORRECTORS", "2"), "NONORTHOGONAL_CORRECTORS")
+    if nonorth < 1:
+        raise UnsupportedFeatureError("NONORTHOGONAL_CORRECTORS は 1 以上")
     solver = step.control_values(ControlCategory.SOLVER)
     _check_keys(solver, _NS_FVM_SOLVER_KEYS, "SOLVER")
     pressure_solver = "bicgstab"
@@ -1127,6 +1163,8 @@ def map_navier_stokes_fvm(
         coupling=coupling,
         internal_bcs=internal_bcs,
         n_piso_correctors=piso_correctors,
+        n_nonorthogonal_correctors=nonorth,
+        adaptive_relaxation=adaptive,
         convection=convection,
         limiter=limiter,
         time_scheme=time_scheme,
@@ -1280,15 +1318,10 @@ def _darcy_patch_bcs(
     case: CaseDefinition, step: StepDefinition, mesh: InpMeshResult
 ) -> dict[str, DarcyPatchBC]:
     md = mesh.mesh
-    patches = md.boundary_patches or {}
     out: dict[str, DarcyPatchBC] = {}
     for bc in case.boundaries + step.boundaries:
-        name = bc.target.strip().upper()
-        if name not in patches:
-            raise UnsupportedFeatureError(
-                f"境界 target {bc.target!r} は *SURFACE でも予約面名（{', '.join(FACE_NAMES)}）"
-                f"でもありません（定義済み: {sorted(patches)}）"
-            )
+        name = _resolve_patch_name(bc.target, mesh)
+        _reject_flow_bc_on_baffle(name, bc, mesh)
         if bc.kind == BoundaryKind.PRESSURE:
             if not bc.values:
                 raise UnsupportedFeatureError(f"面 {name} の TYPE=PRESSURE に値がありません")
