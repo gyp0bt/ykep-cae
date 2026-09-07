@@ -128,6 +128,9 @@ class NSBSettings:
     simple_ilu_drop_tol, simple_ilu_fill_factor : float
         運動量 ILU（scipy `spilu`）の drop_tol / fill_factor。零ピボットなら drop_tol 1/10・fill 2 倍で
         最大 3 回組み直す（1e-2 / 1.5 は 288×192 の Newton 途中で零ピボットになった）
+    fast_residual : bool
+        True（既定）: 残差評価（JFNK の matvec、収束判定）に numba カーネル `nsb.fastres` を使う
+        （288×192 で 5.8 ms → 0.5 ms 程度、numpy 経路と同じ値）。numba が無ければ自動で numpy 経路
     precond_refresh_gmres : int
         直前の GMRES 反復数がこれを超えたら次の Newton 反復で前処理を再分解する
         （前処理が古くなった兆候）
@@ -153,7 +156,8 @@ class NSBSettings:
     newton_tol, newton_max_iter : float, int
         相対残差の収束判定と反復上限（擬似時間ステップ数 × sub_iters が上限）
     gmres_tol, gmres_restart, gmres_maxiter : float, int, int
-        GMRES 設定
+        右前処理 FGMRES（`nsb.krylov.fgmres`）の相対許容・再出発次元・再出発回数。指定した rtol に届いた
+        ところで止まる（scipy `gmres` は内部で許容を締めて 1e-2 指定でも 2e-3 まで解いていた）
     divergence_ratio : float
         ||R||/||R0|| がこれを超えたら発散停止
     init_field : str
@@ -193,6 +197,7 @@ class NSBSettings:
     simple_schur_cycles: int = 1
     simple_ilu_drop_tol: float = 1.0e-3
     simple_ilu_fill_factor: float = 3.0
+    fast_residual: bool = True
     divergence_ratio: float = 1.0e6
     init_field: str = "zero"
     reject_growth: float = 0.0

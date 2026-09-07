@@ -19,6 +19,13 @@ PARDISO の疎 LU（`nsb.linalg.PardisoLU`）と同じインターフェース�
 運動量ブロックは ILU（scipy `spilu`）が最良で、Gauss–Seidel と運動量 AMG は高 CFL で発散する（採用しない）。
 
 LU 分解と違って組立コストが O(N)（pyamg の階層構築 + ILU）なので、Newton 反復ごとに組み直す前提。
+
+組立の内訳（288×192、20 コア、status-39）は SA 階層構築 0.1〜1.9 s（pyamg のスペクトル半径推定が乱数依存で振れる）、
+ILU 0.24 s。SA の**集約（P, R）は最初の 1 回だけ作り、以後は細格子行列 Ŝ を差し替えて Galerkin 積 R Ŝ P で
+粗格子行列だけ組み直す**（`reuse_hierarchy=True`、10 ms）。CFL が 1.4 → 27 と動いても GMRES 反復数は
+毎回作り直す場合と同等以下（66 → 44 反復になった例もある: 集約が変わらない方が前処理が安定する）。
+V サイクルは `MultilevelSolver.solve` を経由せず（残差ノルム評価の spmv が 1 回余計に入り 6.8 ms → 4.6 ms）、
+階層の `presmoother` / `R` / `P` / `postsmoother` / `coarse_solver` を直接辿る。
 """
 
 from __future__ import annotations
@@ -27,6 +34,8 @@ import time
 
 import numpy as np
 import pyamg
+from pyamg.multilevel import coarse_grid_solver
+from pyamg.relaxation.smoothing import change_smoothers
 from scipy import sparse
 from scipy.sparse import linalg as spla
 
@@ -44,6 +53,8 @@ class SimpleBlockPreconditioner:
         運動量ブロック A の近似解法。"ilu"（scipy `spilu`、ilu_drop_tol / ilu_fill_factor）/ "jacobi"（対角）
     schur_cycles : int
         Schur 補元 Ŝ に当てる AMG V サイクル数
+    reuse_hierarchy : bool
+        True なら SA の集約（P, R）を最初の factorize で固定し、以後は Galerkin 積で粗格子行列だけ組み直す
     """
 
     def __init__(
@@ -53,6 +64,7 @@ class SimpleBlockPreconditioner:
         schur_cycles: int = 1,
         ilu_drop_tol: float = 1.0e-3,
         ilu_fill_factor: float = 3.0,
+        reuse_hierarchy: bool = True,
     ) -> None:
         if momentum not in ("jacobi", "ilu"):
             raise ValueError(f"momentum は jacobi / ilu のいずれか: {momentum!r}")
@@ -61,6 +73,7 @@ class SimpleBlockPreconditioner:
         self.schur_cycles = max(1, int(schur_cycles))
         self.ilu_drop_tol = float(ilu_drop_tol)
         self.ilu_fill_factor = float(ilu_fill_factor)
+        self.reuse_hierarchy = bool(reuse_hierarchy)
         self._J: sparse.csr_matrix | None = None
         self._A: sparse.csr_matrix | None = None
         self._B: sparse.csr_matrix | None = None
@@ -72,6 +85,7 @@ class SimpleBlockPreconditioner:
         self._ilu: spla.SuperLU | None = None
         self.setup_time = 0.0
         self.n_ilu_retries = 0  # 零ピボットで ILU を組み直した回数（累積）
+        self.n_hierarchy_builds = 0  # SA の集約を作った回数（累積。reuse_hierarchy なら 1 のまま）
 
     # ------------------------------------------------------------------
     @property
@@ -120,9 +134,12 @@ class SimpleBlockPreconditioner:
         S.sort_indices()
         # AMG は正の対角を前提にするので符号を揃える（Ŝ は −div(ρ d ∇p) 型で通常は正）
         sign = 1.0 if float(np.mean(S.diagonal())) > 0.0 else -1.0
-        self._ml_schur = pyamg.smoothed_aggregation_solver(
-            (sign * S).tocsr(), symmetry="nonsymmetric", max_coarse=50
-        )
+        S_pos = (sign * S).tocsr()
+        if self.reuse_hierarchy and self._ml_schur is not None:
+            self._regalerkin(self._ml_schur, S_pos)
+        else:
+            self._ml_schur = self._build_hierarchy(S_pos)
+            self.n_hierarchy_builds += 1
 
         self._ilu = None
         if self.momentum == "ilu":
@@ -131,6 +148,33 @@ class SimpleBlockPreconditioner:
         self._inv_dA, self._S, self._schur_sign = inv_dA, S, sign
         self.setup_time = time.perf_counter() - t0
         return self
+
+    _SMOOTHER = ("block_gauss_seidel", {"sweep": "symmetric"})
+
+    @staticmethod
+    def _build_hierarchy(S: sparse.csr_matrix) -> pyamg.multilevel.MultilevelSolver:
+        """SA 階層を組む。pyamg のスペクトル半径推定は numpy のグローバル乱数を使うので、組立の間だけ固定シードにして
+        同じ行列から同じ階層が出るようにする（前処理の微差で Newton の経路が変わり反復数が 22〜37 と振れた）."""
+        state = np.random.get_state()
+        try:
+            np.random.seed(0)
+            return pyamg.smoothed_aggregation_solver(S, symmetry="nonsymmetric", max_coarse=50)
+        finally:
+            np.random.set_state(state)
+
+    @staticmethod
+    def _regalerkin(ml: pyamg.multilevel.MultilevelSolver, S: sparse.csr_matrix) -> None:
+        """集約（P, R）を固定したまま細格子行列を S に差し替え、粗格子行列を Galerkin 積で組み直す."""
+        A_l: sparse.csr_matrix = S
+        for lv in ml.levels[:-1]:
+            lv.A = A_l
+            A_l = (lv.R @ A_l @ lv.P).tocsr()
+        ml.levels[-1].A = A_l
+        sm = SimpleBlockPreconditioner._SMOOTHER  # smoothed_aggregation_solver の既定と同じ
+        change_smoothers(ml, sm, sm)
+        ml.coarse_solver = coarse_grid_solver(
+            "pinv"
+        )  # 最粗行列の擬似逆行列は遅延生成（キャッシュを捨てる）
 
     def _build_ilu(self, A: sparse.csr_matrix) -> spla.SuperLU:
         """運動量ブロックの ILU。零ピボット（"Factor is exactly singular"）なら drop_tol を 1/10、
@@ -154,11 +198,29 @@ class SimpleBlockPreconditioner:
         assert self._ilu is not None
         return self._ilu.solve(r)
 
+    def _vcycle(self, lvl: int, x: np.ndarray, b: np.ndarray) -> None:
+        """pyamg の V サイクル 1 回（`MultilevelSolver.solve` の残差ノルム評価を省いた直接版）."""
+        ml = self._ml_schur
+        assert ml is not None
+        level = ml.levels[lvl]
+        A = level.A
+        level.presmoother(A, x, b)
+        coarse_b = level.R @ (b - A @ x)
+        coarse_x = np.zeros_like(coarse_b)
+        if lvl == len(ml.levels) - 2:
+            coarse_x[:] = ml.coarse_solver(ml.levels[-1].A, coarse_b)
+        else:
+            self._vcycle(lvl + 1, coarse_x, coarse_b)
+        x += level.P @ coarse_x
+        level.postsmoother(A, x, b)
+
     def _solve_schur(self, r: np.ndarray) -> np.ndarray:
         assert self._ml_schur is not None
-        return self._ml_schur.solve(
-            self._schur_sign * r, tol=1e-12, maxiter=self.schur_cycles, cycle="V", accel=None
-        )
+        b = self._schur_sign * r
+        x = np.zeros_like(b)
+        for _ in range(self.schur_cycles):
+            self._vcycle(0, x, b)
+        return x
 
     def solve(self, b: np.ndarray) -> np.ndarray:
         """M^{-1} b を返す（b は (3N,) または (3N, 1)）."""

@@ -6,6 +6,7 @@
   [反復]    1 擬似時間ステップあたりの Newton 反復数（sub_iters）
   [RC]      Rhie–Chow 係数に擬似時間項を含めるか
   [線形]    JFNK（GMRES + LU(J1)）か LU 直接（defect correction）。LU は PARDISO（pypardiso）。
+            GMRES は自作の右前処理 FGMRES（`nsb.krylov`。scipy gmres は指定 rtol より深く解いてしまう）。
             SIMPLE 型ブロック前処理（ILU + Schur 補元 AMG、`nsb.precond`）を使う
             jfnk_simple（有限差分 matvec）/ dc_simple（J1 matvec の defect correction）
   [前処理]  LU(J1) の遅延更新: 1 回の分解を precond_lag 反復まで使い回す（GMRES 不収束なら即再分解）
@@ -21,10 +22,10 @@ from collections.abc import Callable
 
 import numpy as np
 from scipy import sparse
-from scipy.sparse import linalg as spla
 
 from nsb.assembly import BrinkmanDiscretization, StateArrays
 from nsb.core import NSBInput, NSBResult, NSBSettings
+from nsb.krylov import fgmres
 from nsb.linalg import PardisoLU, pardiso_solve
 from nsb.precond import SimpleBlockPreconditioner
 
@@ -133,7 +134,6 @@ def solve_linear(
     必要なときだけ J1 を組んで組み直す。"dc_simple" は matvec も現在の J1 + diag_aug で行う
     （defect correction）ので、前処理の遅延更新に関わらず毎反復 J1 を組む。
     """
-    n3 = x.size
 
     def assemble() -> sparse.csr_matrix:
         return (disc.jacobian_first_order(st, x=x) + sparse.diags(diag_aug)).tocsr()
@@ -146,10 +146,15 @@ def solve_linear(
         pc.age += 1
         return pc.fac.solve(-rhs_resid), 0, True
 
+    matvec: Callable[[np.ndarray], np.ndarray]
     if s.linear_solver == "dc_simple":
         if J_cur is None:
             J_cur = assemble()
-        A = spla.aslinearoperator(J_cur)
+        J_dc = J_cur
+
+        def matvec(vec: np.ndarray) -> np.ndarray:
+            return J_dc @ vec
+
     else:
         x_norm = float(np.linalg.norm(x))
         sqrt_eps = float(np.sqrt(np.finfo(float).eps))
@@ -161,27 +166,20 @@ def solve_linear(
             eps = sqrt_eps * np.sqrt(1.0 + x_norm) / v_norm
             return (resid_fn(x + eps * vec) - rhs_resid) / eps + diag_aug * vec
 
-        A = spla.LinearOperator((n3, n3), matvec=matvec, dtype=np.float64)
-
     def run_gmres() -> tuple[np.ndarray, int, bool]:
-        count = [0]
-
-        def cb(_: float) -> None:
-            count[0] += 1
-
-        M = spla.LinearOperator((n3, n3), matvec=pc.fac.solve, dtype=np.float64)
-        delta, info = spla.gmres(
-            A,
+        # JFNK の FD matvec は厳密に線形でないので Givens 推定と真の残差が食い違い、再出発が空回りして
+        # 「not converged」→ 前処理を組み直して解き直す経路に入ることがある（status-39 §3.1）。
+        # Givens 推定だけで止める（check_true_residual=False）と PARDISO 側の Newton が収束しなくなった
+        # 走行があったので、真の残差確認 + 不収束時の組み直しは残す
+        return fgmres(
+            matvec,
             -rhs_resid,
-            M=M,
+            precond=pc.fac.solve,
             rtol=s.gmres_tol,
             atol=0.0,
             restart=s.gmres_restart,
             maxiter=s.gmres_maxiter,
-            callback=cb,
-            callback_type="pr_norm",
         )
-        return delta, count[0], info == 0
 
     delta, n_gmres, ok = run_gmres()
     if not ok and pc.age > 0:
@@ -203,28 +201,20 @@ def _gmres_exact(
     max_outer: int = 20,
 ) -> tuple[np.ndarray, int, bool]:
     """線形系 A x = b を前処理付き GMRES で厳密（rtol）に解く（Stokes 初期場用）."""
-    n3 = b.size
-    count = [0]
-
-    def cb(_: float) -> None:
-        count[0] += 1
-
-    M = spla.LinearOperator((n3, n3), matvec=precond, dtype=np.float64)
-    x, info = spla.gmres(
-        spla.aslinearoperator(A),
+    A_csr = sparse.csr_matrix(A)
+    x, n_iter, ok = fgmres(
+        lambda v: A_csr @ v,
         b,
-        M=M,
+        precond=precond,
         rtol=rtol,
         atol=0.0,
         restart=s.gmres_restart,
         maxiter=max_outer,
-        callback=cb,
-        callback_type="pr_norm",
     )
-    ok = info == 0 and bool(np.all(np.isfinite(x)))
+    ok = ok and bool(np.all(np.isfinite(x)))
     if ok:
-        ok = float(np.linalg.norm(A @ x - b)) <= 1e-6 * float(np.linalg.norm(b))
-    return x, count[0], ok
+        ok = float(np.linalg.norm(A_csr @ x - b)) <= 1e-6 * float(np.linalg.norm(b))
+    return x, n_iter, ok
 
 
 def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
@@ -279,6 +269,8 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
         return disc.compute_state(xx, s.scheme, s.venkat_k, rc_diag)
 
     def steady_resid(xx: np.ndarray) -> np.ndarray:
+        if s.fast_residual:
+            return disc.residual_fast(xx, s.scheme, s.venkat_k, rc_diag)
         return disc.residual_from_state(xx, state(xx))
 
     def resid(xx: np.ndarray) -> np.ndarray:

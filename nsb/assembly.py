@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy import sparse
 
+from nsb import fastres
 from nsb.data import (
     BoundaryKind,
     BoundaryPatch,
@@ -396,6 +397,9 @@ class BrinkmanDiscretization:
             self.dy * (self.Dx @ self.Fgx_vel) + self.dx * (self.Dy @ self.Fgy_vel)
         )
         self.drag_v = sparse.diags((self.drag * self.vol).ravel())
+        # numba 残差カーネル用の定数配列（contiguous float64 / bool）
+        self._drag_vol = np.ascontiguousarray(self.drag * self.vol, dtype=np.float64)
+        self._zeros_cell = np.zeros((nx, ny))
 
     # ------------------------------------------------------------------
     # 状態依存量
@@ -617,6 +621,63 @@ class BrinkmanDiscretization:
             + q_out * v
         )
         r_p = div(st.fx, st.fy) - q_in + q_out
+        return np.concatenate([r_u.ravel(), r_v.ravel(), r_p.ravel()])
+
+    def residual_fast(
+        self,
+        x: np.ndarray,
+        scheme: ConvectionSchemeType,
+        venkat_k: float,
+        pseudo_diag: np.ndarray | None = None,
+        convection: bool = True,
+    ) -> np.ndarray:
+        """`residual_from_state(x, compute_state(x, …))` と同じ残差を numba カーネル（`nsb.fastres`）で返す.
+
+        JFNK の matvec で毎回呼ばれる経路。numba が無ければ numpy 経路に落ちる（値は同じ）。
+        """
+        if not fastres.HAVE_NUMBA:
+            st = self.compute_state(x, scheme, venkat_k, pseudo_diag)
+            return self.residual_from_state(x, st, convection=convection)
+        u, v, p = self.split(x)
+        W, E, S, N = self.sides["W"], self.sides["E"], self.sides["S"], self.sides["N"]
+        use_pseudo = pseudo_diag is not None
+        pd = pseudo_diag if use_pseudo else self._zeros_cell
+        r_u, r_v, r_p = fastres.residual_kernel(
+            np.ascontiguousarray(u),
+            np.ascontiguousarray(v),
+            np.ascontiguousarray(p),
+            float(self.rho),
+            float(self.mu),
+            float(self.dx),
+            float(self.dy),
+            W.is_outlet,
+            E.is_outlet,
+            S.is_outlet,
+            N.is_outlet,
+            W.p,
+            E.p,
+            S.p,
+            N.p,
+            self.u_w,
+            self.v_w,
+            self.u_e,
+            self.v_e,
+            self.u_s,
+            self.v_s,
+            self.u_n,
+            self.v_n,
+            self.diff_diag,
+            self._drag_vol,
+            np.ascontiguousarray(pd, dtype=np.float64),
+            bool(use_pseudo),
+            self.q_src,
+            self.q_sink,
+            self.c_sink,
+            self.cp_sink,
+            scheme is ConvectionSchemeType.FIRST_ORDER_UPWIND,
+            float(venkat_k),
+            1.0 if convection else 0.0,
+        )
         return np.concatenate([r_u.ravel(), r_v.ravel(), r_p.ravel()])
 
     # ------------------------------------------------------------------

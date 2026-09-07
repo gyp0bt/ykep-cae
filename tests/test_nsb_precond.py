@@ -200,3 +200,78 @@ class TestSimpleModesConvergence:
         assert len(init) == 1
         assert "gmres=" in init[0]
         assert "not converged" not in init[0]
+
+
+class TestSimpleBlockPreconditionerHierarchyReuse:
+    def test_reuse_keeps_aggregation_and_regalerkins(self):
+        """2 回目の factorize は集約（P, R）を固定し、粗格子行列だけ Galerkin 積で組み直す."""
+        disc, J0, b = _stokes_jacobian()
+        pc = SimpleBlockPreconditioner(disc.n).factorize(J0)
+        assert pc.n_hierarchy_builds == 1
+        ml = pc._ml_schur
+        P0 = [lv.P.copy() for lv in ml.levels[:-1]]
+        # 擬似時間対角を足した別の行列で組み直す
+        n = disc.n
+        diag = np.concatenate([np.full(2 * n, 5.0), np.zeros(n)])
+        J1 = (J0 + sparse.diags(diag)).tocsr()
+        pc.factorize(J1)
+        assert pc.n_hierarchy_builds == 1
+        assert pc._ml_schur is ml
+        for lv, P in zip(ml.levels[:-1], P0, strict=True):
+            assert (lv.P != P).nnz == 0
+        # 粗格子行列は新しい Ŝ の Galerkin 積
+        S1 = pc.schur * pc._schur_sign
+        assert np.abs((ml.levels[0].A - S1).data).max(initial=0.0) < 1e-12
+        A1 = ml.levels[0].R @ S1 @ ml.levels[0].P
+        assert np.abs((ml.levels[1].A - A1).data).max(initial=0.0) < 1e-10
+        # 組み直した前処理で J1 の GMRES が収束する
+        count = [0]
+        x, info = spla.gmres(
+            J1,
+            b,
+            M=spla.LinearOperator(J1.shape, matvec=pc.solve, dtype=float),
+            rtol=1e-8,
+            atol=0.0,
+            restart=40,
+            maxiter=5,
+            callback=lambda _: count.__setitem__(0, count[0] + 1),
+            callback_type="pr_norm",
+        )
+        assert info == 0 and count[0] <= 100
+        assert np.linalg.norm(J1 @ x - b) < 1e-6 * np.linalg.norm(b)
+        pc.free()
+        assert pc._ml_schur is None
+
+    def test_no_reuse_rebuilds_hierarchy(self):
+        disc, J0, _ = _stokes_jacobian()
+        pc = SimpleBlockPreconditioner(disc.n, reuse_hierarchy=False).factorize(J0)
+        ml = pc._ml_schur
+        pc.factorize(J0)
+        assert pc.n_hierarchy_builds == 2
+        assert pc._ml_schur is not ml
+        pc.free()
+
+    def test_vcycle_matches_pyamg_solve(self):
+        """直接辿る V サイクルは pyamg `MultilevelSolver.solve(maxiter=1)` と同じ写像."""
+        disc, J0, _ = _stokes_jacobian()
+        pc = SimpleBlockPreconditioner(disc.n).factorize(J0)
+        r = np.random.default_rng(0).standard_normal(disc.n)
+        mine = pc._solve_schur(r)
+        ref = pc._ml_schur.solve(pc._schur_sign * r, tol=1e-12, maxiter=1, cycle="V", accel=None)
+        assert np.allclose(mine, ref, rtol=1e-10, atol=1e-12)
+        pc.free()
+
+
+class TestSimpleBlockPreconditionerDeterminism:
+    def test_same_matrix_gives_identical_hierarchy(self):
+        disc, J0, b = _stokes_jacobian()
+        pc1 = SimpleBlockPreconditioner(disc.n).factorize(J0)
+        y1 = pc1.solve(b)
+        np.random.seed(12345)  # グローバル乱数の状態に依らないこと
+        pc2 = SimpleBlockPreconditioner(disc.n).factorize(J0)
+        y2 = pc2.solve(b)
+        for l1, l2 in zip(pc1._ml_schur.levels[:-1], pc2._ml_schur.levels[:-1], strict=True):
+            assert (l1.P != l2.P).nnz == 0
+        assert np.array_equal(y1, y2)
+        pc1.free()
+        pc2.free()
