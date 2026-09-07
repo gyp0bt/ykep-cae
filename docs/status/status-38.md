@@ -39,7 +39,7 @@ NSB には AMG のオプションが無かった（3N×3N の鞍点型・非対�
 Elman らの SIMPLE 型ブロック前処理を `PardisoLU` と同じインターフェース（`factorize` / `solve` / `free`）で実装。
 1 次風上ヤコビアン J = [[A, B], [C, D]]（A: 速度 2N×2N + 擬似時間対角、B: 圧力勾配、C: 発散、D: Rhie–Chow 圧力項）に対し
 
-1. A u* = r_u を **ILU**（scipy `spilu`、drop_tol 1e-2 / fill_factor 1.5）で近似解
+1. A u* = r_u を **ILU**（scipy `spilu`、drop_tol 1e-3 / fill_factor 3.0、零ピボットなら締めて組み直し）で近似解
 2. Ŝ δp = r_p − C u*、Ŝ = D − C diag(A)⁻¹ B を **smoothed aggregation AMG**（pyamg、非対称、V サイクル 1 回）で近似解
 3. u = u* − diag(A)⁻¹ B δp
 
@@ -90,8 +90,11 @@ GS と運動量 AMG は高 CFL（擬似時間対角が消えて対流優勢、Ne
   5 点行列は AMG 単体では速いが、前処理としては Ŝ との乖離で GMRES が悪化する
 - smoothed aggregation は AMG 単体の収束率は同程度なのに前処理としては最良で、**厳密 Schur 解の SIMPLE（64）を下回る**
   （近似 Schur の粗さを AMG の丸さがたまたま補う形）。階層は 4 レベル、演算子複雑度 1.04
-- ILU は drop_tol 1e-2 / fill_factor 1.5 が 1e-3 / 3.0 と反復数同等以下で軽い（288×192: 23〜42 反復、適用 25 ms）。
-  SA の平滑化なし集約は組立 0.15 s（あり 1.4 s）だが反復数 +20〜60% で、lag=4 の償却を前提に平滑化ありを既定にした
+- ILU は単体測定では drop_tol 1e-2 / fill_factor 1.5 が 1e-3 / 3.0 と反復数同等以下で軽かった（288×192: 23〜42 反復、
+  適用 25 ms）が、**実際の Newton 反復の途中（288×192、11〜13 反復目）で零ピボット（"Factor is exactly singular"）**
+  になり解が落ちた。既定は実績のある **1e-3 / 3.0** に戻し、零ピボット時は drop_tol 1/10・fill 2 倍で最大 3 回組み直す
+  リトライを `_build_ilu` に入れた（`n_ilu_retries` に累積、ベンチは `spilu` 呼び出し回数で確認）
+- SA の平滑化なし集約は組立 0.15 s（あり 1.4 s）だが反復数 +20〜60% で、lag=4 の償却を前提に平滑化ありを既定にした
 
 ## 4. 実測（`experiments/nsb/bench_precond.py`、flat、U=1、推奨構成、4 コア）
 
