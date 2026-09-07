@@ -5,7 +5,9 @@
   [残差]    擬似時間項を残差に含めるか（dual-time 型）
   [反復]    1 擬似時間ステップあたりの Newton 反復数（sub_iters）
   [RC]      Rhie–Chow 係数に擬似時間項を含めるか
-  [線形]    JFNK（GMRES + LU(J1)）か LU 直接（defect correction）。LU は PARDISO（pypardiso）
+  [線形]    JFNK（GMRES + LU(J1)）か LU 直接（defect correction）。LU は PARDISO（pypardiso）。
+            SIMPLE 型ブロック前処理（ILU + Schur 補元 AMG、`nsb.precond`）を使う
+            jfnk_simple（有限差分 matvec）/ dc_simple（J1 matvec の defect correction）
   [前処理]  LU(J1) の遅延更新: 1 回の分解を precond_lag 反復まで使い回す（GMRES 不収束なら即再分解）
   [SER]     残差比で CFL を増減
   [初期場]  静止場 / Stokes–Brinkman 解
@@ -23,9 +25,16 @@ from scipy.sparse import linalg as spla
 
 from nsb.assembly import BrinkmanDiscretization, StateArrays
 from nsb.core import NSBInput, NSBResult, NSBSettings
-from nsb.linalg import PardisoLU
+from nsb.linalg import PardisoLU, pardiso_solve
+from nsb.precond import SimpleBlockPreconditioner
 
 LogFn = Callable[[str], None]
+SIMPLE_MODES = ("jfnk_simple", "dc_simple")
+LINEAR_SOLVERS = ("jfnk", "lu") + SIMPLE_MODES
+
+
+def uses_simple_preconditioner(s: NSBSettings) -> bool:
+    return s.linear_solver in SIMPLE_MODES
 
 
 def compute_dtau(
@@ -48,8 +57,10 @@ def compute_dtau(
 
 
 class LaggedPreconditioner:
-    """[前処理] LU(J1 + diag) を Newton 反復間で使い回す（遅延更新）.
+    """[前処理] LU(J1 + diag) または SIMPLE 型ブロック前処理を Newton 反復間で使い回す（遅延更新）.
 
+    `fac` は `PardisoLU`（"jfnk" / "lu"）か `SimpleBlockPreconditioner`（"jfnk_simple" / "dc_simple"）で、
+    どちらも factorize / solve / free の同じインターフェースを持つ。
     JFNK では前処理は近似でよいので、毎反復の分解（実測で全体の 70〜81%）を
     `precond_lag` 反復に 1 回へ減らす。再分解の条件:
       - まだ分解していない / age >= precond_lag
@@ -59,9 +70,23 @@ class LaggedPreconditioner:
     GMRES が収束しなかった場合は `solve_linear` 内で即再分解して解き直す。
     """
 
-    def __init__(self, s: NSBSettings) -> None:
+    def __init__(self, s: NSBSettings, n: int | None = None) -> None:
+        if s.linear_solver not in LINEAR_SOLVERS:
+            raise ValueError(f"linear_solver は {LINEAR_SOLVERS} のいずれか: {s.linear_solver!r}")
         self.s = s
-        self.lu = PardisoLU()
+        self.fac: PardisoLU | SimpleBlockPreconditioner
+        if uses_simple_preconditioner(s):
+            if n is None:
+                raise ValueError("SIMPLE 型前処理にはセル数 n が必要です")
+            self.fac = SimpleBlockPreconditioner(
+                n,
+                momentum=s.simple_momentum,
+                schur_cycles=s.simple_schur_cycles,
+                ilu_drop_tol=s.simple_ilu_drop_tol,
+                ilu_fill_factor=s.simple_ilu_fill_factor,
+            )
+        else:
+            self.fac = PardisoLU()
         self.age = 0  # この分解で解いた Newton 反復数
         self.last_gmres = 0
         self.n_factorizations = 0
@@ -69,7 +94,7 @@ class LaggedPreconditioner:
         self.cfl = float("nan")  # 現在の CFL（solve_steady が擬似時間ステップ開始時に更新）
 
     def needs_refresh(self, force: bool = False) -> bool:
-        if force or not self.lu.is_factorized or self.s.linear_solver == "lu":
+        if force or not self.fac.is_factorized or self.s.linear_solver == "lu":
             return True
         if self.age >= max(1, self.s.precond_lag):
             return True
@@ -82,13 +107,13 @@ class LaggedPreconditioner:
         return False
 
     def refresh(self, J1: sparse.spmatrix) -> None:
-        self.lu.factorize(J1)
+        self.fac.factorize(J1)
         self.age = 0
         self.n_factorizations += 1
         self.cfl_at_factorization = self.cfl
 
     def free(self) -> None:
-        self.lu.free()
+        self.fac.free()
 
 
 def solve_linear(
@@ -104,30 +129,39 @@ def solve_linear(
 ) -> tuple[np.ndarray, int, bool]:
     """[線形] (J + diag_aug) δ = -R を解く。戻り値 (δ, GMRES 反復数, 収束フラグ).
 
-    前処理（"lu" では解そのもの）は pc が保持する PARDISO 分解。必要なときだけ J1 を組んで再分解する。
+    前処理（"lu" では解そのもの）は pc が保持する PARDISO 分解または SIMPLE 型前処理。
+    必要なときだけ J1 を組んで組み直す。"dc_simple" は matvec も現在の J1 + diag_aug で行う
+    （defect correction）ので、前処理の遅延更新に関わらず毎反復 J1 を組む。
     """
     n3 = x.size
 
     def assemble() -> sparse.csr_matrix:
         return (disc.jacobian_first_order(st, x=x) + sparse.diags(diag_aug)).tocsr()
 
+    J_cur: sparse.csr_matrix | None = None
     if pc.needs_refresh(force_refresh):
-        pc.refresh(assemble())
+        J_cur = assemble()
+        pc.refresh(J_cur)
     if s.linear_solver == "lu":
         pc.age += 1
-        return pc.lu.solve(-rhs_resid), 0, True
+        return pc.fac.solve(-rhs_resid), 0, True
 
-    x_norm = float(np.linalg.norm(x))
-    sqrt_eps = float(np.sqrt(np.finfo(float).eps))
+    if s.linear_solver == "dc_simple":
+        if J_cur is None:
+            J_cur = assemble()
+        A = spla.aslinearoperator(J_cur)
+    else:
+        x_norm = float(np.linalg.norm(x))
+        sqrt_eps = float(np.sqrt(np.finfo(float).eps))
 
-    def matvec(vec: np.ndarray) -> np.ndarray:
-        v_norm = float(np.linalg.norm(vec))
-        if v_norm == 0.0:
-            return np.zeros_like(vec)
-        eps = sqrt_eps * np.sqrt(1.0 + x_norm) / v_norm
-        return (resid_fn(x + eps * vec) - rhs_resid) / eps + diag_aug * vec
+        def matvec(vec: np.ndarray) -> np.ndarray:
+            v_norm = float(np.linalg.norm(vec))
+            if v_norm == 0.0:
+                return np.zeros_like(vec)
+            eps = sqrt_eps * np.sqrt(1.0 + x_norm) / v_norm
+            return (resid_fn(x + eps * vec) - rhs_resid) / eps + diag_aug * vec
 
-    A = spla.LinearOperator((n3, n3), matvec=matvec, dtype=np.float64)
+        A = spla.LinearOperator((n3, n3), matvec=matvec, dtype=np.float64)
 
     def run_gmres() -> tuple[np.ndarray, int, bool]:
         count = [0]
@@ -135,7 +169,7 @@ def solve_linear(
         def cb(_: float) -> None:
             count[0] += 1
 
-        M = spla.LinearOperator((n3, n3), matvec=pc.lu.solve, dtype=np.float64)
+        M = spla.LinearOperator((n3, n3), matvec=pc.fac.solve, dtype=np.float64)
         delta, info = spla.gmres(
             A,
             -rhs_resid,
@@ -152,12 +186,45 @@ def solve_linear(
     delta, n_gmres, ok = run_gmres()
     if not ok and pc.age > 0:
         # 古い前処理で収束しなかった: 現在の J1 で再分解して解き直す
-        pc.refresh(assemble())
+        pc.refresh(J_cur if J_cur is not None else assemble())
         delta, n_retry, ok = run_gmres()
         n_gmres += n_retry
     pc.age += 1
     pc.last_gmres = n_gmres
     return delta, n_gmres, ok
+
+
+def _gmres_exact(
+    A: sparse.spmatrix,
+    b: np.ndarray,
+    precond: Callable[[np.ndarray], np.ndarray],
+    s: NSBSettings,
+    rtol: float = 1.0e-10,
+    max_outer: int = 20,
+) -> tuple[np.ndarray, int, bool]:
+    """線形系 A x = b を前処理付き GMRES で厳密（rtol）に解く（Stokes 初期場用）."""
+    n3 = b.size
+    count = [0]
+
+    def cb(_: float) -> None:
+        count[0] += 1
+
+    M = spla.LinearOperator((n3, n3), matvec=precond, dtype=np.float64)
+    x, info = spla.gmres(
+        spla.aslinearoperator(A),
+        b,
+        M=M,
+        rtol=rtol,
+        atol=0.0,
+        restart=s.gmres_restart,
+        maxiter=max_outer,
+        callback=cb,
+        callback_type="pr_norm",
+    )
+    ok = info == 0 and bool(np.all(np.isfinite(x)))
+    if ok:
+        ok = float(np.linalg.norm(A @ x - b)) <= 1e-6 * float(np.linalg.norm(b))
+    return x, count[0], ok
 
 
 def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
@@ -177,18 +244,29 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
     # [初期場] Stokes–Brinkman 解: 運動量の対流項（inlet の運動量流束を含む）を落とした線形問題を
     # ゼロ場から 1 回の LU で解く。対流項込みの残差をゼロ場で解くと inlet 運動量流束が
     # ソースとして残り、流速が U_in の 10 倍超の非物理的な噴流になるので注意
-    pc = LaggedPreconditioner(s)
+    pc = LaggedPreconditioner(s, n)
     n_gmres_total = 0
     if s.init_field == "stokes":
         st0 = disc.compute_state(x, s.scheme, s.venkat_k)
         r_init = disc.residual_from_state(x, st0, convection=False)
         J0 = disc.jacobian_first_order(st0, convection=False, x=x).tocsr()
         pc.refresh(J0)
-        x = x + pc.lu.solve(-r_init)
+        if uses_simple_preconditioner(s):
+            # 線形問題なので SIMPLE 前処理付き GMRES で厳密に解く（収束しなければ PARDISO 1 回）
+            dx0, n_g0, ok0 = _gmres_exact(J0, -r_init, pc.fac.solve, s)
+            n_gmres_total += n_g0
+            how = f"gmres={n_g0}"
+            if not ok0:
+                dx0 = pardiso_solve(J0, -r_init)
+                how = f"gmres={n_g0} (not converged) -> pardiso"
+        else:
+            dx0 = pc.fac.solve(-r_init)
+            how = "pardiso"
+        x = x + dx0
         pc.age = 10**9  # Stokes 行列は前処理として使わない（次で必ず再分解）
         u0_, v0_, _ = disc.split(x)
         emit(
-            f"[nsb] stokes init: |R_stokes(0)|={np.linalg.norm(r_init):.4e} "
+            f"[nsb] stokes init ({how}): |R_stokes(0)|={np.linalg.norm(r_init):.4e} "
             f"speed_max={np.hypot(u0_, v0_).max():.3g} m/s"
         )
 

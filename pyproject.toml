@@ -21,7 +21,7 @@ ykep = "xkep_cae_fluid.inp.cli:main"
 amg = ["pyamg>=5.0"]
 fast = ["numba>=0.57"]
 plot = ["matplotlib>=3.5"]
-nsb = ["pypardiso>=0.4"]  # nsb/（Brinkman-NS 実験パッケージ）の疎 LU。MKL PARDISO 必須
+nsb = ["pypardiso>=0.4", "pyamg>=5.0"]  # nsb/（Brinkman-NS 実験パッケージ）: 疎 LU は MKL PARDISO 必須、SIMPLE 型前処理の AMG は pyamg 必須
 dev = [
     "pytest>=7.0",
     "pytest-timeout>=2.0",
@@ -29,6 +29,7 @@ dev = [
     "ruff>=0.4",
     "pyyaml>=6.0",
     "pypardiso>=0.4",
+    "pyamg>=5.0",
 ]
 
 [tool.pytest.ini_options]

@@ -113,12 +113,21 @@ class NSBSettings:
     venkat_k : float
         Venkatakrishnan 定数 K
     linear_solver : str
-        "jfnk"（有限差分 J v を GMRES、LU(J1) 前処理）/ "lu"（J1 δ = -R を LU 直接）。
+        "jfnk"（有限差分 J v を GMRES、LU(J1) 前処理）/ "lu"（J1 δ = -R を LU 直接）/
+        "jfnk_simple"（有限差分 J v を GMRES、SIMPLE 型ブロック前処理 `nsb.precond`）/
+        "dc_simple"（J1 v を GMRES、同前処理。defect correction。残差評価を伴わないので 1 反復が軽い）。
         LU は常に PARDISO（pypardiso、`nsb.linalg.PardisoLU`）
     precond_lag : int
-        前処理 LU(J1) の遅延更新: 1 回の分解を最大この回数の Newton 反復で使い回す。
-        1 で毎反復分解（従来動作）。GMRES が収束しなかったら即再分解して解き直す。
+        前処理（LU(J1) または SIMPLE 型）の遅延更新: 1 回の組立を最大この回数の Newton 反復で
+        使い回す。1 で毎反復組立。GMRES が収束しなかったら即組み直して解き直す。
         "lu" では無視（毎反復分解）
+    simple_momentum : str
+        SIMPLE 型前処理の運動量ブロック近似解法 "ilu"（既定）/ "jacobi"
+    simple_schur_cycles : int
+        SIMPLE 型前処理の Schur 補元に当てる AMG V サイクル数（既定 1）
+    simple_ilu_drop_tol, simple_ilu_fill_factor : float
+        運動量 ILU（scipy `spilu`）の drop_tol / fill_factor。零ピボットなら drop_tol 1/10・fill 2 倍で
+        最大 3 回組み直す（1e-2 / 1.5 は 288×192 の Newton 途中で零ピボットになった）
     precond_refresh_gmres : int
         直前の GMRES 反復数がこれを超えたら次の Newton 反復で前処理を再分解する
         （前処理が古くなった兆候）
@@ -180,6 +189,10 @@ class NSBSettings:
     precond_lag: int = 4
     precond_refresh_gmres: int = 30
     precond_cfl_ratio: float = 4.0
+    simple_momentum: str = "ilu"
+    simple_schur_cycles: int = 1
+    simple_ilu_drop_tol: float = 1.0e-3
+    simple_ilu_fill_factor: float = 3.0
     divergence_ratio: float = 1.0e6
     init_field: str = "zero"
     reject_growth: float = 0.0

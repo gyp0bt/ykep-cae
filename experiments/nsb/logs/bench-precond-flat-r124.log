@@ -1,0 +1,160 @@
+cores=4 MKL_NUM_THREADS=None
+
+== flat refine=1 (72x48, n3=10368) jfnk (pardiso, lag=4): converged=True reason='' it=13 setups=10 gmres=111 total=2.88s per_newton=0.22s  du=0.0e+00 dp=0.0e+00
+  gmres(total)           1.53s  53.2%  calls=   13  per=  117.9ms
+  pardiso solve          1.16s  40.2%  calls=  151  per=    7.7ms
+  pardiso factorize      1.11s  38.6%  calls=   10  per=  111.2ms
+  compute_state          0.25s   8.6%  calls=  192  per=    1.3ms
+  jacobian               0.12s   4.0%  calls=   10  per=   11.6ms
+  residual               0.06s   2.0%  calls=  178  per=    0.3ms
+
+== flat refine=1 (72x48, n3=10368) jfnk_simple lag=1: converged=True reason='' it=13 setups=14 gmres=308 total=2.64s per_newton=0.20s  du=8.7e-09 dp=2.6e-09
+  simple setup           1.20s  45.5%  calls=   14  per=   85.6ms
+  gmres(total)           1.20s  45.4%  calls=   14  per=   85.5ms
+  simple apply           0.60s  22.9%  calls=  355  per=    1.7ms
+  compute_state          0.40s  15.2%  calls=  373  per=    1.1ms
+  spilu                  0.33s  12.7%  calls=   14  per=   23.9ms
+  jacobian               0.14s   5.4%  calls=   14  per=   10.2ms
+  residual               0.11s   4.1%  calls=  359  per=    0.3ms
+
+== flat refine=1 (72x48, n3=10368) jfnk_simple lag=4: converged=True reason='' it=13 setups=10 gmres=301 total=2.06s per_newton=0.16s  du=5.0e-09 dp=1.5e-09
+  gmres(total)           1.10s  53.2%  calls=   14  per=   78.3ms
+  simple setup           0.78s  37.9%  calls=   10  per=   78.1ms
+  simple apply           0.56s  27.0%  calls=  348  per=    1.6ms
+  compute_state          0.36s  17.7%  calls=  366  per=    1.0ms
+  spilu                  0.23s  11.1%  calls=   10  per=   22.9ms
+  residual               0.10s   5.0%  calls=  352  per=    0.3ms
+  jacobian               0.10s   4.7%  calls=   10  per=    9.7ms
+
+== flat refine=1 (72x48, n3=10368) jfnk_simple lag=4 gmres_tol=1e-2: converged=True reason='' it=13 setups=10 gmres=202 total=1.66s per_newton=0.13s  du=1.9e-08 dp=5.3e-09
+  simple setup           0.75s  45.2%  calls=   10  per=   75.0ms
+  gmres(total)           0.73s  43.9%  calls=   14  per=   52.1ms
+  simple apply           0.38s  23.0%  calls=  247  per=    1.5ms
+  compute_state          0.27s  16.0%  calls=  265  per=    1.0ms
+  spilu                  0.22s  13.3%  calls=   10  per=   22.1ms
+  jacobian               0.09s   5.6%  calls=   10  per=    9.2ms
+  residual               0.07s   4.3%  calls=  251  per=    0.3ms
+
+== flat refine=1 (72x48, n3=10368) dc_simple lag=4: converged=True reason='' it=29 setups=14 gmres=467 total=2.56s per_newton=0.09s  du=2.0e-06 dp=5.8e-07
+  gmres(total)           1.08s  42.3%  calls=   30  per=   36.0ms
+  simple setup           0.98s  38.4%  calls=   14  per=   70.3ms
+  simple apply           0.84s  32.7%  calls=  542  per=    1.5ms
+  spilu                  0.32s  12.6%  calls=   14  per=   23.0ms
+  jacobian               0.29s  11.4%  calls=   30  per=    9.7ms
+  compute_state          0.12s   4.8%  calls=  119  per=    1.0ms
+  residual               0.03s   1.0%  calls=   89  per=    0.3ms
+
+== flat refine=1 (72x48, n3=10368) jfnk_simple lag=4 ilu=1e-2/1.5: converged=True reason='' it=13 setups=10 gmres=307 total=1.83s per_newton=0.14s  du=4.5e-09 dp=1.4e-09
+  gmres(total)           1.04s  57.1%  calls=   14  per=   74.6ms
+  simple setup           0.61s  33.5%  calls=   10  per=   61.2ms
+  simple apply           0.51s  27.9%  calls=  353  per=    1.4ms
+  compute_state          0.36s  19.7%  calls=  371  per=    1.0ms
+  spilu                  0.14s   7.8%  calls=   10  per=   14.2ms
+  residual               0.10s   5.5%  calls=  357  per=    0.3ms
+  jacobian               0.09s   4.9%  calls=   10  per=    8.9ms
+
+== flat refine=2 (144x96, n3=41472) jfnk (pardiso, lag=4): converged=True reason='' it=18 setups=11 gmres=280 total=18.56s per_newton=1.03s  du=0.0e+00 dp=0.0e+00
+  gmres(total)          15.12s  81.5%  calls=   18  per=  840.2ms
+  pardiso solve         13.14s  70.8%  calls=  343  per=   38.3ms
+  pardiso factorize      2.70s  14.6%  calls=   11  per=  245.7ms
+  compute_state          1.42s   7.6%  calls=  399  per=    3.6ms
+  jacobian               0.34s   1.8%  calls=   11  per=   30.8ms
+  residual               0.33s   1.8%  calls=  380  per=    0.9ms
+
+== flat refine=2 (144x96, n3=41472) jfnk_simple lag=1: converged=True reason='' it=18 setups=19 gmres=645 total=16.04s per_newton=0.89s  du=1.9e-08 dp=3.3e-09
+  gmres(total)           8.60s  53.6%  calls=   19  per=  452.4ms
+  simple setup           6.62s  41.3%  calls=   19  per=  348.5ms
+  simple apply           4.56s  28.4%  calls=  709  per=    6.4ms
+  compute_state          2.33s  14.5%  calls=  743  per=    3.1ms
+  spilu                  2.10s  13.1%  calls=   19  per=  110.3ms
+  residual               0.61s   3.8%  calls=  724  per=    0.8ms
+  jacobian               0.45s   2.8%  calls=   19  per=   23.9ms
+
+== flat refine=2 (144x96, n3=41472) jfnk_simple lag=4: converged=True reason='' it=18 setups=13 gmres=669 total=13.91s per_newton=0.77s  du=1.9e-08 dp=2.2e-09
+  gmres(total)           8.76s  63.0%  calls=   19  per=  461.2ms
+  simple apply           4.68s  33.7%  calls=  735  per=    6.4ms
+  simple setup           4.50s  32.4%  calls=   13  per=  346.4ms
+  compute_state          2.42s  17.4%  calls=  769  per=    3.2ms
+  spilu                  1.35s   9.7%  calls=   13  per=  103.8ms
+  residual               0.63s   4.5%  calls=  750  per=    0.8ms
+  jacobian               0.30s   2.1%  calls=   13  per=   22.9ms
+
+== flat refine=2 (144x96, n3=41472) jfnk_simple lag=4 gmres_tol=1e-2: converged=True reason='' it=19 setups=13 gmres=460 total=11.28s per_newton=0.59s  du=1.2e-06 dp=1.5e-07
+  gmres(total)           6.10s  54.0%  calls=   20  per=  304.9ms
+  simple setup           4.53s  40.1%  calls=   13  per=  348.4ms
+  simple apply           3.36s  29.8%  calls=  527  per=    6.4ms
+  compute_state          1.76s  15.6%  calls=  564  per=    3.1ms
+  spilu                  1.37s  12.1%  calls=   13  per=  105.4ms
+  residual               0.46s   4.1%  calls=  544  per=    0.8ms
+  jacobian               0.30s   2.7%  calls=   13  per=   23.2ms
+
+== flat refine=2 (144x96, n3=41472) dc_simple lag=4: converged=True reason='' it=36 setups=17 gmres=919 total=17.51s per_newton=0.49s  du=1.7e-05 dp=1.4e-06
+  gmres(total)           9.27s  53.0%  calls=   37  per=  250.7ms
+  simple apply           6.92s  39.5%  calls= 1028  per=    6.7ms
+  simple setup           6.54s  37.4%  calls=   17  per=  384.9ms
+  spilu                  1.86s  10.6%  calls=   17  per=  109.4ms
+  jacobian               0.93s   5.3%  calls=   37  per=   25.3ms
+  compute_state          0.47s   2.7%  calls=  147  per=    3.2ms
+  residual               0.10s   0.6%  calls=  110  per=    0.9ms
+
+== flat refine=2 (144x96, n3=41472) jfnk_simple lag=4 ilu=1e-2/1.5: converged=True reason='' it=18 setups=13 gmres=627 total=13.12s per_newton=0.73s  du=2.0e-08 dp=3.6e-09
+  gmres(total)           8.30s  63.3%  calls=   19  per=  436.7ms
+  simple apply           4.24s  32.3%  calls=  692  per=    6.1ms
+  simple setup           4.17s  31.8%  calls=   13  per=  320.5ms
+  compute_state          2.34s  17.9%  calls=  727  per=    3.2ms
+  spilu                  0.84s   6.4%  calls=   13  per=   64.3ms
+  residual               0.60s   4.6%  calls=  708  per=    0.8ms
+  jacobian               0.31s   2.4%  calls=   13  per=   23.8ms
+
+== flat refine=4 (288x192, n3=165888) jfnk (pardiso, lag=4): converged=True reason='' it=36 setups=22 gmres=850 total=229.60s per_newton=6.38s  du=0.0e+00 dp=0.0e+00
+  gmres(total)         197.70s  86.1%  calls=   36  per= 5491.5ms
+  pardiso solve        175.11s  76.3%  calls=  978  per=  179.1ms
+  pardiso factorize     25.47s  11.1%  calls=   22  per= 1157.7ms
+  compute_state         14.56s   6.3%  calls= 1088  per=   13.4ms
+  jacobian               3.62s   1.6%  calls=   22  per=  164.7ms
+  residual               3.50s   1.5%  calls= 1051  per=    3.3ms
+
+== flat refine=4 (288x192, n3=165888) jfnk_simple lag=1: converged=True reason='' it=24 setups=25 gmres=1641 total=148.97s per_newton=6.21s  du=5.7e-05 dp=4.4e-06
+  gmres(total)          96.85s  65.0%  calls=   25  per= 3874.1ms
+  simple setup          48.12s  32.3%  calls=   25  per= 1924.6ms
+  simple apply          45.01s  30.2%  calls= 1734  per=   26.0ms
+  compute_state         23.79s  16.0%  calls= 1772  per=   13.4ms
+  spilu                 13.68s   9.2%  calls=   25  per=  547.2ms
+  residual               5.63s   3.8%  calls= 1747  per=    3.2ms
+  jacobian               2.06s   1.4%  calls=   25  per=   82.5ms
+
+== flat refine=4 (288x192, n3=165888) jfnk_simple lag=4: converged=True reason='' it=33 setups=29 gmres=2573 total=212.77s per_newton=6.45s  du=5.9e-05 dp=4.7e-06
+  gmres(total)         151.19s  71.1%  calls=   34  per= 4446.9ms
+  simple apply          70.33s  33.1%  calls= 2704  per=   26.0ms
+  simple setup          56.60s  26.6%  calls=   29  per= 1951.8ms
+  compute_state         36.85s  17.3%  calls= 2769  per=   13.3ms
+  spilu                 16.03s   7.5%  calls=   29  per=  552.7ms
+  residual               8.92s   4.2%  calls= 2735  per=    3.3ms
+  jacobian               2.43s   1.1%  calls=   29  per=   83.8ms
+
+== flat refine=4 (288x192, n3=165888) jfnk_simple lag=4 gmres_tol=1e-2: converged=True reason='' it=26 setups=18 gmres=872 total=86.34s per_newton=3.32s  du=5.7e-05 dp=6.3e-06
+  gmres(total)          47.16s  54.6%  calls=   27  per= 1746.6ms
+  simple setup          35.82s  41.5%  calls=   18  per= 1990.0ms
+  simple apply          24.88s  28.8%  calls=  963  per=   25.8ms
+  compute_state         13.51s  15.6%  calls= 1007  per=   13.4ms
+  spilu                  9.83s  11.4%  calls=   18  per=  546.0ms
+  residual               3.19s   3.7%  calls=  980  per=    3.3ms
+  jacobian               1.45s   1.7%  calls=   18  per=   80.4ms
+
+== flat refine=4 (288x192, n3=165888) dc_simple lag=4: converged=True reason='' it=60 setups=52 gmres=2560 total=224.04s per_newton=3.73s  du=5.4e-05 dp=4.2e-06
+  gmres(total)         108.81s  48.6%  calls=   61  per= 1783.8ms
+  simple setup         105.39s  47.0%  calls=   52  per= 2026.7ms
+  simple apply          72.20s  32.2%  calls= 2743  per=   26.3ms
+  spilu                 29.38s  13.1%  calls=   52  per=  565.1ms
+  jacobian               5.04s   2.3%  calls=   61  per=   82.7ms
+  compute_state          3.07s   1.4%  calls=  243  per=   12.6ms
+  residual               0.60s   0.3%  calls=  182  per=    3.3ms
+
+== flat refine=4 (288x192, n3=165888) jfnk_simple lag=4 ilu=1e-2/1.5: converged=True reason='' it=27 setups=22 gmres=1443 total=120.06s per_newton=4.45s  du=5.7e-05 dp=4.4e-06
+  gmres(total)          80.41s  67.0%  calls=   28  per= 2871.7ms
+  simple apply          38.54s  32.1%  calls= 1539  per=   25.0ms
+  simple setup          35.62s  29.7%  calls=   22  per= 1619.3ms
+  compute_state         22.70s  18.9%  calls= 1586  per=   14.3ms
+  spilu                  6.70s   5.6%  calls=   22  per=  304.8ms
+  residual               5.49s   4.6%  calls= 1558  per=    3.5ms
+  jacobian               1.89s   1.6%  calls=   22  per=   85.8ms
