@@ -1,6 +1,6 @@
 # nsb: 手元構成ミラーの Brinkman-NS 実験パッケージ
 
-[<- README](../README.md) | [数理ノート（総和規約）](theory.md) | [設計文書（共有離散化）](../docs/design/brinkman-flow-fvm.md) | [status-30](../docs/status/status-30.md) | [status-32（切り離し・高速化見積）](../docs/status/status-32.md)
+[<- README](../README.md) | [数理ノート（総和規約）](theory.md) | [設計文書（共有離散化）](../docs/design/brinkman-flow-fvm.md) | [status-30](../docs/status/status-30.md) | [status-32（切り離し・高速化見積）](../docs/status/status-32.md) | [status-38（SIMPLE 型前処理）](../docs/status/status-38.md)
 
 手元の 2D FVM Brinkman 補正 Navier-Stokes コードと**同じファイル構成・同じ制御則**で比較するための薄いレイヤ。
 離散化（残差、1 次風上ヤコビアン、Rhie–Chow、境界条件）は `nsb/assembly.py` の `BrinkmanDiscretization`、
@@ -8,14 +8,14 @@
 
 ## 単体で持ち出せる（xkep_cae_fluid 非依存、スナップショット）
 
-`nsb/` ディレクトリは **numpy / scipy / pypardiso だけ**で動き、`xkep_cae_fluid` を import しない（status-32）。
+`nsb/` ディレクトリは **numpy / scipy / pypardiso / pyamg だけ**で動き、`xkep_cae_fluid` を import しない（status-32）。
 `nsb/{data,assembly}.py` は `xkep_cae_fluid/brinkman_flow/{data,assembly}.py` の**スナップショット**
 （コミット 1647839 時点、import 行のみ `from nsb.` に書き換え）で、2026-09-05 に本体側と**切り離した**。
 本体側は面ベース FVM 共通低レイヤー（[`xkep_cae_fluid.fvm`](../docs/design/fvm-layer.md)）へ移行して非構造格子対応を進め、
 nsb 側は構造格子の旧離散化をそのまま保つ。以後は同期しない（同期スクリプト `scripts/sync_nsb_from_xkep.py` は削除済み）。
 
 ```bash
-cp -r nsb /path/to/elsewhere/        # そのまま持ち出せる（pip install numpy scipy pypardiso）
+cp -r nsb /path/to/elsewhere/        # そのまま持ち出せる（pip install numpy scipy pypardiso pyamg）
 pytest tests/test_nsb_standalone.py  # xkep_cae_fluid を import せずに読み込めることの検査
 ```
 
@@ -39,13 +39,55 @@ nsb の入力を Process ソルバー（`BrinkmanFlowFVMProcess`）へ渡すと�
 - 効果は格子・コア数依存（status-32 の表）。SER で CFL が毎反復 2 倍伸びる局面では擬似時間対角が前処理と食い違い
   GMRES 反復が増えるので、`precond_cfl_ratio` で抑えている。`precond_lag=1` で従来の毎反復分解に戻る
 
+## 線形ソルバー: SIMPLE 型ブロック前処理（ILU + Schur 補元 AMG、status-38）
+
+`NSBSettings.linear_solver="jfnk_simple"` / `"dc_simple"` で、疎 LU の代わりに **SIMPLE 型ブロック前処理**
+（`nsb/precond.py::SimpleBlockPreconditioner`、pyamg 必須）を GMRES に使う。3N×3N の 1 次風上ヤコビアン
+J = [[A, B], [C, D]]（A: 速度、B: 圧力勾配、C: 発散、D: Rhie–Chow 圧力項）に対し
+
+1. A u* = r_u を **ILU**（scipy `spilu`）で近似解
+2. Ŝ δp = r_p − C u*、Ŝ = D − C diag(A)⁻¹ B を **smoothed aggregation AMG**（非対称、V サイクル 1 回）で近似解
+3. u = u* − diag(A)⁻¹ B δp
+
+を 1 回の前処理適用とする。組立・適用とも O(N) なので、LU の fill-in（288×192 で元の nnz の 40 倍）と
+三角解（155 ms、1 スレッド）が支配的だった大格子で効く。`jfnk_simple` は有限差分の J v（JFNK）、`dc_simple` は
+J1 v（defect correction: 残差評価を伴わないので 1 反復が軽いが Newton は線形収束で反復数が 2 倍）。
+
+- **部品の選定**（status-38 の切り分け、288×192、J1 に対する GMRES 反復数）: 運動量は ILU が最良で、
+  Gauss–Seidel と運動量 AMG は高 CFL（対流優勢）で発散。Schur 補元は compact 5 点 Poisson が支配的だが RC と Newton 項の
+  遠方項（±2〜3 セル、符号混在）で Ruge–Stüben の収束率が 0.76/サイクルに落ち GMRES 199 反復、遠方項の lumping は
+  逆効果、**smoothed aggregation では 43 反復**（運動量・Schur とも厳密解の SIMPLE で 64 反復）
+- 設定: `simple_momentum`（"ilu" / "jacobi"）、`simple_schur_cycles`、`simple_ilu_drop_tol` / `simple_ilu_fill_factor`。
+  `precond_lag` は共通（組立が軽いので lag の利得は小さい）
+- Stokes 初期場（`init_field="stokes"`）も同じ前処理付き GMRES（rtol 1e-10）で解く。収束しなければ PARDISO 1 回に落ちる
+  （ログの `stokes init (gmres=N)` で確認できる）
+- 実測は下の表（`experiments/nsb/bench_precond.py`、4 コア、ログ `experiments/nsb/logs/bench-precond-flat-r124.log`）
+
+| 格子 | 構成 | 収束 | Newton | 前処理組立 | GMRES 総反復 | 全体 | 1 Newton | PARDISO 比 | 解の差 max\|Δu\|/max\|u\| |
+|---|---|---|---|---|---|---|---|---|---|
+| 72x48 | jfnk (pardiso, lag=4) | True | 13 | 10 | 111 | 2.7 s | 0.21 s | 1.00× | 0.0e+00 |
+| 72x48 | jfnk_simple lag=1 | True | 13 | 14 | 307 | 3.0 s | 0.23 s | 0.89× | 4.6e-09 |
+| 72x48 | jfnk_simple lag=4 | True | 13 | 10 | 307 | 2.1 s | 0.16 s | 1.28× | 4.5e-09 |
+| 72x48 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 12 | 9 | 198 | 1.6 s | 0.13 s | 1.70× | 3.1e-06 |
+| 72x48 | dc_simple lag=4 | True | 29 | 14 | 504 | 2.6 s | 0.09 s | 1.05× | 2.0e-06 |
+| 144x96 | jfnk (pardiso, lag=4) | True | 18 | 11 | 280 | 19.2 s | 1.07 s | 1.00× | 0.0e+00 |
+| 144x96 | jfnk_simple lag=1 | True | 18 | 19 | 638 | 15.7 s | 0.87 s | 1.22× | 2.0e-08 |
+| 144x96 | jfnk_simple lag=4 | True | 18 | 13 | 627 | 13.3 s | 0.74 s | 1.44× | 2.1e-08 |
+| 144x96 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 18 | 12 | 417 | 9.6 s | 0.53 s | 2.00× | 7.4e-07 |
+| 144x96 | dc_simple lag=4 | True | 36 | 26 | 966 | 19.4 s | 0.54 s | 0.99× | 1.7e-05 |
+| 288x192 | jfnk (pardiso, lag=4) | True | 36 | 22 | 850 | 235.7 s | 6.55 s | 1.00× | 0.0e+00 |
+| 288x192 | jfnk_simple lag=1 | False | 11 | 12 | 464 | 52.5 s | 4.77 s | 4.49× | 3.3e-01 |
+
+（288×192 の SIMPLE 側 4 構成は本コミット時点で計測中。完了後に追記）
+
 | ファイル | 役割 |
 |---|---|
 | `linalg.py` | `PardisoLU`（分解と三角解を分離、スレッド分割、MKL パス探索）、`pardiso_solve` |
+| `precond.py` | `SimpleBlockPreconditioner`（SIMPLE 型ブロック前処理: 運動量 ILU + Schur 補元 SA-AMG、`PardisoLU` 互換の factorize / solve / free） |
 | `data.py` | （スナップショット）`BoundaryKind` / `BoundaryPatch` / `BrinkmanFlowInput`、マスク補助 `west_span` 等、`disk_mask` / `smooth_disk` |
 | `assembly.py` | （スナップショット）`BrinkmanDiscretization`: 残差、1 次風上ヤコビアン、Rhie–Chow、境界条件、領域内マニホールド |
 | `core.py` | 型宣言: `BC`（座標マスクの境界パッチ列。`BC.velocity_inlet / mass_flow_inlet / pressure_outlet`）, `NSBSettings`, `NSBInput`, `NSBResult` |
-| `solver.py` | メイン: `solve_steady`, `compute_dtau`, `solve_linear`, `LaggedPreconditioner`（前処理 LU の遅延更新） |
+| `solver.py` | メイン: `solve_steady`, `compute_dtau`, `solve_linear`, `LaggedPreconditioner`（前処理 LU / SIMPLE 型の遅延更新） |
 | `utils.py` | ポスト処理、面値⇄セル値変換、要約、npz 保存 |
 | `geo.py` | uturn / flat の厚さ場（inlet/outlet 位置に追従）、BC プリセット（速度 or 質量流量）、`run_uturn`, `run_flat`, `make_case` |
 | `../main.py` | パラメータスタディ（構成 × モデル × 細分化 × 流速） |
