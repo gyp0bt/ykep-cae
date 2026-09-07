@@ -1,10 +1,11 @@
-"""線形ソルバー方式の比較: PARDISO LU 前処理（jfnk）vs SIMPLE 型ブロック前処理（jfnk_simple / dc_simple）.
+"""線形ソルバー方式の比較: PARDISO LU 前処理（jfnk）vs SIMPLE 型ブロック前処理（jfnk_simple）.
 
     python experiments/nsb/bench_precond.py [refine ...] 2>&1 | tee experiments/nsb/logs/bench-precond-$(date +%s).log
 
-flat、U=1、推奨構成（velocity_floor=0.1 U、Stokes 初期場、alpha_u=1）で refine=1/2/4（72×48 / 144×96 / 288×192）を
+flat、U=1、推奨構成（velocity_floor_ratio=0.1 U、Stokes 初期場、alpha_u=1）で refine=1/2/4（72×48 / 144×96 / 288×192）を
 解き、収束・Newton 反復数・GMRES 総反復・前処理組立回数・所要時間・段別内訳を出す。解は jfnk（PARDISO）を基準に
-最大差で照合する。status-38 の結果: experiments/nsb/logs/bench-precond-flat-r124.log
+最大差で照合する。status-38 の結果（4 コア、scipy gmres）: experiments/nsb/logs/bench-precond-flat-r124.log、
+status-39 の結果（20 コア、FGMRES + SA 階層再利用 + numba 残差）: experiments/nsb/logs/bench-precond-flat-r124-status39.log
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scipy.sparse import linalg as spla
 
-from nsb import NSBSettings, make_case, solve_steady
+from nsb import NSBSettings, krylov, make_case, solve_steady
 from nsb import assembly as asm
 from nsb import solver as nsolver
 from nsb.linalg import PardisoLU
@@ -45,14 +46,15 @@ def wrap(obj: object, name: str, key: str) -> None:
 
 wrap(asm.BrinkmanDiscretization, "compute_state", "compute_state")
 wrap(asm.BrinkmanDiscretization, "residual_from_state", "residual")
+wrap(asm.BrinkmanDiscretization, "residual_fast", "residual_fast")
 wrap(asm.BrinkmanDiscretization, "jacobian_first_order", "jacobian")
 wrap(PardisoLU, "factorize", "pardiso factorize")
 wrap(PardisoLU, "solve", "pardiso solve")
 wrap(SimpleBlockPreconditioner, "factorize", "simple setup")
 wrap(SimpleBlockPreconditioner, "solve", "simple apply")
 wrap(spla, "spilu", "spilu")  # 呼び出し回数 > 組立回数なら零ピボットの組み直しが起きている
-wrap(spla, "gmres", "gmres(total)")
-nsolver.spla = spla
+wrap(krylov, "fgmres", "gmres(total)")
+nsolver.fgmres = krylov.fgmres
 
 CONFIGS: tuple[tuple[str, dict[str, object]], ...] = (
     ("jfnk (pardiso, lag=4)", {"linear_solver": "jfnk", "precond_lag": 4}),
@@ -62,23 +64,16 @@ CONFIGS: tuple[tuple[str, dict[str, object]], ...] = (
         "jfnk_simple lag=4 gmres_tol=1e-2",
         {"linear_solver": "jfnk_simple", "precond_lag": 4, "gmres_tol": 1e-2},
     ),
-    ("dc_simple lag=4", {"linear_solver": "dc_simple", "precond_lag": 4}),
     (
-        "jfnk_simple lag=4 ilu=1e-2/1.5",
-        {
-            "linear_solver": "jfnk_simple",
-            "precond_lag": 4,
-            "simple_ilu_drop_tol": 1e-2,
-            "simple_ilu_fill_factor": 1.5,
-        },
+        "jfnk_simple lag=4 schur_cycles=2",
+        {"linear_solver": "jfnk_simple", "precond_lag": 4, "simple_schur_cycles": 2},
     ),
 )
 
 
 def run(refine: int, u_in: float = 1.0) -> None:
     base = NSBSettings(
-        velocity_floor=0.1 * u_in,
-        init_field="stokes",
+        velocity_floor_ratio=0.1,
         alpha_u=1.0,
         newton_max_iter=120,
         precond_cfl_ratio=2.0,

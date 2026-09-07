@@ -103,7 +103,12 @@ class BC:
 
 @dataclass(frozen=True)
 class NSBSettings:
-    """Newton + 擬似時間の制御則（既定値は手元構成に合わせた「踏んでいる線」込み）.
+    """Newton + 擬似時間の制御則.
+
+    status-40 で「実験で一方が常に劣ると分かった切替」（静止場発進、LU 直接・defect correction、
+    運動量 Jacobi、CFL backtracking、速度下限なし、numpy 残差、SA 階層の毎回構築）を落とし、
+    数値パラメータと本当に一長一短の切替だけにした。参照場（収束判定の基準 r0 と初期 CFL）は
+    常に Stokes–Brinkman 解で、初期場は `NSBInput.u0/v0/p0` があればそれ、無ければ Stokes 解。
 
     Parameters
     ----------
@@ -113,34 +118,32 @@ class NSBSettings:
     venkat_k : float
         Venkatakrishnan 定数 K
     linear_solver : str
-        "jfnk"（有限差分 J v を GMRES、LU(J1) 前処理）/ "lu"（J1 δ = -R を LU 直接）/
-        "jfnk_simple"（有限差分 J v を GMRES、SIMPLE 型ブロック前処理 `nsb.precond`）/
-        "dc_simple"（J1 v を GMRES、同前処理。defect correction。残差評価を伴わないので 1 反復が軽い）。
-        LU は常に PARDISO（pypardiso、`nsb.linalg.PardisoLU`）
+        "jfnk_simple"（既定。有限差分 J v を FGMRES、SIMPLE 型ブロック前処理 `nsb.precond`: 運動量 ILU +
+        Schur 補元 SA-AMG。大格子で速く pyamg が要る）/ "jfnk"（同 FGMRES、PARDISO 疎 LU(J1) 前処理。
+        GMRES 反復は少なく頑健だが三角解が 1 スレッドで大格子では遅い）
     precond_lag : int
         前処理（LU(J1) または SIMPLE 型）の遅延更新: 1 回の組立を最大この回数の Newton 反復で
-        使い回す。1 で毎反復組立。GMRES が収束しなかったら即組み直して解き直す。
-        "lu" では無視（毎反復分解）
-    simple_momentum : str
-        SIMPLE 型前処理の運動量ブロック近似解法 "ilu"（既定）/ "jacobi"
-    simple_schur_cycles : int
-        SIMPLE 型前処理の Schur 補元に当てる AMG V サイクル数（既定 1）
-    simple_ilu_drop_tol, simple_ilu_fill_factor : float
-        運動量 ILU（scipy `spilu`）の drop_tol / fill_factor。零ピボットなら drop_tol 1/10・fill 2 倍で
-        最大 3 回組み直す（1e-2 / 1.5 は 288×192 の Newton 途中で零ピボットになった）
+        使い回す。1 で毎反復組立。GMRES が収束しなかったら即組み直して解き直す
     precond_refresh_gmres : int
-        直前の GMRES 反復数がこれを超えたら次の Newton 反復で前処理を再分解する
-        （前処理が古くなった兆候）
+        直前の GMRES 反復数がこれを超えたら次の Newton 反復で前処理を組み直す（古くなった兆候）
     precond_cfl_ratio : float
-        分解時の CFL から現在の CFL がこの倍率以上変わったら再分解する。擬似時間対角 ρV/Δτ が
+        組立時の CFL から現在の CFL がこの倍率以上変わったら組み直す。擬似時間対角 ρV/Δτ が
         CFL に反比例するので、SER で CFL が伸びる局面では前処理の対角が過大になり GMRES が
         遅くなる（status-32: 倍率無制限だと GMRES 反復 +70%）。0 以下で無効
+    simple_schur_cycles : int
+        SIMPLE 型前処理の Schur 補元に当てる AMG V サイクル数（既定 1。2 で反復数 −2〜20%、適用 +40%）
+    simple_ilu_drop_tol, simple_ilu_fill_factor : float
+        運動量 ILU（scipy `spilu`）の drop_tol / fill_factor。零ピボットなら drop_tol 1/10・fill 2 倍で
+        最大 3 回組み直す（1e-2 / 1.5 は 288×192 で零ピボット・発散した実績があり、1e-3 / 3.0 を既定にする）
     cfl_init, cfl_max, ser_growth : float
-        擬似時間 CFL の初期値・上限・SER 成長率上限
+        擬似時間 CFL の初期値（Stokes 参照場に対する値。初期場が参照場より良ければ
+        cfl_init·|R_ref|/|R_init| から出発する）・上限・SER の 1 反復あたり成長率上限
     local_dtau : bool
-        True: セル局所 Δτ、False: 局所 Δτ の全セル最小値を一律に使う
-    velocity_floor : float
-        Δτ の速度スケール下限 [m/s]（絶対値）。0 なら下限なし（静止セルで Δτ→∞）
+        True: セル局所 Δτ、False: 局所 Δτ の全セル最小値を一律に使う（大域 Δτ は同じ CFL で
+        減衰が約 10 倍強く高 CFL に寛容だが収束は遅い）
+    velocity_floor_ratio : float
+        Δτ の速度スケール下限 = velocity_floor_ratio × 最大流入速度（`BrinkmanDiscretization.u_scale`）。
+        下限なし（0）だと静止・低速セルで Δτ→∞ となり Newton が素になって停滞する（status-30）
     pseudo_time_in_residual : bool
         True: 残差にも ρV(u - u_prev)/Δτ を加える（dual-time 型）。収束判定・SER も
         その残差で行う。False: 対角補強のみ（残差は Δτ 非依存）
@@ -149,38 +152,28 @@ class NSBSettings:
     rc_with_pseudo_time : bool
         Rhie–Chow 係数を d_f = V/(a_P + ρV/Δτ) にする
     alpha_u : float
-        陰的緩和（運動量対角を a_P/α_u）。1.0 で無し
+        陰的緩和（運動量対角を a_P/α_u）。1.0（既定）で無し。速度下限ありなら緩和なしが最速
     newton_tol, newton_max_iter : float, int
-        相対残差の収束判定と反復上限（擬似時間ステップ数 × sub_iters が上限）
+        相対残差 |R|/|R(Stokes 場)| の収束判定と反復上限（擬似時間ステップ数 × sub_iters が上限）
     gmres_tol, gmres_restart, gmres_maxiter : float, int, int
-        GMRES 設定
+        右前処理 FGMRES（`nsb.krylov.fgmres`）の相対許容・再出発次元・再出発回数。指定した rtol に届いた
+        ところで止まる（scipy `gmres` は内部で許容を締めて 1e-2 指定でも 2e-3 まで解いていた）
     divergence_ratio : float
-        ||R||/||R0|| がこれを超えたら発散停止
-    init_field : str
-        "zero": 静止場から開始 / "stokes": 対流を無視した Stokes–Brinkman 解
-        （ゼロ場からの擬似時間なし 1 次風上 Newton 1 ステップ）を初期場にし、
-        その残差を収束判定の基準 R0 にする
-    reject_growth : float
-        0 より大なら、更新後の残差が reject_growth × 更新前残差を超えたステップを棄却し、
-        CFL を半分にして再試行する（backtracking on CFL）。0 で無効
-    max_rejects : int
-        1 擬似時間ステップあたりの棄却回数上限（超えたら受け入れる）
-    cfl_min : float
-        棄却で CFL を下げる下限。Δτ→0 では圧力が連続式を満たすために発散するので必要
+        ||R||/||R_ref|| がこれを超えたら発散停止
     """
 
     convection: str = "sou"
     venkat_k: float = 5.0
-    linear_solver: str = "jfnk"
+    linear_solver: str = "jfnk_simple"
     cfl_init: float = 0.5
     cfl_max: float = 1.0e6
     ser_growth: float = 2.0
     local_dtau: bool = True
-    velocity_floor: float = 0.0
+    velocity_floor_ratio: float = 0.1
     pseudo_time_in_residual: bool = True
     sub_iters: int = 1
     rc_with_pseudo_time: bool = False
-    alpha_u: float = 0.7
+    alpha_u: float = 1.0
     newton_tol: float = 1.0e-6
     newton_max_iter: int = 80
     gmres_tol: float = 1.0e-3
@@ -188,16 +181,11 @@ class NSBSettings:
     gmres_maxiter: int = 5
     precond_lag: int = 4
     precond_refresh_gmres: int = 30
-    precond_cfl_ratio: float = 4.0
-    simple_momentum: str = "ilu"
+    precond_cfl_ratio: float = 2.0
     simple_schur_cycles: int = 1
     simple_ilu_drop_tol: float = 1.0e-3
     simple_ilu_fill_factor: float = 3.0
     divergence_ratio: float = 1.0e6
-    init_field: str = "zero"
-    reject_growth: float = 0.0
-    max_rejects: int = 6
-    cfl_min: float = 1.0e-2
 
     @property
     def scheme(self) -> ConvectionSchemeType:
@@ -281,8 +269,10 @@ class NSBResult:
         未収束理由（"" なら収束）
     n_iter : int
         実行した Newton 反復数（sub_iters 込み）
+    residual_ref : float
+        収束判定の基準 |R(Stokes 場)|（対流項込みの定常残差。Re→0 で 0 になる場合は静止場の残差）
     residual_history : tuple[float, ...]
-        反復ごとの残差ノルム（pseudo_time_in_residual=True なら擬似時間項込み）
+        反復ごとの残差ノルム（pseudo_time_in_residual=True なら擬似時間項込み）。先頭は初期場の定常残差
     steady_residual_history : tuple[float, ...]
         反復ごとの Δτ 非依存の定常残差ノルム
     cfl_history : tuple[float, ...]
@@ -291,8 +281,6 @@ class NSBResult:
         inlet / outlet 質量流量 [kg/s]
     elapsed : float
         計算時間 [s]
-    n_rejected : int
-        棄却した更新の回数（線形解の追加コスト）
     n_factorizations : int
         前処理 LU（PARDISO）の分解回数（Stokes 初期場の 1 回を含む）
     n_gmres_total : int
@@ -311,14 +299,14 @@ class NSBResult:
     mass_in: float
     mass_out: float
     elapsed: float
-    n_rejected: int = 0
+    residual_ref: float = 1.0
     n_factorizations: int = 0
     n_gmres_total: int = 0
 
     @property
     def rel_residual(self) -> float:
-        return self.residual_history[-1] / self.residual_history[0]
+        return self.residual_history[-1] / self.residual_ref
 
     @property
     def rel_steady_residual(self) -> float:
-        return self.steady_residual_history[-1] / self.steady_residual_history[0]
+        return self.steady_residual_history[-1] / self.residual_ref

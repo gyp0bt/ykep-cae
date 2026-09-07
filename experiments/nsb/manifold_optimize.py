@@ -53,10 +53,9 @@ def build(theta: np.ndarray) -> NSBInput:
         h=np.full((NX, NY), 1e-3),
         bc=bc,
         settings=NSBSettings(
-            velocity_floor=0.05,
+            velocity_floor_ratio=0.1,
             pseudo_time_in_residual=False,
             alpha_u=1.0,
-            init_field="stokes",
             newton_tol=1e-9,
             newton_max_iter=120,
         ),

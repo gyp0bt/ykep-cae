@@ -1,4 +1,4 @@
-"""nsb.precond（SIMPLE 型ブロック前処理）と linear_solver="jfnk_simple" / "dc_simple" のテスト."""
+"""nsb.precond（SIMPLE 型ブロック前処理）と linear_solver="jfnk_simple" のテスト."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def _stokes_jacobian(
     refine: int = 1,
 ) -> tuple[BrinkmanDiscretization, sparse.csr_matrix, np.ndarray]:
     """Stokes–Brinkman の J0 と右辺（線形問題。前処理の単体検査用）."""
-    s = NSBSettings(velocity_floor=0.1, init_field="stokes", alpha_u=1.0)
+    s = NSBSettings(velocity_floor_ratio=0.1, alpha_u=1.0)
     inp = make_case("flat", refine, 1.0, settings=s)
     disc = BrinkmanDiscretization(inp.to_flow_input())
     x = np.zeros(3 * disc.n)
@@ -36,10 +36,6 @@ class TestSimpleBlockPreconditionerAPI:
         assert not pc.is_factorized
         with pytest.raises(RuntimeError):
             pc.solve(np.ones(30))
-
-    def test_bad_momentum_raises(self):
-        with pytest.raises(ValueError):
-            SimpleBlockPreconditioner(10, momentum="gs")
 
     def test_shape_mismatch_raises(self):
         pc = SimpleBlockPreconditioner(10)
@@ -74,11 +70,10 @@ class TestSimpleBlockPreconditionerAPI:
         assert np.linalg.norm(lhs - rhs) < 1e-10 * np.linalg.norm(rhs)
         pc.free()
 
-    @pytest.mark.parametrize("momentum", ["ilu", "jacobi"])
-    def test_preconditioned_gmres_converges_far_faster_than_unpreconditioned(self, momentum: str):
+    def test_preconditioned_gmres_converges_far_faster_than_unpreconditioned(self):
         """Stokes–Brinkman（72×48）を前処理付き GMRES で解くと 1e-8 まで 100 反復以内に収束する."""
         disc, J0, b = _stokes_jacobian()
-        pc = SimpleBlockPreconditioner(disc.n, momentum=momentum).factorize(J0)
+        pc = SimpleBlockPreconditioner(disc.n).factorize(J0)
         count = [0]
         M = spla.LinearOperator(J0.shape, matvec=pc.solve, dtype=float)
         x, info = spla.gmres(
@@ -144,23 +139,20 @@ class TestLaggedPreconditionerSimpleAPI:
             LaggedPreconditioner(NSBSettings(linear_solver="amg"))
 
     def test_simple_mode_holds_block_preconditioner(self):
-        pc = LaggedPreconditioner(
-            NSBSettings(linear_solver="dc_simple", simple_momentum="jacobi"), n=12
-        )
+        pc = LaggedPreconditioner(NSBSettings(linear_solver="jfnk_simple"), n=12)
         assert isinstance(pc.fac, SimpleBlockPreconditioner)
-        assert pc.fac.momentum == "jacobi"
         assert pc.needs_refresh()  # 未組立
         pc.free()
 
 
 class TestSimpleModesConvergence:
-    @pytest.mark.parametrize("mode", ["jfnk_simple", "dc_simple"])
-    def test_reaches_same_steady_state_as_pardiso(self, mode: str):
-        """SIMPLE 型前処理（jfnk_simple / dc_simple）は PARDISO 前処理の jfnk と同じ定常解に収束する."""
+    def test_reaches_same_steady_state_as_pardiso(self):
+        """SIMPLE 型前処理（jfnk_simple）は PARDISO 前処理の jfnk と同じ定常解に収束する."""
         u_in = 1.0
+        mode = "jfnk_simple"
         base = NSBSettings(
-            velocity_floor=0.1 * u_in,
-            init_field="stokes",
+            linear_solver="jfnk",
+            velocity_floor_ratio=0.1,
             alpha_u=1.0,
             newton_tol=1e-8,
             precond_cfl_ratio=2.0,
@@ -175,10 +167,7 @@ class TestSimpleModesConvergence:
         scale = np.abs(ref.u).max()
         assert np.abs(res.u - ref.u).max() < 1e-5 * scale
         assert np.abs(res.p - ref.p).max() < 1e-5 * np.abs(ref.p).max()
-        if mode == "jfnk_simple":
-            assert res.n_iter == ref.n_iter  # 前処理は Newton の経路を変えない
-        else:
-            assert res.n_iter >= ref.n_iter  # defect correction は線形収束
+        assert res.n_iter == ref.n_iter  # 前処理は Newton の経路を変えない
 
     def test_stokes_init_uses_preconditioned_gmres(self):
         """Stokes 初期場は SIMPLE 前処理付き GMRES で解かれ、ログに反復数が出る."""
@@ -188,15 +177,80 @@ class TestSimpleModesConvergence:
             1,
             1.0,
             settings=NSBSettings(
-                velocity_floor=0.1,
-                init_field="stokes",
+                velocity_floor_ratio=0.1,
                 alpha_u=1.0,
                 linear_solver="jfnk_simple",
                 newton_max_iter=1,
             ),
         )
         solve_steady(inp, log=lines.append)
-        init = [ln for ln in lines if "stokes init" in ln]
+        init = [ln for ln in lines if "stokes ref" in ln]
         assert len(init) == 1
         assert "gmres=" in init[0]
         assert "not converged" not in init[0]
+
+
+class TestSimpleBlockPreconditionerHierarchyReuse:
+    def test_reuse_keeps_aggregation_and_regalerkins(self):
+        """2 回目の factorize は集約（P, R）を固定し、粗格子行列だけ Galerkin 積で組み直す."""
+        disc, J0, b = _stokes_jacobian()
+        pc = SimpleBlockPreconditioner(disc.n).factorize(J0)
+        assert pc.n_hierarchy_builds == 1
+        ml = pc._ml_schur
+        P0 = [lv.P.copy() for lv in ml.levels[:-1]]
+        # 擬似時間対角を足した別の行列で組み直す
+        n = disc.n
+        diag = np.concatenate([np.full(2 * n, 5.0), np.zeros(n)])
+        J1 = (J0 + sparse.diags(diag)).tocsr()
+        pc.factorize(J1)
+        assert pc.n_hierarchy_builds == 1
+        assert pc._ml_schur is ml
+        for lv, P in zip(ml.levels[:-1], P0, strict=True):
+            assert (lv.P != P).nnz == 0
+        # 粗格子行列は新しい Ŝ の Galerkin 積
+        S1 = pc.schur * pc._schur_sign
+        assert np.abs((ml.levels[0].A - S1).data).max(initial=0.0) < 1e-12
+        A1 = ml.levels[0].R @ S1 @ ml.levels[0].P
+        assert np.abs((ml.levels[1].A - A1).data).max(initial=0.0) < 1e-10
+        # 組み直した前処理で J1 の GMRES が収束する
+        count = [0]
+        x, info = spla.gmres(
+            J1,
+            b,
+            M=spla.LinearOperator(J1.shape, matvec=pc.solve, dtype=float),
+            rtol=1e-8,
+            atol=0.0,
+            restart=40,
+            maxiter=5,
+            callback=lambda _: count.__setitem__(0, count[0] + 1),
+            callback_type="pr_norm",
+        )
+        assert info == 0 and count[0] <= 100
+        assert np.linalg.norm(J1 @ x - b) < 1e-6 * np.linalg.norm(b)
+        pc.free()
+        assert pc._ml_schur is None
+
+    def test_vcycle_matches_pyamg_solve(self):
+        """直接辿る V サイクルは pyamg `MultilevelSolver.solve(maxiter=1)` と同じ写像."""
+        disc, J0, _ = _stokes_jacobian()
+        pc = SimpleBlockPreconditioner(disc.n).factorize(J0)
+        r = np.random.default_rng(0).standard_normal(disc.n)
+        mine = pc._solve_schur(r)
+        ref = pc._ml_schur.solve(pc._schur_sign * r, tol=1e-12, maxiter=1, cycle="V", accel=None)
+        assert np.allclose(mine, ref, rtol=1e-10, atol=1e-12)
+        pc.free()
+
+
+class TestSimpleBlockPreconditionerDeterminism:
+    def test_same_matrix_gives_identical_hierarchy(self):
+        disc, J0, b = _stokes_jacobian()
+        pc1 = SimpleBlockPreconditioner(disc.n).factorize(J0)
+        y1 = pc1.solve(b)
+        np.random.seed(12345)  # グローバル乱数の状態に依らないこと
+        pc2 = SimpleBlockPreconditioner(disc.n).factorize(J0)
+        y2 = pc2.solve(b)
+        for l1, l2 in zip(pc1._ml_schur.levels[:-1], pc2._ml_schur.levels[:-1], strict=True):
+            assert (l1.P != l2.P).nnz == 0
+        assert np.array_equal(y1, y2)
+        pc1.free()
+        pc2.free()

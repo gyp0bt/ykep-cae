@@ -102,7 +102,7 @@ class TestNSBConvergence:
             "uturn",
             1,
             u_in,
-            NSBSettings(velocity_floor=0.1 * u_in, pseudo_time_in_residual=False, cfl_init=5.0),
+            NSBSettings(velocity_floor_ratio=0.1, pseudo_time_in_residual=False, cfl_init=5.0),
         )
         res = solve_steady(inp, log=None)
         assert res.converged, res.failure_reason
@@ -119,7 +119,7 @@ class TestNSBConvergence:
             "uturn",
             1,
             u_in,
-            NSBSettings(velocity_floor=0.1 * u_in, pseudo_time_in_residual=True, cfl_init=5.0),
+            NSBSettings(velocity_floor_ratio=0.1, pseudo_time_in_residual=True, cfl_init=5.0),
         )
         res = solve_steady(inp, log=None)
         assert res.converged, res.failure_reason
@@ -140,7 +140,7 @@ class TestNSBBoundaryPatches:
             1,
             bc=bc,
             settings=NSBSettings(
-                velocity_floor=0.01, pseudo_time_in_residual=False, newton_max_iter=60
+                velocity_floor_ratio=0.1, pseudo_time_in_residual=False, newton_max_iter=60
             ),
         )
         res = solve_steady(inp, log=None)

@@ -88,10 +88,9 @@ def summary(inp: NSBInput, res: NSBResult) -> dict[str, float | bool | int | str
         "converged": bool(res.converged),
         "reason": res.failure_reason,
         "n_iter": int(res.n_iter),
-        "n_rejected": int(res.n_rejected),
         "rel_final": float(res.rel_residual),
         "rel_steady_final": float(res.rel_steady_residual),
-        "rel_min": float(min(res.residual_history) / res.residual_history[0]),
+        "rel_min": float(min(res.residual_history) / res.residual_ref),
         "first_step_ratio": float(res.residual_history[1] / res.residual_history[0])
         if len(res.residual_history) > 1
         else float("nan"),

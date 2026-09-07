@@ -49,9 +49,7 @@ def run(refine: int, u_in: float, cfg: str) -> None:
     T.clear()
     C.clear()
     if cfg == "fixed":
-        s = NSBSettings(
-            velocity_floor=0.1 * u_in, init_field="stokes", alpha_u=1.0, newton_max_iter=80
-        )
+        s = NSBSettings(velocity_floor_ratio=0.1, alpha_u=1.0, newton_max_iter=80)
     else:
         s = NSBSettings(newton_max_iter=80)
     inp = make_case("flat", refine, u_in, settings=s)

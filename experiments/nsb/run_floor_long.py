@@ -29,7 +29,7 @@ def main() -> None:
     st = NSBSettings(
         cfl_init=0.5,
         local_dtau=True,
-        velocity_floor=0.1 * u_in,
+        velocity_floor_ratio=0.1,
         pseudo_time_in_residual=False,
         newton_max_iter=max_iter,
     )

@@ -30,34 +30,19 @@ OUT = Path("experiments/nsb")
 
 
 def make_settings(config: str, u_in: float, max_iter: int) -> NSBSettings:
+    """比較する制御則（status-40 で残した一長一短の切替のみ）.
+
+    dual   : 局所 Δτ、残差に擬似時間項を含める（dual-time 型）
+    fixed  : 局所 Δτ、対角補強のみ
+    global : 大域 Δτ、対角補強のみ
+    """
     common = dict(cfl_init=0.5, newton_max_iter=max_iter)
-    if config == "mine":
-        return NSBSettings(
-            local_dtau=True, velocity_floor=0.0, pseudo_time_in_residual=True, **common
-        )
-    if config == "mine_nores":
-        return NSBSettings(
-            local_dtau=True, velocity_floor=0.0, pseudo_time_in_residual=False, **common
-        )
-    if config == "floor":
-        return NSBSettings(
-            local_dtau=True, velocity_floor=0.1 * u_in, pseudo_time_in_residual=True, **common
-        )
+    if config == "dual":
+        return NSBSettings(local_dtau=True, pseudo_time_in_residual=True, **common)
     if config == "fixed":
-        return NSBSettings(
-            local_dtau=True, velocity_floor=0.1 * u_in, pseudo_time_in_residual=False, **common
-        )
+        return NSBSettings(local_dtau=True, pseudo_time_in_residual=False, **common)
     if config == "global":
-        return NSBSettings(
-            local_dtau=False, velocity_floor=0.1 * u_in, pseudo_time_in_residual=False, **common
-        )
-    fixed = dict(local_dtau=True, velocity_floor=0.1 * u_in, pseudo_time_in_residual=False)
-    if config == "fixed_bt":
-        return NSBSettings(reject_growth=2.0, **fixed, **common)
-    if config == "fixed_stokes":
-        return NSBSettings(init_field="stokes", **fixed, **common)
-    if config == "fixed_stokes_bt":
-        return NSBSettings(init_field="stokes", reject_growth=2.0, **fixed, **common)
+        return NSBSettings(local_dtau=False, pseudo_time_in_residual=False, **common)
     raise ValueError(f"unknown config: {config}")
 
 
@@ -66,7 +51,7 @@ def main() -> None:
     ap.add_argument("--models", nargs="+", default=["uturn", "flat"])
     ap.add_argument("--refine", nargs="+", type=int, default=[1])
     ap.add_argument("--u", nargs="+", type=float, default=[0.1, 1.0, 2.0])
-    ap.add_argument("--configs", nargs="+", default=["mine", "fixed"])
+    ap.add_argument("--configs", nargs="+", default=["dual", "fixed"])
     ap.add_argument("--max-iter", type=int, default=80)
     ap.add_argument("--save-fields", action="store_true")
     ap.add_argument("--tag", default="")
@@ -94,7 +79,6 @@ def main() -> None:
     for k, v in results.items():
         print(
             f"{k:28s} conv={v['converged']!s:5s} reason={v['reason']:10s} it={v['n_iter']:3d} "
-            f"rej={v['n_rejected']:2d} "
             f"step1={v['first_step_ratio']:.2e} rel={v['rel_final']:.2e} "
             f"steady={v['rel_steady_final']:.2e} m_out/m_in={v['mass_ratio']:.4f}"
         )

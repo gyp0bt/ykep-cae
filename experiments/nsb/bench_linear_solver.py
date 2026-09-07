@@ -24,7 +24,7 @@ from nsb.assembly import BrinkmanDiscretization
 
 
 def bench(refine: int) -> None:
-    s = NSBSettings(velocity_floor=0.1, init_field="stokes", alpha_u=1.0)
+    s = NSBSettings(velocity_floor_ratio=0.1, alpha_u=1.0)
     inp = make_case("flat", refine, 1.0, settings=s)
     disc = BrinkmanDiscretization(inp.to_flow_input())
     n = disc.n

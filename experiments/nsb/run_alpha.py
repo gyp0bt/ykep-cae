@@ -22,12 +22,12 @@ def main() -> None:
     model = sys.argv[1] if len(sys.argv) > 1 else "uturn"
     u_in = 2.0
     out: dict[str, dict] = {}
-    for floor_name, floor in [("nofloor", 0.0), ("floor", 0.1 * u_in)]:
+    for floor_name, floor in [("floor", 0.1)]:
         for alpha in [1.0, 0.7, 0.5]:
             name = f"{model}_r1_U2_{floor_name}_alpha{alpha:g}"
             st = NSBSettings(
                 cfl_init=0.5,
-                velocity_floor=floor,
+                velocity_floor_ratio=floor,
                 pseudo_time_in_residual=False,
                 alpha_u=alpha,
                 newton_max_iter=150,
