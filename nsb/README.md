@@ -8,14 +8,14 @@
 
 ## 単体で持ち出せる（xkep_cae_fluid 非依存、スナップショット）
 
-`nsb/` ディレクトリは **numpy / scipy / pypardiso / pyamg だけ**で動き、`xkep_cae_fluid` を import しない（status-32）。
+`nsb/` ディレクトリは **numpy / scipy / pypardiso / pyamg（+ 任意で numba）だけ**で動き、`xkep_cae_fluid` を import しない（status-32）。
 `nsb/{data,assembly}.py` は `xkep_cae_fluid/brinkman_flow/{data,assembly}.py` の**スナップショット**
 （コミット 1647839 時点、import 行のみ `from nsb.` に書き換え）で、2026-09-05 に本体側と**切り離した**。
 本体側は面ベース FVM 共通低レイヤー（[`xkep_cae_fluid.fvm`](../docs/design/fvm-layer.md)）へ移行して非構造格子対応を進め、
 nsb 側は構造格子の旧離散化をそのまま保つ。以後は同期しない（同期スクリプト `scripts/sync_nsb_from_xkep.py` は削除済み）。
 
 ```bash
-cp -r nsb /path/to/elsewhere/        # そのまま持ち出せる（pip install numpy scipy pypardiso pyamg）
+cp -r nsb /path/to/elsewhere/        # そのまま持ち出せる（pip install numpy scipy pypardiso pyamg numba）
 pytest tests/test_nsb_standalone.py  # xkep_cae_fluid を import せずに読み込めることの検査
 ```
 
@@ -87,10 +87,59 @@ J1 v（defect correction: 残差評価を伴わないので 1 反復が軽いが
 - 288×192 では `jfnk_simple lag=4 gmres_tol=1e-2` が **229.6 s → 86.3 s（2.66×）**、1 Newton 反復 6.4 s → 3.3 s。解の差 5.7e-5 は Newton の経路（反復数 36 vs 26）が変わったことによる収束判定 1e-6 相当の差で、72×48 / 144×96 では経路が同じで 1e-8
 - 4 コアでの数字。18 コア機では PARDISO の分解が縮む一方 SIMPLE 側（ILU 三角解・AMG V サイクル・残差評価）は 1 スレッドのままなので比は縮む見込み。実機で `python experiments/nsb/bench_precond.py 4 2>&1 | tee ...` を回して確定する
 
+## 線形ソルバー: FGMRES・SA 階層の再利用・残差の numba 化（status-39）
+
+status-38 のコードを 20 コア機で取り直すと PARDISO 91.5 s / SIMPLE 73.8 s（288×192）で、PARDISO の分解が縮む分だけ比が潰れた。
+1 Newton 反復 = 組立 + n_GMRES × (前処理適用 + 残差評価 + 直交化) の各項を削った（[status-39](../docs/status/status-39.md)）:
+
+- **GMRES を自作の右前処理 FGMRES に**（`nsb/krylov.py::fgmres`、CGS2 を gemv で + Givens）。scipy `gmres` は再出発ごとに内側の許容を締めるので
+  `rtol=1e-2` 指定でも 2e-3 まで 37 反復回っていた（FGMRES は 16 反復）。JFNK の FD matvec は残差の折れ点（風上切替・リミター）のため
+  線形写像から 1e-4〜1e-3 ずれ、Givens 推定と真の残差が高 CFL で食い違う。真の残差で再出発しても雑音の床を割れないので、JFNK では
+  `check_true_residual=False` で Givens 推定で止める（`dc_simple` と Stokes 初期場は真の残差で確認）
+- **SA 階層の再利用**（`SimpleBlockPreconditioner(reuse_hierarchy=True)` 既定）: 集約 P, R は最初の 1 回だけ作り、以後は Ŝ を差し替えて
+  Galerkin 積 R Ŝ P で粗格子だけ組み直す（667 → 10 ms）。CFL 1.4 → 27 で使い回しても GMRES 反復数は毎回構築と同等以下
+- **V サイクルの直接呼び出し**（`MultilevelSolver.solve` の残差ノルム評価を省く、6.8 → 4.6 ms）
+- **残差評価の numba 化**（`nsb/fastres.py::residual_kernel`、`prange` 7 パス、5.8 → 0.3〜0.5 ms、numpy 経路と 1e-17 一致）。
+  `NSBSettings.fast_residual=True` 既定、numba が無ければ numpy 経路
+- **決定性**: pyamg のスペクトル半径推定がグローバル乱数を使い、前処理の微差で Newton 反復数が 22〜37 と振れていた。SA 構築の間だけ
+  固定シードにして同じ行列から同じ階層が出るようにした（経路の敏感さ自体は SER の CFL 倍化則に由来し、残る）
+- 採用しなかったもの: `gmres_tol=1e-2`（正直に止めると Newton が増える）、ILU 1e-2/1.5（FGMRES 化後に 288×192 で発散）、
+  Schur 2 サイクル・ILU 1e-4/5・GS 前進/後退・SIMPLEC 対角・運動量 ILU の Richardson（いずれも基準より遅い）
+
+実測（`experiments/nsb/bench_precond.py`、20 コア、ログ `experiments/nsb/logs/bench-precond-flat-r124-status39.log`）:
+
+| 格子 | 構成 | 収束 | Newton | 前処理組立 | GMRES 総反復 | GMRES/Newton | 全体 | 1 Newton | PARDISO 比 | 解の差 max\|Δu\|/max\|u\| |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 72x48 | jfnk (pardiso, lag=4) | True | 13 | 10 | 97 | 7 | 1.2 s | 0.10 s | 1.00× | 0.0e+00 |
+| 72x48 | jfnk_simple lag=1 | True | 13 | 14 | 213 | 16 | 0.5 s | 0.04 s | 2.55× | 2.7e-09 |
+| 72x48 | jfnk_simple lag=4 | True | 13 | 10 | 210 | 16 | 0.4 s | 0.03 s | 3.05× | 2.7e-09 |
+| 72x48 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 13 | 10 | 144 | 11 | 0.3 s | 0.03 s | 3.68× | 5.4e-08 |
+| 72x48 | jfnk_simple lag=4 fast_residual=False | True | 13 | 10 | 210 | 16 | 0.5 s | 0.04 s | 2.45× | 2.7e-09 |
+| 72x48 | jfnk_simple lag=4 schur_cycles=2 | True | 13 | 10 | 205 | 16 | 0.5 s | 0.04 s | 2.72× | 2.4e-09 |
+| 72x48 | dc_simple lag=4 | True | 29 | 14 | 402 | 14 | 0.8 s | 0.03 s | 1.52× | 2.1e-06 |
+| 144x96 | jfnk (pardiso, lag=4) | True | 19 | 12 | 221 | 12 | 5.7 s | 0.30 s | 1.00× | 0.0e+00 |
+| 144x96 | jfnk_simple lag=1 | True | 19 | 20 | 464 | 24 | 3.9 s | 0.20 s | 1.46× | 4.5e-07 |
+| 144x96 | jfnk_simple lag=4 | True | 19 | 13 | 468 | 25 | 3.5 s | 0.19 s | 1.60× | 2.3e-07 |
+| 144x96 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 18 | 11 | 267 | 15 | 2.3 s | 0.13 s | 2.43× | 9.9e-07 |
+| 144x96 | jfnk_simple lag=4 fast_residual=False | True | 19 | 13 | 469 | 25 | 4.5 s | 0.24 s | 1.25× | 2.2e-07 |
+| 144x96 | jfnk_simple lag=4 schur_cycles=2 | True | 17 | 11 | 407 | 24 | 4.4 s | 0.26 s | 1.28× | 1.6e-06 |
+| 144x96 | dc_simple lag=4 | True | 36 | 16 | 697 | 19 | 5.2 s | 0.15 s | 1.08× | 1.7e-05 |
+| 288x192 | jfnk (pardiso, lag=4) | True | 37 | 20 | 668 | 18 | 55.0 s | 1.49 s | 1.00× | 0.0e+00 |
+| 288x192 | jfnk_simple lag=1 | True | 45 | 46 | 2555 | 57 | 53.9 s | 1.20 s | 1.02× | 3.2e-05 |
+| 288x192 | jfnk_simple lag=4 | True | 36 | 31 | 1985 | 55 | 43.1 s | 1.20 s | 1.28× | 3.1e-05 |
+| 288x192 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 40 | 31 | 1468 | 37 | 35.3 s | 0.88 s | 1.56× | 3.2e-05 |
+| 288x192 | jfnk_simple lag=4 fast_residual=False | True | 22 | 18 | 933 | 42 | 25.6 s | 1.16 s | 2.15× | 3.2e-05 |
+| 288x192 | jfnk_simple lag=4 schur_cycles=2 | True | 25 | 20 | 1081 | 43 | 28.8 s | 1.15 s | 1.91× | 3.3e-05 |
+| 288x192 | dc_simple lag=4 | True | 58 | 49 | 2363 | 41 | 49.9 s | 0.86 s | 1.10× | 4.0e-05 |
+
+単位コスト（288×192）は GMRES 1 反復 26.6 → 16.7 ms、前処理組立 863 → 265 ms。総時間は Newton 反復数（同じ設定でも経路で 22〜36 回。決定化後は再現する）に比例して振れる。次の律速は前処理適用（ILU 三角解 3.9 + V サイクル 4.6 ms）× GMRES 反復数（高 CFL で 42〜56）。
+
 | ファイル | 役割 |
 |---|---|
 | `linalg.py` | `PardisoLU`（分解と三角解を分離、スレッド分割、MKL パス探索）、`pardiso_solve` |
-| `precond.py` | `SimpleBlockPreconditioner`（SIMPLE 型ブロック前処理: 運動量 ILU + Schur 補元 SA-AMG、`PardisoLU` 互換の factorize / solve / free） |
+| `precond.py` | `SimpleBlockPreconditioner`（SIMPLE 型ブロック前処理: 運動量 ILU + Schur 補元 SA-AMG、`PardisoLU` 互換の factorize / solve / free。SA 集約の再利用・V サイクル直呼び） |
+| `krylov.py` | `fgmres`（右前処理 flexible GMRES。CGS2 + Givens、指定 rtol で止まる。scipy `gmres` の置き換え） |
+| `fastres.py` | `residual_kernel`（残差評価の numba `prange` カーネル。`BrinkmanDiscretization.residual_fast` から呼ぶ） |
 | `data.py` | （スナップショット）`BoundaryKind` / `BoundaryPatch` / `BrinkmanFlowInput`、マスク補助 `west_span` 等、`disk_mask` / `smooth_disk` |
 | `assembly.py` | （スナップショット）`BrinkmanDiscretization`: 残差、1 次風上ヤコビアン、Rhie–Chow、境界条件、領域内マニホールド |
 | `core.py` | 型宣言: `BC`（座標マスクの境界パッチ列。`BC.velocity_inlet / mass_flow_inlet / pressure_outlet`）, `NSBSettings`, `NSBInput`, `NSBResult` |
