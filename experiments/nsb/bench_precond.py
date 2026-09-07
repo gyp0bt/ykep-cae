@@ -57,7 +57,10 @@ CONFIGS: tuple[tuple[str, dict[str, object]], ...] = (
     ("jfnk (pardiso, lag=4)", {"linear_solver": "jfnk", "precond_lag": 4}),
     ("jfnk_simple lag=1", {"linear_solver": "jfnk_simple", "precond_lag": 1}),
     ("jfnk_simple lag=4", {"linear_solver": "jfnk_simple", "precond_lag": 4}),
-    ("dc_simple lag=1", {"linear_solver": "dc_simple", "precond_lag": 1}),
+    (
+        "jfnk_simple lag=4 gmres_tol=1e-2",
+        {"linear_solver": "jfnk_simple", "precond_lag": 4, "gmres_tol": 1e-2},
+    ),
     ("dc_simple lag=4", {"linear_solver": "dc_simple", "precond_lag": 4}),
 )
 

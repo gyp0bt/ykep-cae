@@ -190,8 +190,8 @@ class NSBSettings:
     precond_cfl_ratio: float = 4.0
     simple_momentum: str = "ilu"
     simple_schur_cycles: int = 1
-    simple_ilu_drop_tol: float = 1.0e-3
-    simple_ilu_fill_factor: float = 3.0
+    simple_ilu_drop_tol: float = 1.0e-2
+    simple_ilu_fill_factor: float = 1.5
     divergence_ratio: float = 1.0e6
     init_field: str = "zero"
     reject_growth: float = 0.0

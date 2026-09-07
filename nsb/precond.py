@@ -51,8 +51,8 @@ class SimpleBlockPreconditioner:
         n: int,
         momentum: MomentumSolverType = "ilu",
         schur_cycles: int = 1,
-        ilu_drop_tol: float = 1.0e-3,
-        ilu_fill_factor: float = 3.0,
+        ilu_drop_tol: float = 1.0e-2,
+        ilu_fill_factor: float = 1.5,
     ) -> None:
         if momentum not in ("jacobi", "ilu"):
             raise ValueError(f"momentum は jacobi / ilu のいずれか: {momentum!r}")
