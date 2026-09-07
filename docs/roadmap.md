@@ -174,7 +174,7 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] `nsb/` を xkep_cae_fluid 非依存に（`data`/`assembly` コピー + `scripts/sync_nsb_from_xkep.py` + 乖離テスト）— status-32
 - [x] nsb 高速化の効果見積り（実測: LU 分解 70〜81% → pypardiso 2.5〜4×、for ループ削減 0%、JAX は autodiff 目的のみ）— status-32
 - [x] nsb の疎 LU を PARDISO（pypardiso）前提に + 前処理 LU の遅延更新 `precond_lag`（144×96: 40 s → 17 s、MKL スレッド分割）— status-32
-- [x] nsb に SIMPLE 型ブロック前処理（運動量 ILU + Schur 補元 SA-AMG、`nsb/precond.py`、pyamg 必須）を `linear_solver="jfnk_simple"` / `"dc_simple"` として追加。部品の切り分け（GS・運動量 AMG は高 CFL で発散、Schur は Ruge–Stüben 199 反復 → SA 43 反復）— status-38
+- [x] nsb に SIMPLE 型ブロック前処理（運動量 ILU + Schur 補元 SA-AMG、`nsb/precond.py`、pyamg 必須）を `linear_solver="jfnk_simple"` / `"dc_simple"` として追加。部品の切り分け（GS・運動量 AMG は高 CFL で発散、Schur は Ruge–Stüben 199 反復 → SA 43 反復）。4 コア実測で 288×192 が PARDISO 比 2.66×（`gmres_tol=1e-2`）— status-38
 - [ ] 18 コア実機で `experiments/nsb/bench_precond.py` を再計測して PARDISO / SIMPLE の比と `precond_lag` 既定を確定 — status-32 / 38 TODO
 - [ ] 残差評価・ヤコビアン組立の numba 化（GMRES 1 反復あたり 17 ms の残差評価が 18 コアでも縮まない律速）— status-38 TODO
 - [ ] `dc_simple` + 小さな `gmres_maxiter` の固定サイクル外部反復（Fluent 型）、FGMRES による可変前処理 — status-38 TODO

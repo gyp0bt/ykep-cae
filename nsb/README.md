@@ -65,20 +65,27 @@ J1 v（defect correction: 残差評価を伴わないので 1 反復が軽いが
 
 | 格子 | 構成 | 収束 | Newton | 前処理組立 | GMRES 総反復 | 全体 | 1 Newton | PARDISO 比 | 解の差 max\|Δu\|/max\|u\| |
 |---|---|---|---|---|---|---|---|---|---|
-| 72x48 | jfnk (pardiso, lag=4) | True | 13 | 10 | 111 | 2.7 s | 0.21 s | 1.00× | 0.0e+00 |
-| 72x48 | jfnk_simple lag=1 | True | 13 | 14 | 307 | 3.0 s | 0.23 s | 0.89× | 4.6e-09 |
-| 72x48 | jfnk_simple lag=4 | True | 13 | 10 | 307 | 2.1 s | 0.16 s | 1.28× | 4.5e-09 |
-| 72x48 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 12 | 9 | 198 | 1.6 s | 0.13 s | 1.70× | 3.1e-06 |
-| 72x48 | dc_simple lag=4 | True | 29 | 14 | 504 | 2.6 s | 0.09 s | 1.05× | 2.0e-06 |
-| 144x96 | jfnk (pardiso, lag=4) | True | 18 | 11 | 280 | 19.2 s | 1.07 s | 1.00× | 0.0e+00 |
-| 144x96 | jfnk_simple lag=1 | True | 18 | 19 | 638 | 15.7 s | 0.87 s | 1.22× | 2.0e-08 |
-| 144x96 | jfnk_simple lag=4 | True | 18 | 13 | 627 | 13.3 s | 0.74 s | 1.44× | 2.1e-08 |
-| 144x96 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 18 | 12 | 417 | 9.6 s | 0.53 s | 2.00× | 7.4e-07 |
-| 144x96 | dc_simple lag=4 | True | 36 | 26 | 966 | 19.4 s | 0.54 s | 0.99× | 1.7e-05 |
-| 288x192 | jfnk (pardiso, lag=4) | True | 36 | 22 | 850 | 235.7 s | 6.55 s | 1.00× | 0.0e+00 |
-| 288x192 | jfnk_simple lag=1 | False | 11 | 12 | 464 | 52.5 s | 4.77 s | 4.49× | 3.3e-01 |
+| 72x48 | jfnk (pardiso, lag=4) | True | 13 | 10 | 111 | 2.9 s | 0.22 s | 1.00× | 0.0e+00 |
+| 72x48 | jfnk_simple lag=1 | True | 13 | 14 | 308 | 2.6 s | 0.20 s | 1.09× | 8.7e-09 |
+| 72x48 | jfnk_simple lag=4 | True | 13 | 10 | 301 | 2.1 s | 0.16 s | 1.40× | 5.0e-09 |
+| 72x48 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 13 | 10 | 202 | 1.7 s | 0.13 s | 1.73× | 1.9e-08 |
+| 72x48 | dc_simple lag=4 | True | 29 | 14 | 467 | 2.6 s | 0.09 s | 1.12× | 2.0e-06 |
+| 72x48 | jfnk_simple lag=4 ilu=1e-2/1.5 | True | 13 | 10 | 307 | 1.8 s | 0.14 s | 1.57× | 4.5e-09 |
+| 144x96 | jfnk (pardiso, lag=4) | True | 18 | 11 | 280 | 18.6 s | 1.03 s | 1.00× | 0.0e+00 |
+| 144x96 | jfnk_simple lag=1 | True | 18 | 19 | 645 | 16.0 s | 0.89 s | 1.16× | 1.9e-08 |
+| 144x96 | jfnk_simple lag=4 | True | 18 | 13 | 669 | 13.9 s | 0.77 s | 1.33× | 1.9e-08 |
+| 144x96 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 19 | 13 | 460 | 11.3 s | 0.59 s | 1.65× | 1.2e-06 |
+| 144x96 | dc_simple lag=4 | True | 36 | 17 | 919 | 17.5 s | 0.49 s | 1.06× | 1.7e-05 |
+| 144x96 | jfnk_simple lag=4 ilu=1e-2/1.5 | True | 18 | 13 | 627 | 13.1 s | 0.73 s | 1.41× | 2.0e-08 |
+| 288x192 | jfnk (pardiso, lag=4) | True | 36 | 22 | 850 | 229.6 s | 6.38 s | 1.00× | 0.0e+00 |
+| 288x192 | jfnk_simple lag=1 | True | 24 | 25 | 1641 | 149.0 s | 6.21 s | 1.54× | 5.7e-05 |
+| 288x192 | jfnk_simple lag=4 | True | 33 | 29 | 2573 | 212.8 s | 6.45 s | 1.08× | 5.9e-05 |
+| 288x192 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 26 | 18 | 872 | 86.3 s | 3.32 s | 2.66× | 5.7e-05 |
+| 288x192 | dc_simple lag=4 | True | 60 | 52 | 2560 | 224.0 s | 3.73 s | 1.02× | 5.4e-05 |
+| 288x192 | jfnk_simple lag=4 ilu=1e-2/1.5 | True | 27 | 22 | 1443 | 120.1 s | 4.45 s | 1.91× | 5.7e-05 |
 
-（288×192 の SIMPLE 側 4 構成は本コミット時点で計測中。完了後に追記）
+- 288×192 では `jfnk_simple lag=4 gmres_tol=1e-2` が **229.6 s → 86.3 s（2.66×）**、1 Newton 反復 6.4 s → 3.3 s。解の差 5.7e-5 は Newton の経路（反復数 36 vs 26）が変わったことによる収束判定 1e-6 相当の差で、72×48 / 144×96 では経路が同じで 1e-8
+- 4 コアでの数字。18 コア機では PARDISO の分解が縮む一方 SIMPLE 側（ILU 三角解・AMG V サイクル・残差評価）は 1 スレッドのままなので比は縮む見込み。実機で `python experiments/nsb/bench_precond.py 4 2>&1 | tee ...` を回して確定する
 
 | ファイル | 役割 |
 |---|---|

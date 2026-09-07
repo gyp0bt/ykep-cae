@@ -98,40 +98,53 @@ GS と運動量 AMG は高 CFL（擬似時間対角が消えて対流優勢、Ne
 
 ## 4. 実測（`experiments/nsb/bench_precond.py`、flat、U=1、推奨構成、4 コア）
 
-推奨構成（`velocity_floor=0.1 U`、Stokes 初期場、`alpha_u=1`、`precond_cfl_ratio=2`）で jfnk（PARDISO、lag=4）を基準に比較。解の差は基準解との最大差（jfnk_simple は Newton の経路も反復数も基準と一致し、差は GMRES 打ち切り誤差のみ）。
+推奨構成（`velocity_floor=0.1 U`、Stokes 初期場、`alpha_u=1`、`precond_cfl_ratio=2`）で jfnk（PARDISO、lag=4）を基準に比較。解の差は基準解との最大差（72×48 / 144×96 では jfnk_simple の Newton の経路・反復数が基準と一致し差は GMRES 打ち切り誤差のみ、288×192 では経路が変わり収束判定 1e-6 相当の差）。
 
 | 格子 | 構成 | 収束 | Newton | 前処理組立 | GMRES 総反復 | 全体 | 1 Newton | PARDISO 比 | 解の差 max\|Δu\|/max\|u\| |
 |---|---|---|---|---|---|---|---|---|---|
-| 72x48 | jfnk (pardiso, lag=4) | True | 13 | 10 | 111 | 2.7 s | 0.21 s | 1.00× | 0.0e+00 |
-| 72x48 | jfnk_simple lag=1 | True | 13 | 14 | 307 | 3.0 s | 0.23 s | 0.89× | 4.6e-09 |
-| 72x48 | jfnk_simple lag=4 | True | 13 | 10 | 307 | 2.1 s | 0.16 s | 1.28× | 4.5e-09 |
-| 72x48 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 12 | 9 | 198 | 1.6 s | 0.13 s | 1.70× | 3.1e-06 |
-| 72x48 | dc_simple lag=4 | True | 29 | 14 | 504 | 2.6 s | 0.09 s | 1.05× | 2.0e-06 |
-| 144x96 | jfnk (pardiso, lag=4) | True | 18 | 11 | 280 | 19.2 s | 1.07 s | 1.00× | 0.0e+00 |
-| 144x96 | jfnk_simple lag=1 | True | 18 | 19 | 638 | 15.7 s | 0.87 s | 1.22× | 2.0e-08 |
-| 144x96 | jfnk_simple lag=4 | True | 18 | 13 | 627 | 13.3 s | 0.74 s | 1.44× | 2.1e-08 |
-| 144x96 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 18 | 12 | 417 | 9.6 s | 0.53 s | 2.00× | 7.4e-07 |
-| 144x96 | dc_simple lag=4 | True | 36 | 26 | 966 | 19.4 s | 0.54 s | 0.99× | 1.7e-05 |
-| 288x192 | jfnk (pardiso, lag=4) | True | 36 | 22 | 850 | 235.7 s | 6.55 s | 1.00× | 0.0e+00 |
-| 288x192 | jfnk_simple lag=1 | False | 11 | 12 | 464 | 52.5 s | 4.77 s | 4.49× | 3.3e-01 |
+| 72x48 | jfnk (pardiso, lag=4) | True | 13 | 10 | 111 | 2.9 s | 0.22 s | 1.00× | 0.0e+00 |
+| 72x48 | jfnk_simple lag=1 | True | 13 | 14 | 308 | 2.6 s | 0.20 s | 1.09× | 8.7e-09 |
+| 72x48 | jfnk_simple lag=4 | True | 13 | 10 | 301 | 2.1 s | 0.16 s | 1.40× | 5.0e-09 |
+| 72x48 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 13 | 10 | 202 | 1.7 s | 0.13 s | 1.73× | 1.9e-08 |
+| 72x48 | dc_simple lag=4 | True | 29 | 14 | 467 | 2.6 s | 0.09 s | 1.12× | 2.0e-06 |
+| 72x48 | jfnk_simple lag=4 ilu=1e-2/1.5 | True | 13 | 10 | 307 | 1.8 s | 0.14 s | 1.57× | 4.5e-09 |
+| 144x96 | jfnk (pardiso, lag=4) | True | 18 | 11 | 280 | 18.6 s | 1.03 s | 1.00× | 0.0e+00 |
+| 144x96 | jfnk_simple lag=1 | True | 18 | 19 | 645 | 16.0 s | 0.89 s | 1.16× | 1.9e-08 |
+| 144x96 | jfnk_simple lag=4 | True | 18 | 13 | 669 | 13.9 s | 0.77 s | 1.33× | 1.9e-08 |
+| 144x96 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 19 | 13 | 460 | 11.3 s | 0.59 s | 1.65× | 1.2e-06 |
+| 144x96 | dc_simple lag=4 | True | 36 | 17 | 919 | 17.5 s | 0.49 s | 1.06× | 1.7e-05 |
+| 144x96 | jfnk_simple lag=4 ilu=1e-2/1.5 | True | 18 | 13 | 627 | 13.1 s | 0.73 s | 1.41× | 2.0e-08 |
+| 288x192 | jfnk (pardiso, lag=4) | True | 36 | 22 | 850 | 229.6 s | 6.38 s | 1.00× | 0.0e+00 |
+| 288x192 | jfnk_simple lag=1 | True | 24 | 25 | 1641 | 149.0 s | 6.21 s | 1.54× | 5.7e-05 |
+| 288x192 | jfnk_simple lag=4 | True | 33 | 29 | 2573 | 212.8 s | 6.45 s | 1.08× | 5.9e-05 |
+| 288x192 | jfnk_simple lag=4 gmres_tol=1e-2 | True | 26 | 18 | 872 | 86.3 s | 3.32 s | 2.66× | 5.7e-05 |
+| 288x192 | dc_simple lag=4 | True | 60 | 52 | 2560 | 224.0 s | 3.73 s | 1.02× | 5.4e-05 |
+| 288x192 | jfnk_simple lag=4 ilu=1e-2/1.5 | True | 27 | 22 | 1443 | 120.1 s | 4.45 s | 1.91× | 5.7e-05 |
 
-（288×192 の SIMPLE 側 4 構成は本コミット時点で計測中。完了後に追記）
-
-- `jfnk_simple` は Newton 反復数が PARDISO と同じで、GMRES 総反復が 2〜3 倍（1 Newton あたり 24 → 35〜75 回）。前処理の質（1 次風上 J1 に対する近似）がそのまま比率に出ている
-- `gmres_tol=1e-2`（inexact Newton）は Newton 反復数を変えずに GMRES を 3 分の 2 に減らし、144×96 で **2.0×**
-- `dc_simple` は Newton が線形収束で反復数 2 倍、1 反復は軽い（残差評価なし）が総時間は PARDISO と同等
+- 72×48 / 144×96 では `jfnk_simple` の Newton 反復数・経路が PARDISO と一致し（解の差 1e-8）、GMRES 総反復が 2〜3 倍
+  （1 Newton あたり 24 → 35 回）。前処理の質（1 次風上 J1 に対する近似）がそのまま比率に出ている
+- 288×192 では PARDISO（lag=4、前処理が古い）の Newton 反復が 36 回に対し `jfnk_simple lag=1` は 24 回で、
+  **149 s（1.54×）**。解の差 5.7e-5 は経路差による収束判定 1e-6 相当のもの
+- **`gmres_tol=1e-2`（inexact Newton）が最良**: Newton 反復数をほぼ変えず（26 回）GMRES を 1 Newton あたり 33 回に減らし、
+  288×192 で **229.6 s → 86.3 s（2.66×）**、144×96 で 1.65×。1 Newton 反復の内訳（288×192）は前処理組立 2.0 s
+  （SA 1.4 s + ILU 0.55 s、lag=4 で 18 回 / 26 反復）、GMRES 1.75 s（前処理適用 26 ms × 33 + 残差評価 17 ms × 33）
+- `dc_simple` は Newton が線形収束で反復数 2 倍（60 回）、1 反復は軽い（3.7 s）が総時間は PARDISO と同等
+- ILU 1e-2 / 1.5 は今回の 3 回目では零ピボットが再現せず（`spilu` 呼び出し 22 = 組立 22、リトライ 0）、27 反復 120 s。
+  2 回目で落ちたのは pyamg SA のスペクトル半径推定（乱数初期ベクトル）で前処理がわずかに変わり Newton の経路が
+  変わったためと考えられる。零ピボットは経路依存で起きうるのでリトライは残す
 - 72×48 では PARDISO の分解・三角解が十分速く（0.2 s/Newton）、SIMPLE の利得は小さい
 
 ## 5. 分かったこと・限界
 
-- **4 コアでは 288×192 が PARDISO 比で速くなるが、18 コア機では現行と同程度になる見込み**。SIMPLE 前処理は
-  演算量を O(N) に落とすが、いまの実装で 1 GMRES 反復あたり残るのは前処理適用 25 ms（ILU 三角解 8 ms + AMG V サイクル
-  14 ms + B・C の spmv）と**残差評価 17 ms（numpy 1 スレッド）**で、これは 18 コアでも縮まない。一方 PARDISO は
-  分解が 18 コアで縮む
-- JFNK の GMRES 反復は J1 に対する単体測定（26〜43）より多い（70 前後）。matvec が SOU 残差の真のヤコビアン、
-  前処理が 1 次風上 J1 のためで、PARDISO でも 24 回（status-32）
-- GMRES の総反復数が PARDISO 比 2〜3 倍に増えるので、次に効くのは**反復 1 回あたりのコスト**。残差評価の numba 化
-  （17 ms → 1〜2 ms、`prange` で 18 コアが素直に埋まる）と `gmres_tol` の緩和（inexact Newton）
+- **4 コアでは 288×192 が 2.66×（`gmres_tol=1e-2`）**。18 コア機では PARDISO の分解が縮む一方、SIMPLE 側で
+  1 GMRES 反復あたり残る前処理適用 26 ms（ILU 三角解 8 ms + AMG V サイクル 14 ms + B・C の spmv）と
+  **残差評価 17 ms（numpy 1 スレッド）**は縮まないので、比は 1〜1.5× 程度に縮む見込み（実機で要確認）
+- JFNK の GMRES 反復は J1 に対する単体測定（26〜43）より多い（`gmres_tol` 1e-3 で 70 前後、1e-2 で 33）。
+  matvec が SOU 残差の真のヤコビアン、前処理が 1 次風上 J1 のためで、PARDISO でも 24 回（status-32）
+- 前処理組立（SA 1.4 s + ILU 0.55 s）が lag=4 でも 1 Newton あたり 1.4 s と重い。SA の平滑化なし集約（0.15 s）は
+  反復数が増えるので、組立を軽くするなら ILU の再利用と SA 階層の再利用（集約だけ固定して細格子行列を差し替え）が候補
+- GMRES 1 反復あたりのコストを下げる次段は、残差評価の numba 化（17 ms → 1〜2 ms、`prange` で 18 コアが埋まる）。
+  ただしそれだけでは 1 反復 53 ms → 38 ms（1.4×）で、前処理適用 26 ms が次の壁
 - Fluent 級（600 反復 1 分）を狙うなら、線形系を厳密に解かず**固定サイクル数で外部反復**する構造（`dc_simple` +
   小さな `gmres_maxiter` + 擬似時間緩和）が本命。SER の CFL 成長が残差比に依存するので調整が要る
 
@@ -150,7 +163,7 @@ GS と運動量 AMG は高 CFL（擬似時間対角が消えて対流優勢、Ne
 
 ```
 python -m pytest tests/test_nsb_precond.py tests/test_nsb_linalg.py tests/test_nsb_standalone.py tests/test_nsb.py tests/test_nsb_adjoint.py -q
-→ 35 passed（39 s）
+→ 37 passed（ILU リトライのテスト 2 件を含む）
 python contracts/validate_process_contracts.py → 契約違反なし
 ruff check nsb/ tests/ && ruff format --check nsb/ tests/ → All checks passed
 ```
