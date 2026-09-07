@@ -126,7 +126,8 @@ class NSBSettings:
     simple_schur_cycles : int
         SIMPLE 型前処理の Schur 補元に当てる AMG V サイクル数（既定 1）
     simple_ilu_drop_tol, simple_ilu_fill_factor : float
-        運動量 ILU（scipy `spilu`）の drop_tol / fill_factor
+        運動量 ILU（scipy `spilu`）の drop_tol / fill_factor。零ピボットなら drop_tol 1/10・fill 2 倍で
+        最大 3 回組み直す（1e-2 / 1.5 は 288×192 の Newton 途中で零ピボットになった）
     precond_refresh_gmres : int
         直前の GMRES 反復数がこれを超えたら次の Newton 反復で前処理を再分解する
         （前処理が古くなった兆候）
@@ -190,8 +191,8 @@ class NSBSettings:
     precond_cfl_ratio: float = 4.0
     simple_momentum: str = "ilu"
     simple_schur_cycles: int = 1
-    simple_ilu_drop_tol: float = 1.0e-2
-    simple_ilu_fill_factor: float = 1.5
+    simple_ilu_drop_tol: float = 1.0e-3
+    simple_ilu_fill_factor: float = 3.0
     divergence_ratio: float = 1.0e6
     init_field: str = "zero"
     reject_growth: float = 0.0

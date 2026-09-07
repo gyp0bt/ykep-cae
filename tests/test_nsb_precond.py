@@ -101,6 +101,39 @@ class TestSimpleBlockPreconditionerAPI:
         assert np.abs(x - x_ref).max() < 1e-5 * np.abs(x_ref).max()
 
 
+class TestSimpleBlockPreconditionerILURetry:
+    def test_zero_pivot_retries_with_tighter_drop_tol(self, monkeypatch):
+        """spilu が零ピボットを投げたら drop_tol 1/10・fill_factor 2 倍で組み直す（最大 3 回）."""
+        disc, J0, b = _stokes_jacobian()
+        real = spla.spilu
+        calls: list[tuple[float, float]] = []
+
+        def flaky(A, drop_tol, fill_factor, **kw):
+            calls.append((drop_tol, fill_factor))
+            if len(calls) == 1:
+                raise RuntimeError("Factor is exactly singular")
+            return real(A, drop_tol=drop_tol, fill_factor=fill_factor, **kw)
+
+        monkeypatch.setattr("nsb.precond.spla.spilu", flaky)
+        pc = SimpleBlockPreconditioner(disc.n, ilu_drop_tol=1e-2, ilu_fill_factor=1.5).factorize(J0)
+        assert calls == [(1e-2, 1.5), (1e-3, 3.0)]
+        assert pc.n_ilu_retries == 1
+        assert np.all(np.isfinite(pc.solve(b)))
+        pc.free()
+
+    def test_persistent_zero_pivot_raises(self, monkeypatch):
+        disc, J0, b = _stokes_jacobian()
+
+        def always(*_a, **_k):
+            raise RuntimeError("Factor is exactly singular")
+
+        monkeypatch.setattr("nsb.precond.spla.spilu", always)
+        pc = SimpleBlockPreconditioner(disc.n)
+        with pytest.raises(RuntimeError, match="3 回"):
+            pc.factorize(J0)
+        assert pc.n_ilu_retries == 3
+
+
 class TestLaggedPreconditionerSimpleAPI:
     def test_simple_mode_requires_n(self):
         with pytest.raises(ValueError):

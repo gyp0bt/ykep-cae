@@ -50,6 +50,7 @@ wrap(PardisoLU, "factorize", "pardiso factorize")
 wrap(PardisoLU, "solve", "pardiso solve")
 wrap(SimpleBlockPreconditioner, "factorize", "simple setup")
 wrap(SimpleBlockPreconditioner, "solve", "simple apply")
+wrap(spla, "spilu", "spilu")  # 呼び出し回数 > 組立回数なら零ピボットの組み直しが起きている
 wrap(spla, "gmres", "gmres(total)")
 nsolver.spla = spla
 
@@ -62,6 +63,15 @@ CONFIGS: tuple[tuple[str, dict[str, object]], ...] = (
         {"linear_solver": "jfnk_simple", "precond_lag": 4, "gmres_tol": 1e-2},
     ),
     ("dc_simple lag=4", {"linear_solver": "dc_simple", "precond_lag": 4}),
+    (
+        "jfnk_simple lag=4 ilu=1e-2/1.5",
+        {
+            "linear_solver": "jfnk_simple",
+            "precond_lag": 4,
+            "simple_ilu_drop_tol": 1e-2,
+            "simple_ilu_fill_factor": 1.5,
+        },
+    ),
 )
 
 

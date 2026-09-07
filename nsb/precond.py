@@ -51,8 +51,8 @@ class SimpleBlockPreconditioner:
         n: int,
         momentum: MomentumSolverType = "ilu",
         schur_cycles: int = 1,
-        ilu_drop_tol: float = 1.0e-2,
-        ilu_fill_factor: float = 1.5,
+        ilu_drop_tol: float = 1.0e-3,
+        ilu_fill_factor: float = 3.0,
     ) -> None:
         if momentum not in ("jacobi", "ilu"):
             raise ValueError(f"momentum は jacobi / ilu のいずれか: {momentum!r}")
@@ -71,6 +71,7 @@ class SimpleBlockPreconditioner:
         self._ml_schur: pyamg.multilevel.MultilevelSolver | None = None
         self._ilu: spla.SuperLU | None = None
         self.setup_time = 0.0
+        self.n_ilu_retries = 0  # 零ピボットで ILU を組み直した回数（累積）
 
     # ------------------------------------------------------------------
     @property
@@ -125,13 +126,26 @@ class SimpleBlockPreconditioner:
 
         self._ilu = None
         if self.momentum == "ilu":
-            self._ilu = spla.spilu(
-                A.tocsc(), drop_tol=self.ilu_drop_tol, fill_factor=self.ilu_fill_factor
-            )
+            self._ilu = self._build_ilu(A)
         self._J, self._A, self._B, self._C = J_csr, A, B, C
         self._inv_dA, self._S, self._schur_sign = inv_dA, S, sign
         self.setup_time = time.perf_counter() - t0
         return self
+
+    def _build_ilu(self, A: sparse.csr_matrix) -> spla.SuperLU:
+        """運動量ブロックの ILU。零ピボット（"Factor is exactly singular"）なら drop_tol を 1/10、
+        fill_factor を 2 倍にして最大 3 回組み直す（288×192 の Newton 途中で drop_tol 1e-2 が落ちた実績）."""
+        tol, fill = self.ilu_drop_tol, self.ilu_fill_factor
+        A_csc = A.tocsc()
+        last: RuntimeError | None = None
+        for _attempt in range(3):
+            try:
+                return spla.spilu(A_csc, drop_tol=tol, fill_factor=fill)
+            except RuntimeError as exc:
+                last = exc
+                self.n_ilu_retries += 1
+                tol, fill = tol * 0.1, fill * 2.0
+        raise RuntimeError(f"運動量 ILU が 3 回とも零ピボット: {last}") from last
 
     def _solve_momentum(self, r: np.ndarray) -> np.ndarray:
         assert self._A is not None and self._inv_dA is not None
