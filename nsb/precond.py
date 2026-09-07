@@ -8,7 +8,7 @@ PARDISO の疎 LU（`nsb.linalg.PardisoLU`）と同じインターフェース�
 
 と分け、Elman らの SIMPLE 型前処理 M^{-1} r を
 
-    1. A u* = r_u             （運動量: ILU（既定）または Jacobi で近似解）
+    1. A u* = r_u             （運動量: ILU で近似解）
     2. Ŝ δp = r_p − C u*      （圧力: Ŝ = D − C diag(A)^{-1} B を pyamg smoothed aggregation の V サイクルで近似解）
     3. u = u* − diag(A)^{-1} B δp
 
@@ -16,13 +16,13 @@ PARDISO の疎 LU（`nsb.linalg.PardisoLU`）と同じインターフェース�
 ±2〜3 セルの符号混在の遠方項（対角の 5〜10%）が乗る。この遠方項で Ruge–Stüben の収束率が 1 サイクル
 0.76 まで落ちる（288×192 で GMRES 199 反復）一方、smoothed aggregation（非対称モード）は 43 反復で、
 運動量・Schur とも厳密解にした SIMPLE（64 反復）より少ない（status-38 の切り分け）。
-運動量ブロックは ILU（scipy `spilu`）が最良で、Gauss–Seidel と運動量 AMG は高 CFL で発散する（採用しない）。
+運動量ブロックは ILU（scipy `spilu`）が最良で、Jacobi は反復 2〜4 倍、Gauss–Seidel と運動量 AMG は高 CFL で発散する。
 
 LU 分解と違って組立コストが O(N)（pyamg の階層構築 + ILU）なので、Newton 反復ごとに組み直す前提。
 
 組立の内訳（288×192、20 コア、status-39）は SA 階層構築 0.1〜1.9 s（pyamg のスペクトル半径推定が乱数依存で振れる）、
 ILU 0.24 s。SA の**集約（P, R）は最初の 1 回だけ作り、以後は細格子行列 Ŝ を差し替えて Galerkin 積 R Ŝ P で
-粗格子行列だけ組み直す**（`reuse_hierarchy=True`、10 ms）。CFL が 1.4 → 27 と動いても GMRES 反復数は
+粗格子行列だけ組み直す**（10 ms）。CFL が 1.4 → 27 と動いても GMRES 反復数は
 毎回作り直す場合と同等以下（66 → 44 反復になった例もある: 集約が変わらない方が前処理が安定する）。
 V サイクルは `MultilevelSolver.solve` を経由せず（残差ノルム評価の spmv が 1 回余計に入り 6.8 ms → 4.6 ms）、
 階層の `presmoother` / `R` / `P` / `postsmoother` / `coarse_solver` を直接辿る。
@@ -39,8 +39,6 @@ from pyamg.relaxation.smoothing import change_smoothers
 from scipy import sparse
 from scipy.sparse import linalg as spla
 
-MomentumSolverType = str  # "jacobi" | "ilu"
-
 
 class SimpleBlockPreconditioner:
     """SIMPLE 型ブロック前処理（`PardisoLU` 互換の factorize / solve / free）.
@@ -49,31 +47,25 @@ class SimpleBlockPreconditioner:
     ----------
     n : int
         セル数 N（未知数は 3N）
-    momentum : str
-        運動量ブロック A の近似解法。"ilu"（scipy `spilu`、ilu_drop_tol / ilu_fill_factor）/ "jacobi"（対角）
     schur_cycles : int
         Schur 補元 Ŝ に当てる AMG V サイクル数
-    reuse_hierarchy : bool
-        True なら SA の集約（P, R）を最初の factorize で固定し、以後は Galerkin 積で粗格子行列だけ組み直す
+    ilu_drop_tol, ilu_fill_factor : float
+        運動量ブロック A の ILU（scipy `spilu`）
+
+    SA の集約（P, R）は最初の factorize で固定し、以後は Galerkin 積で粗格子行列だけ組み直す（`free()` で捨てる）。
     """
 
     def __init__(
         self,
         n: int,
-        momentum: MomentumSolverType = "ilu",
         schur_cycles: int = 1,
         ilu_drop_tol: float = 1.0e-3,
         ilu_fill_factor: float = 3.0,
-        reuse_hierarchy: bool = True,
     ) -> None:
-        if momentum not in ("jacobi", "ilu"):
-            raise ValueError(f"momentum は jacobi / ilu のいずれか: {momentum!r}")
         self.n = int(n)
-        self.momentum = momentum
         self.schur_cycles = max(1, int(schur_cycles))
         self.ilu_drop_tol = float(ilu_drop_tol)
         self.ilu_fill_factor = float(ilu_fill_factor)
-        self.reuse_hierarchy = bool(reuse_hierarchy)
         self._J: sparse.csr_matrix | None = None
         self._A: sparse.csr_matrix | None = None
         self._B: sparse.csr_matrix | None = None
@@ -85,7 +77,7 @@ class SimpleBlockPreconditioner:
         self._ilu: spla.SuperLU | None = None
         self.setup_time = 0.0
         self.n_ilu_retries = 0  # 零ピボットで ILU を組み直した回数（累積）
-        self.n_hierarchy_builds = 0  # SA の集約を作った回数（累積。reuse_hierarchy なら 1 のまま）
+        self.n_hierarchy_builds = 0  # SA の集約を作った回数（累積。free() までは 1 のまま）
 
     # ------------------------------------------------------------------
     @property
@@ -135,15 +127,13 @@ class SimpleBlockPreconditioner:
         # AMG は正の対角を前提にするので符号を揃える（Ŝ は −div(ρ d ∇p) 型で通常は正）
         sign = 1.0 if float(np.mean(S.diagonal())) > 0.0 else -1.0
         S_pos = (sign * S).tocsr()
-        if self.reuse_hierarchy and self._ml_schur is not None:
+        if self._ml_schur is not None:
             self._regalerkin(self._ml_schur, S_pos)
         else:
             self._ml_schur = self._build_hierarchy(S_pos)
             self.n_hierarchy_builds += 1
 
-        self._ilu = None
-        if self.momentum == "ilu":
-            self._ilu = self._build_ilu(A)
+        self._ilu = self._build_ilu(A)
         self._J, self._A, self._B, self._C = J_csr, A, B, C
         self._inv_dA, self._S, self._schur_sign = inv_dA, S, sign
         self.setup_time = time.perf_counter() - t0
@@ -192,9 +182,6 @@ class SimpleBlockPreconditioner:
         raise RuntimeError(f"運動量 ILU が 3 回とも零ピボット: {last}") from last
 
     def _solve_momentum(self, r: np.ndarray) -> np.ndarray:
-        assert self._A is not None and self._inv_dA is not None
-        if self.momentum == "jacobi":
-            return self._inv_dA * r
         assert self._ilu is not None
         return self._ilu.solve(r)
 

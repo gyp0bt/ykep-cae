@@ -65,7 +65,9 @@ class TestPardisoLUAPI:
 
 class TestLaggedPreconditionerAPI:
     def test_refresh_rules(self):
-        s = NSBSettings(precond_lag=3, precond_refresh_gmres=10, precond_cfl_ratio=4.0)
+        s = NSBSettings(
+            linear_solver="jfnk", precond_lag=3, precond_refresh_gmres=10, precond_cfl_ratio=4.0
+        )
         pc = LaggedPreconditioner(s)
         assert pc.needs_refresh()  # 未分解
         pc.cfl = 1.0
@@ -85,13 +87,6 @@ class TestLaggedPreconditionerAPI:
         assert pc.needs_refresh(force=True)
         pc.free()
 
-    def test_lu_mode_always_refreshes(self):
-        pc = LaggedPreconditioner(NSBSettings(linear_solver="lu", precond_lag=10))
-        pc.cfl = 1.0
-        pc.refresh(_spd_like(50))
-        assert pc.needs_refresh()
-        pc.free()
-
 
 @pytest.mark.slow
 class TestLaggedPreconditionerConvergence:
@@ -100,8 +95,7 @@ class TestLaggedPreconditionerConvergence:
         """前処理の遅延更新は解を変えない（同じ定常解に収束し、分解回数だけ減る）."""
         u_in = 1.0
         base = NSBSettings(
-            velocity_floor=0.1 * u_in,
-            init_field="stokes",
+            velocity_floor_ratio=0.1,
             alpha_u=1.0,
             newton_tol=1e-8,
             precond_lag=lag,

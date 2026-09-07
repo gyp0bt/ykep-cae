@@ -20,14 +20,12 @@ HERE = Path(__file__).resolve().parent
 MDOT = 0.1  # kg/s（h=1e-3, 幅 0.1 で U=1 m/s 相当）
 
 
-def settings_for(inp) -> NSBSettings:
-    u = inlet_velocity(inp)
+def settings_for(inp) -> NSBSettings:  # noqa: ARG001 - 旧 API との互換（速度下限は比で与える）
     return NSBSettings(
         cfl_init=0.5,
-        velocity_floor=0.1 * u,
+        velocity_floor_ratio=0.1,
         pseudo_time_in_residual=False,
         alpha_u=1.0,
-        init_field="stokes",
         newton_max_iter=150,
     )
 

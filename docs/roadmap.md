@@ -177,7 +177,9 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] nsb に SIMPLE 型ブロック前処理（運動量 ILU + Schur 補元 SA-AMG、`nsb/precond.py`、pyamg 必須）を `linear_solver="jfnk_simple"` / `"dc_simple"` として追加。部品の切り分け（GS・運動量 AMG は高 CFL で発散、Schur は Ruge–Stüben 199 反復 → SA 43 反復）。4 コア実測で 288×192 が PARDISO 比 2.66×（`gmres_tol=1e-2`）— status-38
 - [x] 20 コア実機で `experiments/nsb/bench_precond.py` を再計測（status-38 のコードで PARDISO 91.5 s / SIMPLE 73.8 s、比 1.24×。`precond_lag=4` を維持）— status-39
 - [x] nsb 高速化 第 2 段: 自作 FGMRES（`nsb/krylov.py`、scipy gmres の過剰解消・JFNK matvec の非線形性の同定）+ SA 階層の再利用 + V サイクル直呼び + 残差評価の numba 化（`nsb/fastres.py`）+ pyamg 乱数固定で決定化。288×192 が GMRES 1 反復 26.6 → 16.7 ms・組立 863 → 265 ms、総時間 73.8 s → 26〜43 s（Newton 経路差）— status-39
-- [ ] 前処理適用（ILU 三角解 + V サイクル ≈ 10 ms × GMRES 45〜56 反復）の numba 化、SER の CFL 成長則の見直し（Newton 経路の敏感さ）— status-39 TODO
+- [x] nsb の制御則を一長一短の切替だけに絞る（静止場発進・lu/dc_simple・Jacobi・backtracking・下限なし・numpy 残差・SA 毎回構築を廃止）。参照場を Stokes 解に固定、SER を古典形で出発。粗格子解の注入で 288×192 が 36 → 16 Newton（2.2×）— status-40
+- [ ] 入れ子反復ドライバ（双一次補間、72×48 → 144×96 → 288×192）を nsb に正式に置く — status-40 TODO
+- [ ] 前処理適用（ILU 三角解 + V サイクル ≈ 10 ms × GMRES 45〜56 反復）の numba 化、SER の CFL 減少/成長の非対称と `precond_cfl_ratio` の同期の見直し（Newton 経路の敏感さ）— status-39 / 40 TODO
 - [ ] `dc_simple` + 小さな `gmres_maxiter` の固定サイクル外部反復（Fluent 型）— status-38 TODO（FGMRES は status-39 で実装済み）
 - [ ] 境界 inlet の位置・幅の連続化、冷却設計向け目的関数 — status-31 TODO
 - [ ] 熱ソルバー連携（流量場 → 熱伝達コンダクタンス → 上下プレート温度）

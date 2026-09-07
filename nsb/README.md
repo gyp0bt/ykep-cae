@@ -41,7 +41,7 @@ nsb の入力を Process ソルバー（`BrinkmanFlowFVMProcess`）へ渡すと�
 
 ## 線形ソルバー: SIMPLE 型ブロック前処理（ILU + Schur 補元 AMG、status-38）
 
-`NSBSettings.linear_solver="jfnk_simple"` / `"dc_simple"` で、疎 LU の代わりに **SIMPLE 型ブロック前処理**
+`NSBSettings.linear_solver="jfnk_simple"`（既定）で、疎 LU の代わりに **SIMPLE 型ブロック前処理**
 （`nsb/precond.py::SimpleBlockPreconditioner`、pyamg 必須）を GMRES に使う。3N×3N の 1 次風上ヤコビアン
 J = [[A, B], [C, D]]（A: 速度、B: 圧力勾配、C: 発散、D: Rhie–Chow 圧力項）に対し
 
@@ -57,10 +57,10 @@ J1 v（defect correction: 残差評価を伴わないので 1 反復が軽いが
   Gauss–Seidel と運動量 AMG は高 CFL（対流優勢）で発散。Schur 補元は compact 5 点 Poisson が支配的だが RC と Newton 項の
   遠方項（±2〜3 セル、符号混在）で Ruge–Stüben の収束率が 0.76/サイクルに落ち GMRES 199 反復、遠方項の lumping は
   逆効果、**smoothed aggregation では 43 反復**（運動量・Schur とも厳密解の SIMPLE で 64 反復）
-- 設定: `simple_momentum`（"ilu" / "jacobi"）、`simple_schur_cycles`、`simple_ilu_drop_tol` / `simple_ilu_fill_factor`。
+- 設定: `simple_schur_cycles`、`simple_ilu_drop_tol` / `simple_ilu_fill_factor`（運動量 Jacobi と `dc_simple` は status-40 で廃止）。
   `precond_lag` は共通（組立が軽いので lag の利得は小さい）
-- Stokes 初期場（`init_field="stokes"`）も同じ前処理付き GMRES（rtol 1e-10）で解く。収束しなければ PARDISO 1 回に落ちる
-  （ログの `stokes init (gmres=N)` で確認できる）
+- Stokes 参照場も同じ前処理付き GMRES（rtol 1e-10）で解く。収束しなければ PARDISO 1 回に落ちる
+  （ログの `stokes ref (gmres=N)` で確認できる）
 - 実測は下の表（`experiments/nsb/bench_precond.py`、4 コア、ログ `experiments/nsb/logs/bench-precond-flat-r124.log`）
 
 | 格子 | 構成 | 収束 | Newton | 前処理組立 | GMRES 総反復 | 全体 | 1 Newton | PARDISO 比 | 解の差 max\|Δu\|/max\|u\| |
@@ -95,12 +95,12 @@ status-38 のコードを 20 コア機で取り直すと PARDISO 91.5 s / SIMPLE
 - **GMRES を自作の右前処理 FGMRES に**（`nsb/krylov.py::fgmres`、CGS2 を gemv で + Givens）。scipy `gmres` は再出発ごとに内側の許容を締めるので
   `rtol=1e-2` 指定でも 2e-3 まで 37 反復回っていた（FGMRES は 16 反復）。JFNK の FD matvec は残差の折れ点（風上切替・リミター）のため
   線形写像から 1e-4〜1e-3 ずれ、Givens 推定と真の残差が高 CFL で食い違う。真の残差で再出発しても雑音の床を割れないので、JFNK では
-  `check_true_residual=False` で Givens 推定で止める（`dc_simple` と Stokes 初期場は真の残差で確認）
-- **SA 階層の再利用**（`SimpleBlockPreconditioner(reuse_hierarchy=True)` 既定）: 集約 P, R は最初の 1 回だけ作り、以後は Ŝ を差し替えて
+  `check_true_residual=False` で止める選択肢を `fgmres` に用意した（ソルバーでは真の残差確認を残す。Givens 推定だけだと PARDISO 側の Newton が収束しない走行があった）
+- **SA 階層の再利用**: 集約 P, R は最初の 1 回だけ作り、以後は Ŝ を差し替えて
   Galerkin 積 R Ŝ P で粗格子だけ組み直す（667 → 10 ms）。CFL 1.4 → 27 で使い回しても GMRES 反復数は毎回構築と同等以下
 - **V サイクルの直接呼び出し**（`MultilevelSolver.solve` の残差ノルム評価を省く、6.8 → 4.6 ms）
 - **残差評価の numba 化**（`nsb/fastres.py::residual_kernel`、`prange` 7 パス、5.8 → 0.3〜0.5 ms、numpy 経路と 1e-17 一致）。
-  `NSBSettings.fast_residual=True` 既定、numba が無ければ numpy 経路
+  numba が無ければ自動で numpy 経路
 - **決定性**: pyamg のスペクトル半径推定がグローバル乱数を使い、前処理の微差で Newton 反復数が 22〜37 と振れていた。SA 構築の間だけ
   固定シードにして同じ行列から同じ階層が出るようにした（経路の敏感さ自体は SER の CFL 倍化則に由来し、残る）
 - 採用しなかったもの: `gmres_tol=1e-2`（正直に止めると Newton が増える）、ILU 1e-2/1.5（FGMRES 化後に 288×192 で発散）、
@@ -150,19 +150,29 @@ status-38 のコードを 20 コア機で取り直すと PARDISO 91.5 s / SIMPLE
 | `adjoint.py` | 設計感度: 彩色 FD ヤコビアン `colored_fd_jacobian`、陰関数定理の VJP `ImplicitSolve`（forward / jacobian / vjp / gradient、転置系は PARDISO）、`Objective` |
 | `theory.md` | 数理ノート: 支配方程式〜離散化〜Newton/擬似時間〜発散機構〜随伴感度を総和規約で記述 |
 
-## `NSBSettings` の「踏んではいけない線」スイッチ
+## `NSBSettings`（status-40 で一長一短の切替と数値パラメータだけに絞った）
 
-| 設定 | 既定（手元構成の推定） | 修正構成 | 影響（status-30 の実験結果） |
-|---|---|---|---|
-| `local_dtau` | True（局所 Δτ） | True / False | 大域 Δτ は同じ CFL で減衰が約 10 倍強く、高 CFL に寛容 |
-| `velocity_floor` [m/s] | 0（下限なし） | 0.1·U_in | 下限なしだと静止・低速セルで Δτ→∞ となり Newton が素になる。停滞の主因 |
-| `pseudo_time_in_residual` | True（残差に ρV(u−u_prev)/Δτ） | False | 収束判定・SER が擬似時間項込みの残差で動く。u_prev の更新が正しければ定常解は同じ |
-| `sub_iters` | 1 | 1 | 1 擬似時間ステップあたりの Newton 反復数（u_prev 凍結） |
-| `rc_with_pseudo_time` | False | False | RC 係数 d_f に ρV/Δτ を含める。本実装では致命的ではない |
-| `cfl_init` | 0.5 | 0.5 | 局所 Δτ では 5 で発散、0.5 なら可 |
-| `alpha_u` | 0.7 | 1.0 | 速度下限ありなら緩和なしが最速（uturn 36 反復 vs 102）。下限なしでは効きがモデルごとに逆転 |
-| `init_field` | "zero" | "stokes" | Stokes–Brinkman 初期場で反復 25〜35% 減。対流項込み残差で作ると max\|u\| が U_in の 14 倍になるので注意 |
-| `reject_growth` / `cfl_min` | 0（無効） | 0 | CFL backtracking は効かず。Δτ→0 で圧力が発散するので cfl_min が要る |
+実験で一方が常に劣ると分かった切替は落とした: 静止場発進（`init_field`。参照場・初期場とも Stokes 解、
+初期場は `NSBInput.u0/v0/p0` で差し替え可）、LU 直接 / defect correction（`"lu"` / `"dc_simple"`）、
+運動量 Jacobi（`simple_momentum`）、CFL backtracking（`reject_growth` / `max_rejects` / `cfl_min`）、
+速度下限なし（`velocity_floor` [m/s] → `velocity_floor_ratio` 既定 0.1）、numpy 残差（`fast_residual`）、
+SA 階層の毎回構築（`reuse_hierarchy`）。既定は `linear_solver="jfnk_simple"`、`alpha_u=1.0`、`precond_cfl_ratio=2.0`。
+収束判定の基準 r_ref は常に「Stokes 場で評価した完全 NS の定常残差」で、初期場の良し悪しに依らない。
+SER は古典形 `CFL = cfl_init·|R_ref|/|R|` で出発するので、粗格子解を `u0/v0/p0` に入れれば初期 CFL が自動で大きく出る。
+
+| 設定 | 既定 | 一長一短 |
+|---|---|---|
+| `linear_solver` | "jfnk_simple" | SIMPLE 型前処理は大格子で速い（288×192 で PARDISO 比 1.3〜2.2×）が GMRES 反復 42〜56。"jfnk"（PARDISO LU）は反復 18 で頑健、三角解 1 スレッドで大格子に弱い |
+| `local_dtau` | True | 大域 Δτ は同じ CFL で減衰が約 10 倍強く高 CFL に寛容、収束は遅い |
+| `pseudo_time_in_residual` | True | dual-time 型（収束判定・SER が擬似時間項込み）か対角補強のみか。定常解は同じ |
+| `velocity_floor_ratio` | 0.1 | 小さいほど Newton に近く速いが、静止・低速セルで Δτ→∞ となり停滞する（0 は不可） |
+| `cfl_init` / `ser_growth` / `cfl_max` | 0.5 / 2 / 1e6 | 出発は `cfl_init·|R_ref|/|R_init|`。成長率を上げると速いが Newton 経路が敏感になる |
+| `alpha_u` | 1.0 | 陰的緩和。速度下限ありなら 1.0 が最速、頑健側に振るなら 0.7 |
+| `precond_lag` / `precond_cfl_ratio` / `precond_refresh_gmres` | 4 / 2 / 30 | 前処理の使い回し。組立回数と GMRES 反復数のトレードオフ |
+| `simple_schur_cycles` / `simple_ilu_*` | 1 / 1e-3, 3.0 | 前処理 1 適用の重さと反復数のトレードオフ。ILU 1e-2/1.5 は零ピボット・発散 |
+| `gmres_tol` / `gmres_restart` / `gmres_maxiter` | 1e-3 / 40 / 5 | inexact Newton の許容。1e-2 は 1 Newton が軽いが Newton が増える |
+| `convection` / `venkat_k` | "sou" / 5 | 2 次風上 + リミター（精度）か 1 次風上（頑健）か |
+| `sub_iters` / `rc_with_pseudo_time` | 1 / False | 1 擬似時間ステップの Newton 反復数、RC 係数に ρV/Δτ を含めるか |
 
 ## 境界条件（座標マスク + 質量流入）
 
@@ -175,7 +185,7 @@ bc = BC(patches=(
     BC.mass_flow_inlet(north_span(0.3, 0.4, 0.4), 0.1),
     BC.pressure_outlet(west_span(0.05, 0.15)),
 ))
-inp = make_case("flat", 1, bc=bc, settings=NSBSettings(velocity_floor=0.1, init_field="stokes"))
+inp = make_case("flat", 1, bc=bc)
 res = solve_steady(inp)
 
 # 左壁 inlet の位置・幅だけ変える場合（uturn では厚さ場も追従）
@@ -202,7 +212,7 @@ def build(theta):                       # θ = (cx, cy, r) -> NSBInput
         BC.interior_source(disk_mask(0.15, 0.2, 0.05), 0.1),
         BC.interior_pressure_sink(None, 1e-4, weight=smooth_disk(cx, cy, r, eps=0.7 / 72)),
     ))
-    return make_case("flat", 1, bc=bc, settings=NSBSettings(velocity_floor=0.05, init_field="stokes", alpha_u=1.0))
+    return make_case("flat", 1, bc=bc)
 
 prob = ImplicitSolve(build)
 res, x = prob.forward(theta)
@@ -223,7 +233,7 @@ python main.py --models uturn flat --refine 1 --u 0.1 1 2 --configs mine fixed \
 ```python
 from nsb import NSBSettings, run_uturn
 
-inp, res = run_uturn(refine=1, u_in=2.0, settings=NSBSettings(velocity_floor=0.2))
+inp, res = run_uturn(refine=1, u_in=2.0)
 print(res.converged, res.rel_residual, res.rel_steady_residual)
 ```
 

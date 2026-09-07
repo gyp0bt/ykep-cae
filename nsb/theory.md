@@ -441,5 +441,5 @@ Fluent の pseudo-transient automatic time scale が領域長さと境界速度�
 | $J_1, J_2$ | FOU 解析ヤコビアン、SOU 有限差分 J·v | `jacobian_first_order`, `_make_jfnk_matvec` |
 | $D^\tau_P = \rho V/\Delta\tau_P$ | 擬似時間対角 | `tau_diag` |
 | $D^{\mathrm{relax}}_P$ | 陰的緩和対角 | `relax` |
-| $\mathrm{CFL}, r$ | 擬似 CFL、速度下限比 | `cfl_init, velocity_floor` |
+| $\mathrm{CFL}, r$ | 擬似 CFL、速度下限比 | `cfl_init, velocity_floor_ratio` |
 | $R_S, J_S$ | Stokes–Brinkman 残差・ヤコビアン | `convection=False` |

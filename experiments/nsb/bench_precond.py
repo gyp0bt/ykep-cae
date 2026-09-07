@@ -1,8 +1,8 @@
-"""線形ソルバー方式の比較: PARDISO LU 前処理（jfnk）vs SIMPLE 型ブロック前処理（jfnk_simple / dc_simple）.
+"""線形ソルバー方式の比較: PARDISO LU 前処理（jfnk）vs SIMPLE 型ブロック前処理（jfnk_simple）.
 
     python experiments/nsb/bench_precond.py [refine ...] 2>&1 | tee experiments/nsb/logs/bench-precond-$(date +%s).log
 
-flat、U=1、推奨構成（velocity_floor=0.1 U、Stokes 初期場、alpha_u=1）で refine=1/2/4（72×48 / 144×96 / 288×192）を
+flat、U=1、推奨構成（velocity_floor_ratio=0.1 U、Stokes 初期場、alpha_u=1）で refine=1/2/4（72×48 / 144×96 / 288×192）を
 解き、収束・Newton 反復数・GMRES 総反復・前処理組立回数・所要時間・段別内訳を出す。解は jfnk（PARDISO）を基準に
 最大差で照合する。status-38 の結果（4 コア、scipy gmres）: experiments/nsb/logs/bench-precond-flat-r124.log、
 status-39 の結果（20 コア、FGMRES + SA 階層再利用 + numba 残差）: experiments/nsb/logs/bench-precond-flat-r124-status39.log
@@ -65,21 +65,15 @@ CONFIGS: tuple[tuple[str, dict[str, object]], ...] = (
         {"linear_solver": "jfnk_simple", "precond_lag": 4, "gmres_tol": 1e-2},
     ),
     (
-        "jfnk_simple lag=4 fast_residual=False",
-        {"linear_solver": "jfnk_simple", "precond_lag": 4, "fast_residual": False},
-    ),
-    (
         "jfnk_simple lag=4 schur_cycles=2",
         {"linear_solver": "jfnk_simple", "precond_lag": 4, "simple_schur_cycles": 2},
     ),
-    ("dc_simple lag=4", {"linear_solver": "dc_simple", "precond_lag": 4}),
 )
 
 
 def run(refine: int, u_in: float = 1.0) -> None:
     base = NSBSettings(
-        velocity_floor=0.1 * u_in,
-        init_field="stokes",
+        velocity_floor_ratio=0.1,
         alpha_u=1.0,
         newton_max_iter=120,
         precond_cfl_ratio=2.0,

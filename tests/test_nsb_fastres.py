@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 import numpy as np
 import pytest
 
-from nsb import BC, NSBSettings, disk_mask, make_case, north_span, solve_steady, west_span
+from nsb import BC, NSBSettings, disk_mask, make_case, north_span, west_span
 from nsb.assembly import BrinkmanDiscretization
 from nsb.data import ConvectionSchemeType
 
@@ -17,7 +15,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def _cases():
-    s = NSBSettings(velocity_floor=0.1, init_field="stokes", alpha_u=1.0)
+    s = NSBSettings(velocity_floor_ratio=0.1, alpha_u=1.0)
     yield "flat", make_case("flat", 1, 1.0, settings=s)
     yield "uturn", make_case("uturn", 1, 1.0, settings=s)
     # 質量流入 + 領域内マニホールド（q_src / c_sink の分岐を通す）
@@ -53,20 +51,3 @@ class TestFastResidualPhysics:
         fast = disc.residual_fast(x, scheme, 5.0, pd, convection=convection)
         assert fast.shape == ref.shape
         assert np.abs(fast - ref).max() <= 1e-13 * np.abs(ref).max()
-
-
-class TestFastResidualSolverAPI:
-    def test_solver_gives_same_solution_with_and_without_fast_residual(self):
-        s = NSBSettings(
-            velocity_floor=0.1,
-            init_field="stokes",
-            alpha_u=1.0,
-            linear_solver="jfnk_simple",
-            gmres_tol=1e-2,
-        )
-        inp = make_case("flat", 1, 1.0, settings=s)
-        res_fast = solve_steady(inp, log=None)
-        res_ref = solve_steady(replace(inp, settings=replace(s, fast_residual=False)), log=None)
-        assert res_fast.converged and res_ref.converged
-        assert res_fast.n_iter == res_ref.n_iter
-        assert np.abs(res_fast.u - res_ref.u).max() <= 1e-8 * np.abs(res_ref.u).max()

@@ -37,7 +37,7 @@ class TestNSBStandaloneAPI:
             "sys.meta_path.insert(0, Block())\n"
             "import nsb, nsb.adjoint, nsb.assembly, nsb.core, nsb.data, nsb.geo, nsb.solver, nsb.utils\n"
             "from nsb import make_case, solve_steady, NSBSettings\n"
-            "inp = make_case('flat', 1, 1.0, settings=NSBSettings(velocity_floor=0.1, init_field='stokes', alpha_u=1.0))\n"
+            "inp = make_case('flat', 1, 1.0, settings=NSBSettings(velocity_floor_ratio=0.1, alpha_u=1.0))\n"
             "assert not any(m.startswith('xkep') for m in sys.modules), 'xkep が読み込まれた'\n"
             "print('OK')\n"
         )

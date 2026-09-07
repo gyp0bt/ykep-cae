@@ -45,10 +45,9 @@ def _build(nx: int, ny: int, tol: float):
             h=h,
             bc=_bc(theta, eps),
             settings=NSBSettings(
-                velocity_floor=0.02,
+                velocity_floor_ratio=0.1,
                 pseudo_time_in_residual=False,
                 alpha_u=1.0,
-                init_field="stokes",
                 newton_tol=tol,
                 newton_max_iter=120,
             ),
