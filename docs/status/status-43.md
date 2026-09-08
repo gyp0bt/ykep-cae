@@ -151,7 +151,7 @@ J^T v を返す autograd Function が要る（設計書の「残差駆動」案�
   lr < 5e-5 の終盤で打ち切り、`best.pt` = epoch 71。
 - 正規化 MSE 0.022 は「u/u_in で RMS 0.15」相当。場の見た目は正解に近い（§6 の図）が、残差で測ると Stokes 場より悪い。
 
-ログ: `experiments/nsbm/logs/train-unet-a-1788793288.log`、生成: `logs/gen-1788788986.log`（+ `gen-fix3000-*.log`）。
+ログ: `experiments/nsbm/logs/train-unet-a-1788884441.log`、生成: `logs/gen-1788882649.log`（+ `gen-fix3000-1788884321.log`）。
 
 ## 6. 結果: Newton 反復数の比較
 
