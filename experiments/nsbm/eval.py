@@ -42,7 +42,7 @@ def main() -> None:
         "--methods",
         type=str,
         default="stokes,knn,unet",
-        help="例: stokes,knn_n1,unet_n1,unet_n2（_nK は Newton 射影 K 歩）",
+        help="例: stokes,stokes@4,stokes@pred,unet,unet@pred（_nK は Newton 射影 K 歩、@cfl は cfl_init の数値か pred）",
     )
     args = ap.parse_args()
 
@@ -52,7 +52,7 @@ def main() -> None:
 
     from nsb.core import NSBSettings
     from nsbm.dataset import load_shards
-    from nsbm.evaluate import evaluate, summarize
+    from nsbm.evaluate import evaluate, field_metrics, summarize
     from nsbm.train import load_model, seeds_to_split
 
     torch.set_num_threads(4)
@@ -66,7 +66,23 @@ def main() -> None:
 
     def predict(s):
         with torch.no_grad():
-            return net(torch.from_numpy(s.x[None])).numpy()[0]
+            y, logcfl = net(torch.from_numpy(s.x[None]))
+        return y.numpy()[0], float(torch.exp(logcfl)[0])
+
+    # 場の精度（テスト集合の正解は収束解）: R² と最大値・最小値の誤差
+    y_true = np.stack([samples[i].y for i in split["test"]])
+    preds = [predict(samples[i]) for i in split["test"]]
+    y_pred = np.stack([p[0] for p in preds])
+    cfl_pred = np.array([p[1] for p in preds])
+    metrics = field_metrics(y_pred, y_true)
+    metrics["cfl_pred"] = {
+        "median": float(np.median(cfl_pred)),
+        "p10": float(np.percentile(cfl_pred, 10)),
+        "p90": float(np.percentile(cfl_pred, 90)),
+        "min": float(cfl_pred.min()),
+        "max": float(cfl_pred.max()),
+    }
+    print(yaml.safe_dump({"field_metrics": metrics}, sort_keys=False), flush=True)
 
     print(
         f"test={len(split['test'])} hard={len(split['hard'])} train={len(split['train'])} run={args.run} cfl_init={args.cfl_init}",
@@ -83,7 +99,12 @@ def main() -> None:
         log=lambda m: print(m, flush=True),
     )
     summary = summarize(rows, methods=tuple(args.methods.split(",")))
-    tag = "" if args.methods == "stokes,knn,unet" else "-" + args.methods.replace(",", "+")
+    summary["field_metrics"] = metrics
+    tag = (
+        ""
+        if args.methods == "stokes,knn,unet"
+        else "-" + args.methods.replace(",", "+").replace("@", "-")
+    )
     out = args.out or (HERE / "results" / f"eval-{args.run.name}-cfl{args.cfl_init:g}{tag}")
     out.parent.mkdir(parents=True, exist_ok=True)
     # with_suffix は "cfl0.25" の ".25" を拡張子扱いするので使わない
@@ -98,7 +119,6 @@ def main() -> None:
         flush=True,
     )
     print(f"-> {out_yaml}", flush=True)
-    _ = np
 
 
 if __name__ == "__main__":

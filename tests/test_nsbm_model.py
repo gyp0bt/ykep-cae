@@ -13,10 +13,21 @@ from nsbm.model import UNet  # noqa: E402
 def test_unet_shape_and_backward():
     net = UNet()
     x = torch.randn(2, 8, 72, 48)
-    y = net(x)
-    assert y.shape == (2, 3, 72, 48)
-    y.square().mean().backward()
+    y, logcfl = net(x)
+    assert y.shape == (2, 3, 72, 48) and logcfl.shape == (2,)
+    (y.square().mean() + logcfl.sum()).backward()
     assert all(p.grad is not None for p in net.parameters() if p.requires_grad)
+
+
+def test_unet_cfl_head_starts_at_default_and_is_bounded():
+    from nsbm.model import CFL_BASE, CFL_LOG_RANGE
+
+    net = UNet().eval()
+    with torch.no_grad():
+        _, logcfl = net(torch.randn(3, 8, 72, 48))
+    assert torch.allclose(torch.exp(logcfl), torch.full((3,), CFL_BASE))
+    lo, hi = CFL_BASE * np.exp(-CFL_LOG_RANGE), CFL_BASE * np.exp(CFL_LOG_RANGE)
+    assert lo < 0.01 and 10 < hi < 20
 
 
 def test_unet_param_count():
@@ -29,7 +40,7 @@ def test_unet_deterministic_eval():
     net = UNet().eval()
     x = torch.randn(1, 8, 72, 48)
     with torch.no_grad():
-        a, b = net(x), net(x)
+        a, b = net(x)[0], net(x)[0]
     assert torch.equal(a, b)
 
 
@@ -37,7 +48,7 @@ def test_unet_accepts_numpy_batch_roundtrip():
     net = UNet().eval()
     xb = np.random.default_rng(0).normal(size=(3, 8, 72, 48)).astype(np.float32)
     with torch.no_grad():
-        out = net(torch.from_numpy(xb)).numpy()
+        out = net(torch.from_numpy(xb))[0].numpy()
     assert out.shape == (3, 3, 72, 48) and out.dtype == np.float32
 
 
@@ -78,7 +89,9 @@ def test_train_smoke(tmp_path):
     )
     net = load_model(res.best_path)
     with torch.no_grad():
-        assert net(torch.from_numpy(samples[0].x[None])).shape == (1, 3, 72, 48)
+        assert net(torch.from_numpy(samples[0].x[None]))[0].shape == (1, 3, 72, 48)
+    hist = (tmp_path / "history.csv").read_text().splitlines()
+    assert hist[0].startswith("epoch,train_mse,train_res,val_mse,val_res,val_obj")
     sp = split_by_family(samples, 0)
     assert set(sp) == {"train", "val", "test"} and sum(len(v) for v in sp.values()) == 16
 
@@ -141,8 +154,44 @@ def test_divergence_loss_zero_for_uniform_flow_and_positive_for_source():
 
 
 def test_parse_method():
-    from nsbm.evaluate import parse_method
+    from nsbm.evaluate import parse_cfl, parse_method
 
     assert parse_method("stokes") == ("stokes", 0)
     assert parse_method("unet_n2") == ("unet", 2)
     assert parse_method("knn_n1") == ("knn", 1)
+    assert parse_method("unet_n2@pred") == ("unet", 2)
+    assert parse_cfl("stokes") is None
+    assert parse_cfl("stokes@4") == 4.0
+    assert parse_cfl("unet@pred") == "pred"
+
+
+def test_field_metrics_perfect_and_shifted():
+    from nsbm.evaluate import field_metrics
+
+    rng = np.random.default_rng(0)
+    y = rng.normal(size=(5, 3, 72, 48)).astype(np.float32)
+    m = field_metrics(y, y)
+    for c in ("u", "v", "p"):
+        assert m[c]["r2_pooled"] == pytest.approx(1.0) and m[c]["max_err_abs_median"] == 0.0
+    m2 = field_metrics(y + 0.5, y)  # 一様に +0.5: 最大・最小とも +0.5、R² は落ちる
+    assert m2["u"]["max_err_abs_median"] == pytest.approx(0.5, abs=1e-6)
+    assert m2["u"]["min_err_signed_mean"] == pytest.approx(0.5, abs=1e-6)
+    assert m2["u"]["r2_pooled"] < 1.0
+
+
+def test_load_model_accepts_checkpoint_without_cfl_head(tmp_path):
+    from nsbm.train import load_model
+
+    net = UNet(widths=(8, 16, 32, 64))
+    sd = {k: v for k, v in net.state_dict().items() if not k.startswith("cfl_head.")}
+    torch.save({"state_dict": sd, "widths": (8, 16, 32, 64)}, tmp_path / "old.pt")
+    loaded = load_model(tmp_path / "old.pt")
+    with torch.no_grad():
+        _, logcfl = loaded(torch.randn(1, 8, 72, 48))
+    assert float(torch.exp(logcfl)[0]) == pytest.approx(0.25)
+    torch.save(
+        {"state_dict": {**sd, "bogus": torch.zeros(1)}, "widths": (8, 16, 32, 64)},
+        tmp_path / "bad.pt",
+    )
+    with pytest.raises(KeyError):
+        load_model(tmp_path / "bad.pt")

@@ -161,7 +161,7 @@ def fig_fields(run: Path, data: Path, rows: list[dict], out: Path, n_cases: int 
     for row_ax, r in zip(np.atleast_2d(axes), picked, strict=True):
         s = samples[int(r["seed"])]
         with torch.no_grad():
-            yhat = net(torch.from_numpy(s.x[None])).numpy()[0]
+            yhat = net(torch.from_numpy(s.x[None]))[0].numpy()[0]
         u, v, p = s.fields()
         uh, vh, ph = denormalize_y(s.theta, yhat)
         sp, sph = np.hypot(u, v), np.hypot(uh, vh)
