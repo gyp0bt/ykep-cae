@@ -1,0 +1,16 @@
+memcap: unit=memcap-eval.py_-921717.scope MemoryMax=12G MemorySwapMax=0 :: python experiments/nsbm/eval.py --run experiments/nsbm/runs/unet-a --workers 6 --cfl-init 0.25 --methods stokes,knn_n1,unet_n1,unet_n2
+test=357 hard=60 train=2867 run=experiments/nsbm/runs/unet-a cfl_init=0.25
+Traceback (most recent call last):
+  File "/home/nishioka/work/ykep-cae/experiments/nsbm/eval.py", line 105, in <module>
+    main()
+    ~~~~^^
+  File "/home/nishioka/work/ykep-cae/experiments/nsbm/eval.py", line 75, in main
+    rows = evaluate(
+        predict,
+    ...<6 lines>...
+        log=lambda m: print(m, flush=True),
+    )
+  File "/home/nishioka/work/ykep-cae/nsbm/evaluate.py", line 135, in evaluate
+    jobs.append((k_idx, m, s.theta.to_dict(), inits[m], settings))
+                                              ~~~~~^^^
+KeyError: 'knn_n1'
