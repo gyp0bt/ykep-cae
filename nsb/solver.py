@@ -132,8 +132,10 @@ def solve_linear(
     s: NSBSettings,
     pc: LaggedPreconditioner,
     force_refresh: bool = False,
-) -> tuple[np.ndarray, int, bool]:
-    """[線形] (J + diag_aug) δ = -R を JFNK（有限差分 matvec + FGMRES）で解く。戻り値 (δ, GMRES 反復数, 収束フラグ).
+) -> tuple[np.ndarray, int, bool, float]:
+    """[線形] (J + diag_aug) δ = -R を JFNK（有限差分 matvec + FGMRES）で解く.
+
+    戻り値 (δ, GMRES 反復数, 収束フラグ, 最終の真の残差比 |b − A δ|/|b|)。
 
     前処理は pc が保持する PARDISO 分解または SIMPLE 型前処理。必要なときだけ J1 を組んで組み直す。
     """
@@ -161,6 +163,7 @@ def solve_linear(
         # 「not converged」→ 前処理を組み直して解き直す経路に入ることがある（status-39 §3.1）。
         # Givens 推定だけで止める（check_true_residual=False）と PARDISO 側の Newton が収束しなくなった
         # 走行があったので、真の残差確認 + 不収束時の組み直しは残す
+        lin_info.clear()
         return fgmres(
             matvec,
             -rhs_resid,
@@ -169,8 +172,10 @@ def solve_linear(
             atol=0.0,
             restart=s.gmres_restart,
             maxiter=s.gmres_maxiter,
+            info=lin_info,
         )
 
+    lin_info: dict[str, float] = {}
     delta, n_gmres, ok = run_gmres()
     if not ok and pc.age > 0:
         # 古い前処理で収束しなかった: 現在の J1 で組み直して解き直す
@@ -179,7 +184,7 @@ def solve_linear(
         n_gmres += n_retry
     pc.age += 1
     pc.last_gmres = n_gmres
-    return delta, n_gmres, ok
+    return delta, n_gmres, ok, float(lin_info.get("resid_ratio", np.nan))
 
 
 def _gmres_exact(
@@ -316,19 +321,33 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
         pc.cfl = cfl
 
         r_new = r_norm
+        lin_rejected = False
         for _sub in range(s.sub_iters):
             st = state(x)
             r_tau = resid(x)
             relax = (1.0 - s.alpha_u) / s.alpha_u * st.a_p.ravel()
             diag_aug = np.concatenate([tau_diag + relax, tau_diag + relax, np.zeros(n)])
             try:
-                delta, n_gmres, lin_ok = solve_linear(disc, st, x, r_tau, diag_aug, resid, s, pc)
+                delta, n_gmres, lin_ok, lin_ratio = solve_linear(
+                    disc, st, x, r_tau, diag_aug, resid, s, pc
+                )
             except (RuntimeError, ValueError) as exc:
                 failure = f"lu_failed: {exc}"
                 break
             n_gmres_total += n_gmres
             if not np.all(np.isfinite(delta)):
                 failure = "gmres_breakdown"
+                break
+            if s.reject_lin_ratio > 0.0 and not (lin_ratio <= s.reject_lin_ratio):
+                # 線形解が実質失敗（真の残差比が閾値超）: 修正量は捨てて CFL を下げ、同じ場からやり直す
+                n_iter += 1
+                x = x_prev
+                cfl = float(cfl * s.ser_shrink)
+                emit(
+                    f"[nsb] it={n_iter} linear solve failed (gmres={n_gmres}, "
+                    f"|b-Ax|/|b|={lin_ratio:.2e}), rejected, cfl -> {cfl:.3g}"
+                )
+                lin_rejected = True
                 break
             x = x + delta
             n_iter += 1
@@ -342,16 +361,19 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
                 f"|R_steady|/|R_ref|={r_steady_new / r0:.3e} cfl={cfl:.3g} "
                 f"dtau=[{dtau.min():.2e},{dtau.max():.2e}] gmres={n_gmres} "
                 f"pc_age={pc.age} fact={pc.n_factorizations}"
-                f"{'' if lin_ok else ' (gmres not converged)'}"
+                f"{'' if lin_ok else f' (gmres not converged: {lin_ratio:.1e})'}"
             )
             if not np.isfinite(r_new):
                 break
         if failure:
             break
+        if lin_rejected:
+            cfl_hist.append(cfl)
+            continue
 
-        # ---- [SER] 残差比で CFL を更新 ----
-        ratio = r_norm / r_new if r_new > 0.0 and np.isfinite(r_new) else 0.1
-        cfl = float(min(s.cfl_max, cfl * float(np.clip(ratio, 0.1, s.ser_growth))))
+        # ---- [SER] 残差比で CFL を更新（乗法形: 減少率下限 ser_shrink、成長率上限 ser_growth）----
+        ratio = r_norm / r_new if r_new > 0.0 and np.isfinite(r_new) else s.ser_shrink
+        cfl = float(min(s.cfl_max, cfl * float(np.clip(ratio, s.ser_shrink, s.ser_growth))))
         cfl_hist.append(cfl)
         r_norm = r_new
     else:

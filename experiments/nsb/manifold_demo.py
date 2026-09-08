@@ -27,7 +27,6 @@ COND = 1e-4  # kg/(s·Pa): 圧力指定マニホールドのコンダクタン�
 
 def settings_for(inp) -> NSBSettings:  # noqa: ARG001 - 旧 API との互換（速度下限は比で与える）
     return NSBSettings(
-        cfl_init=0.5,
         velocity_floor_ratio=0.1,
         pseudo_time_in_residual=False,
         alpha_u=1.0,

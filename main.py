@@ -6,7 +6,7 @@
         2>&1 | tee experiments/nsb/logs/main-$(date +%s).log
 
 configs:
-  mine   : 局所 Δτ、速度下限なし、cfl_init=0.5、擬似時間項を残差にも含める（手元構成の推定）
+  mine   : 局所 Δτ、速度下限なし、cfl_init=0.25、擬似時間項を残差にも含める（手元構成の推定）
   mine_nores : mine から擬似時間項を残差から外す
   floor  : mine + 速度下限 0.1 U_in
   fixed  : 局所 Δτ、速度下限 0.1 U_in、擬似時間項は対角のみ（本リポジトリの基準）
@@ -36,7 +36,7 @@ def make_settings(config: str, u_in: float, max_iter: int) -> NSBSettings:
     fixed  : 局所 Δτ、対角補強のみ
     global : 大域 Δτ、対角補強のみ
     """
-    common = dict(cfl_init=0.5, newton_max_iter=max_iter)
+    common = dict(cfl_init=0.25, newton_max_iter=max_iter)
     if config == "dual":
         return NSBSettings(local_dtau=True, pseudo_time_in_residual=True, **common)
     if config == "fixed":

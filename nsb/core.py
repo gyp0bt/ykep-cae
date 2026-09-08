@@ -135,9 +135,17 @@ class NSBSettings:
     simple_ilu_drop_tol, simple_ilu_fill_factor : float
         運動量 ILU（scipy `spilu`）の drop_tol / fill_factor。零ピボットなら drop_tol 1/10・fill 2 倍で
         最大 3 回組み直す（1e-2 / 1.5 は 288×192 で零ピボット・発散した実績があり、1e-3 / 3.0 を既定にする）
-    cfl_init, cfl_max, ser_growth : float
+    cfl_init, cfl_max, ser_growth, ser_shrink : float
         擬似時間 CFL の初期値（Stokes 参照場に対する値。初期場が参照場より良ければ
-        cfl_init·|R_ref|/|R_init| から出発する）・上限・SER の 1 反復あたり成長率上限
+        cfl_init·|R_ref|/|R_init| から出発する）・上限・SER の 1 反復あたり成長率上限・
+        残差が増えたときの 1 反復あたり減少率下限（cfl *= clip(|R_prev|/|R_new|, ser_shrink, ser_growth)）。
+        cfl_init は 0.5 → 0.25 に下げた（status-41: 良い初期場から出発すると CFL 6 以上で始まり、
+        流れ場が形成途中の CFL 10〜40 で線形解が崩れて発散する走行があった）
+    reject_lin_ratio : float
+        線形解（再試行後）の真の残差比 |b − A δ|/|b| がこれを超えたら、その修正量を捨てて CFL を
+        ser_shrink 倍にし同じ場からやり直す（0 で無効）。JFNK の差分ノイズで「未収束」判定が常に立つ
+        （残差比 1e-3 程度）のとは別に、GMRES が実質失敗した（残差比 0.3 超）ごみステップだけを弾く。
+        これがないと uturn 144×96 U=1/2 で残差が 1 ステップで 1e9 倍に跳ねて回復しない（status-41）
     local_dtau : bool
         True: セル局所 Δτ、False: 局所 Δτ の全セル最小値を一律に使う（大域 Δτ は同じ CFL で
         減衰が約 10 倍強く高 CFL に寛容だが収束は遅い）
@@ -165,9 +173,11 @@ class NSBSettings:
     convection: str = "sou"
     venkat_k: float = 5.0
     linear_solver: str = "jfnk_simple"
-    cfl_init: float = 0.5
+    cfl_init: float = 0.25
     cfl_max: float = 1.0e6
     ser_growth: float = 2.0
+    ser_shrink: float = 0.1
+    reject_lin_ratio: float = 0.3
     local_dtau: bool = True
     velocity_floor_ratio: float = 0.1
     pseudo_time_in_residual: bool = True
