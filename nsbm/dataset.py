@@ -83,20 +83,36 @@ def save_shard(path: Path, samples: Sequence[Sample]) -> Path:
 def load_shards(directory: Path) -> list[Sample]:
     out: list[Sample] = []
     for path in sorted(Path(directory).glob("shard-*.npz")):
+        # NpzFile の z["x"] は呼ぶたびにシャード全体を展開する。サンプルごとに呼ぶと展開した全体配列が
+        # スライスのビューに掴まれて残り、1 件 37 MB × 件数で数十 GB に膨れる（2026-09-09 の事故）。
+        # 各キーを 1 回だけ読み、その配列のビューを配る（メモリはデータセット実サイズ ≈ 0.15 MB/件）。
         with np.load(path) as z:
-            for k in range(len(z["theta"])):
-                out.append(
-                    Sample(
-                        theta=Theta.from_dict(json.loads(str(z["theta"][k]))),
-                        x=z["x"][k],
-                        y=z["y"][k],
-                        n_iter=int(z["n_iter"][k]),
-                        converged=bool(z["converged"][k]),
-                        n_gmres_total=int(z["n_gmres_total"][k]),
-                        residual_ref=float(z["residual_ref"][k]),
-                        elapsed=float(z["elapsed"][k]),
-                    )
+            arr = {
+                k: z[k]
+                for k in (
+                    "x",
+                    "y",
+                    "theta",
+                    "n_iter",
+                    "converged",
+                    "n_gmres_total",
+                    "residual_ref",
+                    "elapsed",
                 )
+            }
+        for k in range(len(arr["theta"])):
+            out.append(
+                Sample(
+                    theta=Theta.from_dict(json.loads(str(arr["theta"][k]))),
+                    x=arr["x"][k],
+                    y=arr["y"][k],
+                    n_iter=int(arr["n_iter"][k]),
+                    converged=bool(arr["converged"][k]),
+                    n_gmres_total=int(arr["n_gmres_total"][k]),
+                    residual_ref=float(arr["residual_ref"][k]),
+                    elapsed=float(arr["elapsed"][k]),
+                )
+            )
     return out
 
 

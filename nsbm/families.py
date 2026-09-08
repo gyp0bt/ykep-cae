@@ -126,7 +126,17 @@ def _sample_ports(rng: np.random.Generator, walls: tuple[str, ...]) -> tuple[Por
         outlet = _sample_port(rng, walls)
         if not _ports_overlap(inlet, outlet):
             return inlet, outlet
-    raise RuntimeError("inlet/outlet が重ならない配置を 20 回で見つけられませんでした")
+    # 20 回で引けない（同じ壁に長い区間 2 つ）場合は構成的に置く: inlet の残り側の長い方に outlet を詰める
+    wall_len = WALL_LENGTH[inlet.wall]
+    length = float(rng.uniform(*PORT_LENGTH_RANGE))
+    before, after = inlet.s0, wall_len - inlet.s1
+    if max(before, after) < length:
+        length = max(before, after)
+    if after >= before:
+        s0 = float(rng.uniform(inlet.s1, wall_len - length))
+    else:
+        s0 = float(rng.uniform(0.0, inlet.s0 - length))
+    return inlet, Port(inlet.wall, s0, s0 + length)
 
 
 # ---------------------------------------------------------------- θ のサンプル

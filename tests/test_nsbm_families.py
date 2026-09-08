@@ -76,3 +76,14 @@ def test_build_input_solves():
     assert inp.nx == 72 and inp.ny == 48
     res = solve_steady(inp, log=None)
     assert res.converged
+
+
+def test_sample_ports_fallback_never_raises_on_one_wall():
+    """west 壁だけ（uturn）で 500 シード引いても例外にならず、重ならない."""
+    from nsbm.families import _sample_ports
+
+    for seed in range(500):
+        rng = np.random.default_rng([seed, 0])
+        a, b = _sample_ports(rng, ("west",))
+        assert a.s1 <= b.s0 or b.s1 <= a.s0
+        assert 0 <= a.s0 and a.s1 <= 0.4 and 0 <= b.s0 and b.s1 <= 0.4
