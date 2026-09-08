@@ -52,6 +52,7 @@ class UNet(nn.Module):
         self.dec = nn.ModuleList()
         for w_skip, w_up in zip(widths[-2::-1], widths[:0:-1], strict=True):
             self.dec.append(Block(w_up + w_skip, w_skip))
+        self.in_ch = in_ch
         self.head = nn.Conv2d(widths[0], out_ch, 1)
         self.cfl_head = nn.Sequential(
             nn.Linear(widths[-1], widths[-1] // 2), nn.GELU(), nn.Linear(widths[-1] // 2, 1)

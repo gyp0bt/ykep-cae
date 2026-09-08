@@ -27,6 +27,7 @@ from torch import Tensor
 
 from nsbm.dataset import Sample
 from nsbm.features import p_ref
+from nsbm.floor import floor_input, floor_loss, floor_predict
 from nsbm.model import UNet
 from nsbm.residual_loss import ResidualLossPool, straight_through
 
@@ -114,7 +115,7 @@ class TrainResult:
 def load_model(path: Path) -> UNet:
     """best.pt を読む。cfl ヘッドの無い旧チェックポイント（unet-a）はヘッドをゼロ初期化（cfl_init=0.25）のまま読む."""
     ck = torch.load(path, map_location="cpu", weights_only=False)
-    net = UNet(widths=tuple(ck["widths"]))
+    net = UNet(in_ch=int(ck.get("in_ch", 8)), widths=tuple(ck["widths"]))
     missing, unexpected = net.load_state_dict(ck["state_dict"], strict=False)
     bad = [k for k in missing if not k.startswith("cfl_head.")] + list(unexpected)
     if bad:
@@ -129,6 +130,31 @@ def _sample_meta(samples: Sequence[Sample], idx: Sequence[int]) -> dict[str, Any
         "p_ref": torch.tensor([p_ref(samples[i].theta) for i in idx], dtype=torch.float32),
         "r_ref": np.array([samples[i].residual_ref for i in idx], dtype=float),
     }
+
+
+def _floor_tensors(
+    samples: Sequence[Sample], idx: Sequence[int], floor: dict[int, np.ndarray]
+) -> dict[str, Tensor]:
+    xs, ss, ms, ys = [], [], [], []
+    for i in idx:
+        s = samples[i]
+        x_ext, sc, open_mask = floor_input(s.x, floor[s.theta.seed])
+        xs.append(x_ext)
+        ss.append(sc)
+        ms.append(open_mask[None])
+        ys.append(floor[s.theta.seed])
+    return {
+        "x": torch.from_numpy(np.stack(xs)),
+        "s": torch.from_numpy(np.stack(ss)),
+        "open": torch.from_numpy(np.stack(ms)),
+        "ys": torch.from_numpy(np.stack(ys)),
+    }
+
+
+def _predict_floor(net: UNet, xb: Tensor, fl: dict[str, Tensor], b) -> tuple[Tensor, Tensor]:
+    """床モードの予測: (y_pred 正規化単位, log cfl)."""
+    c, logcfl = net(xb)
+    return floor_predict(fl["ys"][b], fl["s"][b], c, fl["open"][b]), logcfl
 
 
 def _residual_term(
@@ -179,6 +205,7 @@ def train(
     res_frac: float = 1.0,
     res_cfl_gain: float = 1.0,
     grad_clip: float = 1.0,
+    floor: dict[int, np.ndarray] | None = None,
     log: LogFn | None = print,
 ) -> TrainResult:
     out_dir = Path(out_dir)
@@ -192,7 +219,19 @@ def train(
     x_va, y_va = to_tensors(samples, split["val"])
     meta_tr = _sample_meta(samples, split["train"])
     meta_va = _sample_meta(samples, split["val"])
-    net = load_model(init_from).train() if init_from is not None else UNet(widths=widths)
+    fl_tr = fl_va = None
+    if floor is not None:  # 床モード: 入力 11ch、予測 y = y_S + s·c、損失は開きセルの (Δ/s)²
+        fl_tr = _floor_tensors(samples, split["train"], floor)
+        fl_va = _floor_tensors(samples, split["val"], floor)
+        x_tr, x_va = fl_tr["x"], fl_va["x"]
+    in_ch = int(x_tr.shape[1])
+    if init_from is not None:
+        net = load_model(init_from).train()
+    else:
+        net = UNet(in_ch=in_ch, widths=widths)
+        if floor is not None:  # 出発点を床（c = 0）にする
+            torch.nn.init.zeros_(net.head.weight)
+            torch.nn.init.zeros_(net.head.bias)
     widths = net.widths
     opt = torch.optim.AdamW(net.parameters(), lr=lr, weight_decay=weight_decay)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
@@ -207,10 +246,18 @@ def train(
     def val_pass() -> tuple[float, float, dict[str, float]]:
         net.eval()
         mse_sum, res_vals, cfls, fails = 0.0, [], [], 0
+        fl_sum = 0.0
         with torch.no_grad():
             for k in range(0, len(x_va), 128):
                 xb, yb = x_va[k : k + 128], y_va[k : k + 128]
-                yhat, logcfl = net(xb)
+                if fl_va is not None:
+                    bb = torch.arange(k, min(k + 128, len(x_va)))
+                    yhat, logcfl = _predict_floor(net, xb, fl_va, bb)
+                    fl_sum += floor_loss(yhat, yb, fl_va["s"][bb], fl_va["open"][bb]).item() * len(
+                        bb
+                    )
+                else:
+                    yhat, logcfl = net(xb)
                 mse_sum += torch.nn.functional.mse_loss(yhat, yb, reduction="sum").item()
                 cfls += torch.exp(logcfl).tolist()
                 if pool is not None:
@@ -219,13 +266,14 @@ def train(
                         for kk, v in meta_va.items()
                     }
                     _, outs = _residual_term(
-                        pool, xb, yhat, logcfl, sub, range(len(xb)), with_grad=False
+                        pool, xb[:, :8], yhat, logcfl, sub, range(len(xb)), with_grad=False
                     )
                     res_vals += [o["loss"] for o in outs if np.isfinite(o["loss"])]
                     fails += sum(not np.isfinite(o["loss"]) for o in outs)
         mse = mse_sum / y_va.numel()
         res = float(np.mean(res_vals)) if res_vals else 0.0
         info = {
+            "floor_loss": fl_sum / len(x_va),
             "cfl_median": float(np.median(cfls)),
             "cfl_min": float(np.min(cfls)),
             "cfl_max": float(np.max(cfls)),
@@ -242,9 +290,14 @@ def train(
             for k in range(0, len(perm), batch):
                 b = perm[k : k + batch]
                 xb, yb = x_tr[b], y_tr[b]
-                yhat, logcfl = net(xb)
-                mse = torch.nn.functional.mse_loss(yhat, yb)
-                loss = mse
+                if fl_tr is not None:
+                    yhat, logcfl = _predict_floor(net, xb, fl_tr, b)
+                    mse = torch.nn.functional.mse_loss(yhat, yb)  # 記録用（unet-a と同じ単位）
+                    loss = floor_loss(yhat, yb, fl_tr["s"][b], fl_tr["open"][b])
+                else:
+                    yhat, logcfl = net(xb)
+                    mse = torch.nn.functional.mse_loss(yhat, yb)
+                    loss = mse
                 if div_weight > 0:
                     loss = loss + div_weight * divergence_loss(xb, yhat)
                 if pool is not None:
@@ -255,7 +308,14 @@ def train(
                         for kk, v in meta_tr.items()
                     }
                     res_loss, outs = _residual_term(
-                        pool, xb, yhat, logcfl, sub, sel, with_grad=True, cfl_gain=res_cfl_gain
+                        pool,
+                        xb[:, :8],
+                        yhat,
+                        logcfl,
+                        sub,
+                        sel,
+                        with_grad=True,
+                        cfl_gain=res_cfl_gain,
                     )
                     if k == 0:  # 最初のバッチで両項の勾配ノルムを測る（res_weight の目安）
                         g1 = (
@@ -288,7 +348,7 @@ def train(
             tr_mse = tot_mse / len(perm)
             tr_res = tot_res / max(1, n_res)
             va_mse, va_res, info = val_pass()
-            va_obj = va_mse + res_weight * va_res
+            va_obj = (info["floor_loss"] if fl_va is not None else va_mse) + res_weight * va_res
             history.append(
                 (
                     ep,
@@ -315,12 +375,15 @@ def train(
                         "res_steps": res_steps,
                         "res_transform": res_transform,
                         "res_cfl_gain": res_cfl_gain,
+                        "in_ch": in_ch,
+                        "floor": floor is not None,
                     },
                     best_path,
                 )
             if log is not None:
                 log(
-                    f"epoch {ep:4d} train mse {tr_mse:.3e} res {tr_res:.3f} | val mse {va_mse:.3e} res {va_res:.3f} "
+                    f"epoch {ep:4d} train mse {tr_mse:.3e} res {tr_res:.3f} | val mse {va_mse:.3e} "
+                    f"floor {info['floor_loss']:.3e} res {va_res:.3f} "
                     f"obj {va_obj:.3e} best {best_val:.3e}@{best_epoch} | cfl med {info['cfl_median']:.3g} "
                     f"[{info['cfl_min']:.3g},{info['cfl_max']:.3g}] fail {info['res_fail']:.0f} "
                     f"| |g|head mse {g_mse_norm:.2e} res {g_res_norm:.2e} lr {sched.get_last_lr()[0]:.2e} "

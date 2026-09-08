@@ -55,6 +55,11 @@ def main() -> None:
         help="log cfl_init の勾配に掛ける倍率（場の勾配と 2 桁違う）",
     )
     ap.add_argument(
+        "--floor",
+        action="store_true",
+        help="床モード: data/stokes.npz の Stokes 解を床にして補正量を学ぶ（入力 11ch、per-instance スケール、開きセル損失）",
+    )
+    ap.add_argument(
         "--split-from",
         type=Path,
         default=None,
@@ -77,6 +82,12 @@ def main() -> None:
     else:
         split = split_by_family(samples, args.seed)
     print({k: len(v) for k, v in split.items()}, flush=True)
+    floor = None
+    if args.floor:
+        from nsbm.floor import load_stokes
+
+        floor = load_stokes(args.data / "stokes.npz")
+        print(f"floor: {len(floor)} Stokes fields from {args.data / 'stokes.npz'}", flush=True)
     res = train(
         samples,
         args.out,
@@ -95,6 +106,7 @@ def main() -> None:
         res_workers=args.res_workers,
         res_frac=args.res_frac,
         res_cfl_gain=args.res_cfl_gain,
+        floor=floor,
         log=lambda m: print(m, flush=True),
     )
     print(f"best epoch {res.best_epoch} val {res.best_val:.3e} -> {res.best_path}", flush=True)

@@ -63,10 +63,26 @@ def main() -> None:
     hard = [k for k, smp in enumerate(samples) if not smp.converged]
     split["hard"] = hard[: args.hard]
     net = load_model(args.run / "best.pt")
+    ck = torch.load(args.run / "best.pt", map_location="cpu", weights_only=False)
+    floor = None
+    if ck.get("floor"):
+        from nsbm.floor import floor_input, floor_predict, load_stokes
+
+        floor = load_stokes(args.data / "stokes.npz")
 
     def predict(s):
         with torch.no_grad():
-            y, logcfl = net(torch.from_numpy(s.x[None]))
+            if floor is None:
+                y, logcfl = net(torch.from_numpy(s.x[None]))
+            else:
+                x_ext, sc, open_mask = floor_input(s.x, floor[s.theta.seed])
+                c, logcfl = net(torch.from_numpy(x_ext[None]))
+                y = floor_predict(
+                    torch.from_numpy(floor[s.theta.seed][None]),
+                    torch.from_numpy(sc[None]),
+                    c,
+                    torch.from_numpy(open_mask[None, None]),
+                )
         return y.numpy()[0], float(torch.exp(logcfl)[0])
 
     # 場の精度（テスト集合の正解は収束解）: R² と最大値・最小値の誤差
@@ -75,6 +91,9 @@ def main() -> None:
     y_pred = np.stack([p[0] for p in preds])
     cfl_pred = np.array([p[1] for p in preds])
     metrics = field_metrics(y_pred, y_true)
+    if floor is not None:
+        y_floor = np.stack([floor[samples[i].theta.seed] for i in split["test"]])
+        metrics["stokes_floor"] = field_metrics(y_floor, y_true)
     metrics["cfl_pred"] = {
         "median": float(np.median(cfl_pred)),
         "p10": float(np.percentile(cfl_pred, 10)),

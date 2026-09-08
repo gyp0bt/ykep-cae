@@ -195,3 +195,68 @@ def test_load_model_accepts_checkpoint_without_cfl_head(tmp_path):
     )
     with pytest.raises(KeyError):
         load_model(tmp_path / "bad.pt")
+
+
+def test_train_floor_smoke(tmp_path):
+    """床モード: 学習前の予測は床（Stokes 解）に一致し、学習後も best.pt に in_ch=11 / floor=True が残る."""
+    from nsbm.dataset import Sample
+    from nsbm.families import sample_theta
+    from nsbm.floor import floor_input, floor_predict, instance_scale
+    from nsbm.train import load_model, train
+
+    rng = np.random.default_rng(0)
+    samples, floor = [], {}
+    for s in range(12):
+        th = sample_theta(s)
+        x = rng.normal(size=(8, 72, 48)).astype(np.float32)
+        x[0] = np.where(rng.random((72, 48)) < 0.2, np.log(1.0 / 100.0), 0.0)  # 2 割を閉塞に
+        ys = rng.normal(size=(3, 72, 48)).astype(np.float32)
+        samples.append(
+            Sample(
+                theta=th,
+                x=x,
+                y=(ys + 0.1 * rng.normal(size=ys.shape)).astype(np.float32),
+                n_iter=5,
+                converged=True,
+                n_gmres_total=1,
+                residual_ref=1.0,
+                elapsed=0.0,
+            )
+        )
+        floor[th.seed] = ys
+    split = {"train": list(range(8)), "val": list(range(8, 10)), "test": list(range(10, 12))}
+    # 学習前: ゼロ初期化ヘッド → y = 床（閉塞セルの u,v は 0）
+    from nsbm.model import UNet
+
+    net = UNet(in_ch=11, widths=(8, 16, 32, 64)).eval()
+    torch.nn.init.zeros_(net.head.weight)
+    torch.nn.init.zeros_(net.head.bias)
+    x_ext, sc, open_mask = floor_input(samples[0].x, floor[samples[0].theta.seed])
+    assert x_ext.shape == (11, 72, 48) and sc.shape == (3,)
+    assert np.allclose(sc, instance_scale(floor[samples[0].theta.seed], open_mask))
+    with torch.no_grad():
+        c, _ = net(torch.from_numpy(x_ext[None]))
+        y = floor_predict(
+            torch.from_numpy(floor[samples[0].theta.seed][None]),
+            torch.from_numpy(sc[None]),
+            c,
+            torch.from_numpy(open_mask[None, None]),
+        ).numpy()[0]
+    ys0 = floor[samples[0].theta.seed]
+    assert np.allclose(y[2], ys0[2]) and np.allclose(y[0][open_mask], ys0[0][open_mask])
+    assert np.all(y[0][~open_mask] == 0.0)
+    res = train(
+        samples,
+        tmp_path,
+        split=split,
+        epochs=2,
+        batch=4,
+        widths=(8, 16, 32, 64),
+        threads=2,
+        floor=floor,
+        log=None,
+    )
+    ck = torch.load(res.best_path, map_location="cpu", weights_only=False)
+    assert ck["in_ch"] == 11 and ck["floor"] is True
+    net2 = load_model(res.best_path)
+    assert net2.in_ch == 11
