@@ -1,0 +1,44 @@
+memcap: unit=memcap-diag_blow.py_-77611.scope MemoryMax=16G MemorySwapMax=0 :: python diag_blow.py
+[nsb] it=0 init=stokes |R|=4.4725e+02 rel=1.000e+00 cfl=0.25
+[nsb] it=1 |R_tau|=8.0371e+02 rel=1.797e+00 |R_steady|/|R_ref|=3.518e+00 cfl=0.25 dtau=[1.49e-04,5.21e-03] gmres=34 pc_age=1 fact=2 (gmres not converged: 1.2e-03)
+[nsb] it=2 |R_tau|=4.2594e+02 rel=9.524e-01 |R_steady|/|R_ref|=1.898e+00 cfl=0.139 dtau=[8.39e-05,2.90e-03] gmres=11 pc_age=1 fact=3
+[nsb] it=3 |R_tau|=2.7675e+02 rel=6.188e-01 |R_steady|/|R_ref|=1.236e+00 cfl=0.263 dtau=[1.59e-04,5.47e-03] gmres=7 pc_age=2 fact=3
+[nsb] it=4 |R_tau|=1.7530e+02 rel=3.919e-01 |R_steady|/|R_ref|=7.819e-01 cfl=0.404 dtau=[2.48e-04,8.42e-03] gmres=11 pc_age=1 fact=4
+[nsb] it=5 |R_tau|=1.0718e+02 rel=2.397e-01 |R_steady|/|R_ref|=4.770e-01 cfl=0.638 dtau=[3.91e-04,1.33e-02] gmres=8 pc_age=2 fact=4
+[nsb] it=6 |R_tau|=6.3808e+01 rel=1.427e-01 |R_steady|/|R_ref|=2.837e-01 cfl=1.04 dtau=[6.41e-04,2.17e-02] gmres=10 pc_age=1 fact=5
+[nsb] it=7 |R_tau|=3.8821e+01 rel=8.680e-02 |R_steady|/|R_ref|=1.710e-01 cfl=1.75 dtau=[1.09e-03,3.65e-02] gmres=15 pc_age=2 fact=5
+[nsb] it=8 |R_tau|=2.3231e+01 rel=5.194e-02 |R_steady|/|R_ref|=1.024e-01 cfl=2.88 dtau=[1.83e-03,6.00e-02] gmres=23 pc_age=1 fact=6
+[nsb] it=9 |R_tau|=1.7031e+01 rel=3.808e-02 |R_steady|/|R_ref|=6.818e-02 cfl=4.81 dtau=[3.13e-03,1.00e-01] gmres=25 pc_age=2 fact=6
+[nsb] it=10 |R_tau|=9.0183e+01 rel=2.016e-01 |R_steady|/|R_ref|=2.065e-01 cfl=6.57 dtau=[4.53e-03,1.37e-01] gmres=57 pc_age=1 fact=7
+[nsb] it=11 |R_tau|=3.2121e+01 rel=7.182e-02 |R_steady|/|R_ref|=1.288e-01 cfl=1.24 dtau=[8.98e-04,2.58e-02] gmres=16 pc_age=1 fact=8
+[nsb] it=12 |R_tau|=1.6966e+01 rel=3.793e-02 |R_steady|/|R_ref|=7.244e-02 cfl=2.48 dtau=[1.83e-03,5.17e-02] gmres=17 pc_age=1 fact=9
+[nsb] it=13 |R_tau|=1.3501e+01 rel=3.019e-02 |R_steady|/|R_ref|=5.258e-02 cfl=4.69 dtau=[3.51e-03,9.78e-02] gmres=22 pc_age=2 fact=9
+[nsb] it=14 |R_tau|=1.2044e+01 rel=2.693e-02 |R_steady|/|R_ref|=4.605e-02 cfl=5.9 dtau=[4.44e-03,1.23e-01] gmres=96 pc_age=1 fact=10
+[nsb] it=15 |R_tau|=1.4024e+01 rel=3.136e-02 |R_steady|/|R_ref|=4.502e-02 cfl=6.61 dtau=[5.16e-03,1.38e-01] gmres=62 pc_age=1 fact=11
+[nsb] it=16 |R_tau|=9.5066e+00 rel=2.126e-02 |R_steady|/|R_ref|=3.781e-02 cfl=5.68 dtau=[4.40e-03,1.18e-01] gmres=40 pc_age=1 fact=12
+[nsb] it=17 |R_tau|=1.7033e+01 rel=3.808e-02 |R_steady|/|R_ref|=4.521e-02 cfl=8.38 dtau=[6.78e-03,1.75e-01] gmres=73 pc_age=1 fact=13
+[nsb] it=18 |R_tau|=9.5180e+00 rel=2.128e-02 |R_steady|/|R_ref|=3.491e-02 cfl=4.68 dtau=[3.87e-03,9.74e-02] gmres=34 pc_age=1 fact=14
+[nsb] it=19 |R_tau|=8.7015e+00 rel=1.946e-02 |R_steady|/|R_ref|=3.025e-02 cfl=8.37 dtau=[6.91e-03,1.74e-01] gmres=61 pc_age=1 fact=15
+[nsb] it=20 |R_tau|=1.0639e+01 rel=2.379e-02 |R_steady|/|R_ref|=3.027e-02 cfl=9.15 dtau=[7.68e-03,1.91e-01] gmres=72 pc_age=1 fact=16
+[nsb] it=21 |R_tau|=6.0377e+00 rel=1.350e-02 |R_steady|/|R_ref|=2.300e-02 cfl=7.49 dtau=[6.38e-03,1.56e-01] gmres=47 pc_age=1 fact=17
+[nsb] it=22 |R_tau|=8.6802e+00 rel=1.941e-02 |R_steady|/|R_ref|=2.450e-02 cfl=13.2 dtau=[1.13e-02,2.75e-01] gmres=112 pc_age=1 fact=18
+[nsb] it=23 |R_tau|=5.8942e+00 rel=1.318e-02 |R_steady|/|R_ref|=1.957e-02 cfl=9.18 dtau=[7.86e-03,1.91e-01] gmres=59 pc_age=1 fact=19
+[nsb] it=24 |R_tau|=7.3196e+00 rel=1.637e-02 |R_steady|/|R_ref|=2.015e-02 cfl=13.5 dtau=[1.16e-02,2.82e-01] gmres=91 pc_age=1 fact=20
+[nsb] it=25 |R_tau|=7.4498e+00 rel=1.666e-02 |R_steady|/|R_ref|=1.958e-02 cfl=10.9 dtau=[9.30e-03,2.27e-01] gmres=77 pc_age=1 fact=21
+[nsb] it=26 |R_tau|=4.3591e+00 rel=9.747e-03 |R_steady|/|R_ref|=1.399e-02 cfl=10.7 dtau=[9.13e-03,2.23e-01] gmres=161 pc_age=1 fact=22
+[nsb] it=27 |R_tau|=6.4649e+00 rel=1.445e-02 |R_steady|/|R_ref|=1.612e-02 cfl=18.3 dtau=[1.56e-02,3.81e-01] gmres=163 pc_age=1 fact=23 (gmres not converged: 1.0e-03)
+[nsb] it=28 |R_tau|=4.4078e+00 rel=9.855e-03 |R_steady|/|R_ref|=1.174e-02 cfl=12.3 dtau=[1.05e-02,2.57e-01] gmres=200 pc_age=1 fact=24 (gmres not converged: 4.5e-03)
+[nsb] it=29 linear solve failed (gmres=200, |b-Ax|/|b|=4.96e-01), rejected, cfl -> 1.81
+[nsb] it=30 |R_tau|=1.9586e+00 rel=4.379e-03 |R_steady|/|R_ref|=8.317e-03 cfl=1.81 dtau=[1.53e-03,3.76e-02] gmres=14 pc_age=1 fact=26
+[nsb] it=31 |R_tau|=1.9419e+00 rel=4.342e-03 |R_steady|/|R_ref|=7.611e-03 cfl=3.61 dtau=[3.06e-03,7.53e-02] gmres=75 pc_age=1 fact=27
+[nsb] it=32 |R_tau|=1.6867e+00 rel=3.771e-03 |R_steady|/|R_ref|=7.025e-03 cfl=3.65 dtau=[3.09e-03,7.59e-02] gmres=26 pc_age=1 fact=28
+[nsb] it=33 |R_tau|=1.4645e+00 rel=3.275e-03 |R_steady|/|R_ref|=6.426e-03 cfl=4.2 dtau=[3.56e-03,8.74e-02] gmres=25 pc_age=2 fact=28
+[nsb] it=34 |R_tau|=1.3267e+00 rel=2.966e-03 |R_steady|/|R_ref|=5.858e-03 cfl=4.83 dtau=[4.09e-03,1.01e-01] gmres=27 pc_age=3 fact=28
+[nsb] it=35 |R_tau|=1.1933e+00 rel=2.668e-03 |R_steady|/|R_ref|=5.265e-03 cfl=5.34 dtau=[4.52e-03,1.11e-01] gmres=28 pc_age=4 fact=28
+[nsb] it=36 |R_tau|=1.0513e+00 rel=2.351e-03 |R_steady|/|R_ref|=4.660e-03 cfl=5.93 dtau=[5.02e-03,1.24e-01] gmres=31 pc_age=1 fact=29
+[nsb] it=37 |R_tau|=9.2495e-01 rel=2.068e-03 |R_steady|/|R_ref|=4.061e-03 cfl=6.73 dtau=[5.70e-03,1.40e-01] gmres=47 pc_age=1 fact=30
+[nsb] it=38 |R_tau|=7.9000e-01 rel=1.766e-03 |R_steady|/|R_ref|=3.460e-03 cfl=7.65 dtau=[6.47e-03,1.59e-01] gmres=61 pc_age=1 fact=31
+[nsb] it=39 |R_tau|=6.5449e-01 rel=1.463e-03 |R_steady|/|R_ref|=2.864e-03 cfl=8.96 dtau=[7.58e-03,1.87e-01] gmres=61 pc_age=1 fact=32
+[nsb] it=40 |R_tau|=5.0779e-01 rel=1.135e-03 |R_steady|/|R_ref|=2.259e-03 cfl=10.8 dtau=[9.15e-03,2.25e-01] gmres=72 pc_age=1 fact=33
+[nsb] done converged=False reason='max_iter' it=40 m_in=2.0000e+02 m_out=2.0000e+02 factorizations=33 gmres_total=2293 elapsed=13.5s
+False max_iter

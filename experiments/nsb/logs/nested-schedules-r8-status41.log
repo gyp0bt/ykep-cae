@@ -1,0 +1,58 @@
+memcap: unit=memcap-nest_a.py_-80571.scope MemoryMax=16G MemorySwapMax=0 :: python nest_a.py 8 stokes bil:4:1e-4 bil:2,4:1e-4 bil:1,2,4:1e-4 inj:4:1e-4 bil:4:1e-6 bil:1,2,4:1e-2
+settings: {"cfl_init":0.25,"reject_lin_ratio":0.3}
+=== fine r=8 schedule stokes ===
+  lvl r=8 tol=1e-06 init rel=1.00e+00 cfl=0.25 -> it=66 gmres=3871 fact=50 309.9s conv=True
+    TOTAL 309.9s  (coarse 0.0s + fine 309.9s)  fine it=66 gmres=3871  |du|/|u| vs stokes = 0.0e+00
+    fine cfl: 0.5 0.597 0.706 0.792 0.977 1.18 1.44 1.68 1.75 0.594 0.38 0.718 0.953 1.51
+    fine rel: 1.0e+00 4.7e-01 3.9e-01 3.3e-01 2.9e-01 2.4e-01 2.0e-01 1.6e-01 1.4e-01 1.3e-01 3.9e-01 6.1e-01 3.2e-01 2.4e-01
+=== fine r=8 schedule bil:4:1e-4 ===
+  lvl r=4 tol=1e-04 init rel=1.00e+00 cfl=0.25 -> it=28 gmres=996 fact=19 20.4s conv=True
+  lvl r=8 tol=1e-06 init rel=4.48e-02 cfl=5.58 -> it=30 gmres=4243 fact=31 295.3s conv=True
+    TOTAL 315.6s  (coarse 20.4s + fine 295.3s)  fine it=30 gmres=4243  |du|/|u| vs stokes = 5.9e-05
+    fine cfl: 11.2 21.3 42.7 28.7 57.3 90.2 84.3 78.6 73 96.9 180 361 203 114
+    fine rel: 4.5e-02 1.7e-02 8.8e-03 3.4e-03 5.0e-03 3.1e-04 1.9e-04 2.1e-04 2.2e-04 2.4e-04 1.8e-04 9.7e-05 1.8e-05 3.2e-05
+=== fine r=8 schedule bil:2,4:1e-4 ===
+  lvl r=2 tol=1e-04 init rel=1.00e+00 cfl=0.25 -> it=20 gmres=369 fact=11 2.9s conv=True
+  lvl r=4 tol=1e-04 init rel=8.37e-02 cfl=2.99 -> it=10 gmres=592 fact=11 11.8s conv=True
+  lvl r=8 tol=1e-06 init rel=4.48e-02 cfl=5.58 -> it=25 gmres=2736 fact=26 198.0s conv=True
+    TOTAL 212.7s  (coarse 14.7s + fine 198.0s)  fine it=25 gmres=2736  |du|/|u| vs stokes = 6.9e-05
+    fine cfl: 11.2 21.4 42.7 28.7 57.4 54.3 56.7 113 32.9 65.8 18.7 37.5 16.1 32.2
+    fine rel: 4.5e-02 1.7e-02 8.8e-03 3.4e-03 5.0e-03 2.3e-04 2.4e-04 2.3e-04 8.2e-05 2.8e-04 5.3e-05 1.9e-04 2.7e-05 6.3e-05
+=== fine r=8 schedule bil:1,2,4:1e-4 ===
+  lvl r=1 tol=1e-04 init rel=1.00e+00 cfl=0.25 -> it=15 gmres=201 fact=10 0.4s conv=True
+  lvl r=2 tol=1e-04 init rel=1.68e-01 cfl=1.49 -> it=8 gmres=188 fact=6 1.1s conv=True
+  lvl r=4 tol=1e-04 init rel=8.37e-02 cfl=2.99 -> it=10 gmres=590 fact=11 11.8s conv=True
+  lvl r=8 tol=1e-06 init rel=4.48e-02 cfl=5.58 -> it=22 gmres=2510 fact=23 181.3s conv=True
+    TOTAL 194.6s  (coarse 13.3s + fine 181.3s)  fine it=22 gmres=2510  |du|/|u| vs stokes = 1.1e-04
+    fine cfl: 11.2 21.4 42.7 28.7 57.4 53.2 82.5 165 44.4 88.8 28.9 57.8 116 11.6
+    fine rel: 4.5e-02 1.7e-02 8.8e-03 3.4e-03 5.0e-03 2.8e-04 3.0e-04 1.9e-04 7.0e-05 2.6e-04 8.8e-05 2.7e-04 5.9e-05 2.0e-05
+=== fine r=8 schedule inj:4:1e-4 ===
+  lvl r=4 tol=1e-04 init rel=1.00e+00 cfl=0.25 -> it=28 gmres=996 fact=19 20.2s conv=True
+  lvl r=8 tol=1e-06 init rel=3.22e-01 cfl=0.775 -> it=27 gmres=2901 fact=28 210.7s conv=True
+    TOTAL 230.9s  (coarse 20.2s + fine 210.7s)  fine it=27 gmres=2901  |du|/|u| vs stokes = 2.7e-04
+    fine cfl: 1.55 3.1 5.29 10.6 17.4 15.1 8.17 12.1 24.1 31.5 25.9 43.2 40.9 81.9
+    fine rel: 3.2e-01 3.6e-02 1.7e-02 9.9e-03 3.3e-03 2.0e-03 2.3e-03 4.2e-03 2.9e-03 2.8e-04 2.1e-04 2.6e-04 1.5e-04 1.6e-04
+=== fine r=8 schedule bil:4:1e-6 ===
+  lvl r=4 tol=1e-06 init rel=1.00e+00 cfl=0.25 -> it=43 gmres=2129 fact=33 41.4s conv=True
+  lvl r=8 tol=1e-06 init rel=4.48e-02 cfl=5.58 -> it=20 gmres=2241 fact=21 161.9s conv=True
+    TOTAL 203.3s  (coarse 41.4s + fine 161.9s)  fine it=20 gmres=2241  |du|/|u| vs stokes = 8.2e-05
+    fine cfl: 11.2 21.3 42.7 28.8 57.7 53.8 58.8 53.6 107 98.9 198 35.6 71.2 7.12
+    fine rel: 4.5e-02 1.7e-02 8.8e-03 3.4e-03 5.0e-03 2.4e-04 2.5e-04 2.3e-04 2.5e-04 8.9e-05 9.7e-05 9.5e-06 5.3e-05 4.1e-06
+=== fine r=8 schedule bil:1,2,4:1e-2 ===
+  lvl r=1 tol=1e-02 init rel=1.00e+00 cfl=0.25 -> it=12 gmres=146 fact=7 0.3s conv=True
+  lvl r=2 tol=1e-02 init rel=1.71e-01 cfl=1.46 -> it=4 gmres=87 fact=4 0.6s conv=True
+  lvl r=4 tol=1e-02 init rel=8.40e-02 cfl=2.98 -> it=4 gmres=156 fact=5 3.6s conv=True
+  lvl r=8 tol=1e-06 init rel=4.49e-02 cfl=5.57 -> it=25 gmres=2518 fact=26 186.0s conv=True
+    TOTAL 190.4s  (coarse 4.4s + fine 186.0s)  fine it=25 gmres=2518  |du|/|u| vs stokes = 6.4e-05
+    fine cfl: 11.1 15.5 31 16.7 33.3 52.4 45.8 12.6 25.1 50.3 49.4 31.5 21.2 42.4
+    fine rel: 4.5e-02 1.7e-02 1.2e-02 5.3e-03 9.9e-03 3.8e-04 2.4e-04 2.7e-04 1.0e-03 1.4e-04 6.3e-05 6.5e-05 1.0e-04 1.5e-04
+
+==== summary fine r=8 ====
+schedule           total  coarse    fine fine_it  gmres  init_rel init_cfl       du
+stokes             309.9     0.0   309.9      66   3871  1.00e+00     0.25  0.0e+00
+bil:4:1e-4         315.6    20.4   295.3      30   4243  4.48e-02     5.58  5.9e-05
+bil:2,4:1e-4       212.7    14.7   198.0      25   2736  4.48e-02     5.58  6.9e-05
+bil:1,2,4:1e-4     194.6    13.3   181.3      22   2510  4.48e-02     5.58  1.1e-04
+inj:4:1e-4         230.9    20.2   210.7      27   2901  3.22e-01    0.775  2.7e-04
+bil:4:1e-6         203.3    41.4   161.9      20   2241  4.48e-02     5.58  8.2e-05
+bil:1,2,4:1e-2     190.4     4.4   186.0      25   2518  4.49e-02     5.57  6.4e-05

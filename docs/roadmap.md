@@ -178,8 +178,11 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] 20 コア実機で `experiments/nsb/bench_precond.py` を再計測（status-38 のコードで PARDISO 91.5 s / SIMPLE 73.8 s、比 1.24×。`precond_lag=4` を維持）— status-39
 - [x] nsb 高速化 第 2 段: 自作 FGMRES（`nsb/krylov.py`、scipy gmres の過剰解消・JFNK matvec の非線形性の同定）+ SA 階層の再利用 + V サイクル直呼び + 残差評価の numba 化（`nsb/fastres.py`）+ pyamg 乱数固定で決定化。288×192 が GMRES 1 反復 26.6 → 16.7 ms・組立 863 → 265 ms、総時間 73.8 s → 26〜43 s（Newton 経路差）— status-39
 - [x] nsb の制御則を一長一短の切替だけに絞る（静止場発進・lu/dc_simple・Jacobi・backtracking・下限なし・numpy 残差・SA 毎回構築を廃止）。参照場を Stokes 解に固定、SER を古典形で出発。粗格子解の注入で 288×192 が 36 → 16 Newton（2.2×）— status-40
-- [ ] 入れ子反復ドライバ（双一次補間、72×48 → 144×96 → 288×192）を nsb に正式に置く — status-40 TODO
-- [ ] 前処理適用（ILU 三角解 + V サイクル ≈ 10 ms × GMRES 45〜56 反復）の numba 化、SER の CFL 減少/成長の非対称と `precond_cfl_ratio` の同期の見直し（Newton 経路の敏感さ）— status-39 / 40 TODO
+- [x] 入れ子反復ドライバ `nsb.nested.solve_nested`（双一次 / 注入）。目安: 最粗格子 72×48 から 2 倍ずつ全段、各段 tol 1e-4（粗格子側の合計は細格子の 7〜10%）。細格子側の Newton は初期場の質で決まる下限（288×192: 13、576×384: 20〜30）があり段数では減らない。288×192: 44.5 → 18.5 s、576×384: 310 → 195 s — status-41
+- [ ] 576×384 で 1 Newton 反復あたり GMRES 100〜140（288×192 は 63）。運動量 ILU の規模依存で、細格子ほど入れ子の効きが鈍る（1.6×）— status-41 TODO
+- [x] SER 制御の掃引（成長率・減少率・cfl_init・cfl_max・前処理更新則・古典形目標則・GMRES 余力則）。`cfl_init` 0.5 → 0.25、線形解失敗ステップの棄却 `reject_lin_ratio=0.3` を安全規則として追加。uturn 144×96 U=1/2 の発散を解消 — status-41
+- [ ] uturn U=2 で GMRES が CFL 10〜18 で 160〜200 反復に膨れる（SIMPLE 型前処理が Brinkman 抗力の厚さ変化に弱い）。CFL の上限が線形ソルバーの余力で決まっており、前処理改善が次の律速 — status-41 TODO
+- [ ] 前処理適用（ILU 三角解 + V サイクル ≈ 10 ms × GMRES 45〜56 反復）の numba 化 — status-39 TODO
 - [ ] `dc_simple` + 小さな `gmres_maxiter` の固定サイクル外部反復（Fluent 型）— status-38 TODO（FGMRES は status-39 で実装済み）
 - [ ] 境界 inlet の位置・幅の連続化、冷却設計向け目的関数 — status-31 TODO
 - [ ] 熱ソルバー連携（流量場 → 熱伝達コンダクタンス → 上下プレート温度）

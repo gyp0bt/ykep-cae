@@ -131,3 +131,23 @@ class TestFGMRESNonlinearMatvec:
         assert np.linalg.norm(A @ x2 - b) <= 10 * noise * np.linalg.norm(
             b
         )  # 解の質は雑音の数倍以内
+
+
+class TestFGMRESInfoAPI:
+    def test_info_reports_final_true_residual_ratio(self):
+        A = _convection_diffusion()
+        b = np.ones(A.shape[0])
+        info: dict[str, float] = {}
+        x, _, ok = fgmres(lambda v: A @ v, b, rtol=1e-8, restart=60, maxiter=20, info=info)
+        assert ok
+        ratio = np.linalg.norm(b - A @ x) / np.linalg.norm(b)
+        assert info["resid_ratio"] == pytest.approx(ratio, rel=1e-6)
+        assert info["resid_ratio"] <= 1e-8
+
+    def test_info_when_not_converged(self):
+        A = _convection_diffusion()
+        b = np.ones(A.shape[0])
+        info: dict[str, float] = {}
+        _, _, ok = fgmres(lambda v: A @ v, b, rtol=1e-12, restart=2, maxiter=1, info=info)
+        assert not ok
+        assert info["resid_ratio"] > 1e-12

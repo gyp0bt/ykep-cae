@@ -39,6 +39,7 @@ def fgmres(
     x0: np.ndarray | None = None,
     callback: Callable[[float], None] | None = None,
     check_true_residual: bool = True,
+    info: dict[str, float] | None = None,
 ) -> tuple[np.ndarray, int, bool]:
     """A x = b を右前処理 FGMRES で解く。戻り値 (x, 反復数, 収束フラグ).
 
@@ -59,6 +60,9 @@ def fgmres(
     check_true_residual : bool
         True: Givens 推定が許容に届いたら真の残差 b − A x を計算して確認し、届いていなければ再出発する。
         False: Givens 推定を信じて止める（matvec が厳密に線形でない JFNK 用。matvec 1 回分も節約）
+    info : dict | None
+        与えると最後に評価した残差比 |b − A x| / |b| を "resid_ratio" に書き込む
+        （check_true_residual=False で Givens 推定のまま止めたときは推定値）
     """
     b = np.asarray(b, dtype=np.float64).reshape(-1)
     n = b.size
@@ -125,9 +129,13 @@ def fgmres(
             y = sla.solve_triangular(H[:k, :k], g[:k], lower=False, check_finite=False)
             x = x + Z[:k].T @ y
         if resid <= tol and not check_true_residual:
+            if info is not None:
+                info["resid_ratio"] = resid / bnorm
             return x, n_iter, True
         r = b - matvec(x)
         beta = float(np.linalg.norm(r))
+        if info is not None:
+            info["resid_ratio"] = beta / bnorm
         if beta <= tol:
             return x, n_iter, True
         if k == 0:

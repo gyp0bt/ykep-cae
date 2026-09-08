@@ -32,10 +32,16 @@ from nsb.data import (
     west_span,
 )
 from nsb.geo import make_case, make_flat_h, make_uturn_h, run_flat, run_uturn, uturn_bc_preset
+from nsb.nested import NestedLevel, NestedResult, prolong_bilinear, prolong_inject, solve_nested
 from nsb.precond import SimpleBlockPreconditioner
 from nsb.solver import solve_steady
 
 __all__ = [
+    "NestedLevel",
+    "NestedResult",
+    "prolong_bilinear",
+    "prolong_inject",
+    "solve_nested",
     "BC",
     "BoundaryKind",
     "BoundaryPatch",
