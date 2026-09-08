@@ -148,6 +148,7 @@ status-38 のコードを 20 コア機で取り直すと PARDISO 91.5 s / SIMPLE
 | `geo.py` | uturn / flat の厚さ場（inlet/outlet 位置に追従）、BC プリセット（速度 or 質量流量）、`run_uturn`, `run_flat`, `make_case` |
 | `../main.py` | パラメータスタディ（構成 × モデル × 細分化 × 流速） |
 | `adjoint.py` | 設計感度: 彩色 FD ヤコビアン `colored_fd_jacobian`、陰関数定理の VJP `ImplicitSolve`（forward / jacobian / vjp / gradient、転置系は PARDISO）、`Objective` |
+| `nested.py` | 入れ子反復: `prolong_inject` / `prolong_bilinear`（2× 補間）、`solve_nested`（粗い順に解いて次段の初期場にする） |
 | `theory.md` | 数理ノート: 支配方程式〜離散化〜Newton/擬似時間〜発散機構〜随伴感度を総和規約で記述 |
 
 ## `NSBSettings`（status-40 で一長一短の切替と数値パラメータだけに絞った）
@@ -166,13 +167,44 @@ SER は古典形 `CFL = cfl_init·|R_ref|/|R|` で出発するので、粗格子
 | `local_dtau` | True | 大域 Δτ は同じ CFL で減衰が約 10 倍強く高 CFL に寛容、収束は遅い |
 | `pseudo_time_in_residual` | True | dual-time 型（収束判定・SER が擬似時間項込み）か対角補強のみか。定常解は同じ |
 | `velocity_floor_ratio` | 0.1 | 小さいほど Newton に近く速いが、静止・低速セルで Δτ→∞ となり停滞する（0 は不可） |
-| `cfl_init` / `ser_growth` / `cfl_max` | 0.5 / 2 / 1e6 | 出発は `cfl_init·|R_ref|/|R_init|`。成長率を上げると速いが Newton 経路が敏感になる |
+| `cfl_init` / `ser_growth` / `ser_shrink` / `cfl_max` | 0.25 / 2 / 0.1 / 1e6 | 出発は `cfl_init·|R_ref|/|R_init|`。0.5 は良い初期場（双一次補間）から CFL 6 で出発し流れ場形成中の CFL 10〜40 で崩れる走行があった。成長率・減少率とも掃引で 2 / 0.1 以外は常に劣った（status-41） |
+| `reject_lin_ratio` | 0.3 | 線形解（再試行後）の真の残差比がこれを超えた修正量を捨てて CFL を `ser_shrink` 倍にする安全規則。0 で無効（uturn 144×96 U=1/2 が 1 ステップで 1e9 倍に跳ねて発散する） |
 | `alpha_u` | 1.0 | 陰的緩和。速度下限ありなら 1.0 が最速、頑健側に振るなら 0.7 |
 | `precond_lag` / `precond_cfl_ratio` / `precond_refresh_gmres` | 4 / 2 / 30 | 前処理の使い回し。組立回数と GMRES 反復数のトレードオフ |
 | `simple_schur_cycles` / `simple_ilu_*` | 1 / 1e-3, 3.0 | 前処理 1 適用の重さと反復数のトレードオフ。ILU 1e-2/1.5 は零ピボット・発散 |
 | `gmres_tol` / `gmres_restart` / `gmres_maxiter` | 1e-3 / 40 / 5 | inexact Newton の許容。1e-2 は 1 Newton が軽いが Newton が増える |
 | `convection` / `venkat_k` | "sou" / 5 | 2 次風上 + リミター（精度）か 1 次風上（頑健）か |
 | `sub_iters` / `rc_with_pseudo_time` | 1 / False | 1 擬似時間ステップの Newton 反復数、RC 係数に ρV/Δτ を含めるか |
+
+## 入れ子反復（粗格子解からの発進、status-41）
+
+`nsb.nested.solve_nested(make_input, refines, coarse_tol=1e-4, prolongation="bilinear")` が、粗い順の
+refine 列を順に解き、各段の解を `prolong_bilinear`（セル中心の 2× 双一次、重み 9/16・3/16・3/16・1/16）
+または `prolong_inject`（区分定数）で次段の `u0/v0/p0` にする。最終段だけ `settings.newton_tol`、
+それ以外は `coarse_tol` で解く。
+
+```python
+from nsb import make_case, solve_nested
+nested = solve_nested(lambda r: make_case("flat", r, 1.0), [2, 4])   # 144×96 → 288×192
+res = nested.result            # 最終段の NSBResult
+nested.elapsed_total, [lv.result.n_iter for lv in nested.levels]
+```
+
+目安（flat U=1、20 コア機、`experiments/nsb/nested_schedules.py`、status-41）:
+
+| 目的格子 | Stokes 発進 | 1 段（半分の格子を Stokes から、tol 1e-4） | 最粗格子 72×48 から全段（tol 1e-4） |
+|---|---|---|---|
+| 288×192 | 43 Newton / 44.5 s | 13 Newton / 20.1 s（粗 2.6 s） | 13 Newton / 18.5 s（粗 1.5 s） |
+| 576×384 | 66 Newton / 310 s | 30 Newton / 316 s（粗 20 s） | 22 Newton / 195 s（粗 13 s） |
+
+- **段は最粗格子から全部入れる**（`refines=[1, 2, 4, 8]`）。各段のコストは次段の 1/4 なので粗格子側の合計は
+  細格子 1 本の 7〜10% に収まり、段を増やしても増えない。576×384 で 1 段だけ挟むと 288×192 の段を Stokes
+  から解く 20 s が乗って Stokes 発進と変わらない。
+- **粗格子の許容は 1e-4**。1e-6 まで解くと 288×192 の段だけで 41 s（総時間の 20%）を浪費する。
+  1e-2〜1e-3 は細格子側の経路が散る（19〜37 反復の走行あり）。
+- 細格子側の Newton 反復は初期場の質で決まる下限（双一次で 288×192: 13、576×384: 20〜30）があり、段数では減らない。
+  乗法形 SER が CFL を 1 反復 2 倍にしか上げないので、出発 CFL 3〜6 から数百まで登る梯子 ≈ 8 段 + 跳ね返りが最低限。
+- 双一次は注入より初期 |R|/|R_ref| が 6〜7 倍小さく（0.084 vs 0.50）細格子側が 4 反復少ない。
 
 ## 境界条件（座標マスク + 質量流入）
 
