@@ -126,3 +126,15 @@ def test_summarize_counts():
     assert s["all"]["n"] == 2 and s["all"]["unet"]["wins"] == 1 and s["all"]["unet"]["losses"] == 1
     assert s["all"]["unet_vs_knn"] == {"wins": 1, "ties": 1, "losses": 0}
     assert set(s["by_family"]) == {"uniform", "pins"}
+
+
+def test_divergence_loss_zero_for_uniform_flow_and_positive_for_source():
+    from nsbm.train import divergence_loss
+
+    x = torch.zeros(1, 8, 72, 48)  # h = h0 一様
+    y = torch.zeros(1, 3, 72, 48)
+    y[:, 0] = 1.0  # 一様流 u = u_in → 発散 0
+    assert float(divergence_loss(x, y)) == pytest.approx(0.0, abs=1e-12)
+    y2 = torch.zeros(1, 3, 72, 48)
+    y2[:, 0, 30:40, :] = 1.0  # 途中で始まる流れ → 発散あり
+    assert float(divergence_loss(x, y2)) > 0

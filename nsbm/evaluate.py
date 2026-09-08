@@ -94,9 +94,10 @@ def evaluate(
     stats = channel_stats(x_tr)
     jobs = []
     rows: dict[int, dict[str, Any]] = {}
-    for k_idx in split["test"]:
+    for k_idx in list(split["test"]) + list(split.get("hard", [])):
         s = samples[k_idx]
         rows[k_idx] = {
+            "group": "hard" if k_idx in set(split.get("hard", [])) else "test",
             "seed": s.theta.seed,
             "family": s.theta.family,
             "u_in": s.theta.u_in,
@@ -126,7 +127,7 @@ def evaluate(
                     f"conv={r['converged']!s:5s} newton={r['n_iter']:3d} r0={r['r0_ratio']:.2e} "
                     f"cfl0={r['cfl0']:.2e} ({time.perf_counter() - t0:6.1f}s)"
                 )
-    return [rows[i] for i in split["test"]]
+    return [rows[i] for i in list(split["test"]) + list(split.get("hard", []))]
 
 
 def summarize(rows: Sequence[dict[str, Any]], methods: Sequence[str] = METHODS) -> dict[str, Any]:
@@ -165,8 +166,13 @@ def summarize(rows: Sequence[dict[str, Any]], methods: Sequence[str] = METHODS) 
             }
         return out
 
-    fams = sorted({r["family"] for r in rows})
-    return {
-        "all": block(rows),
-        "by_family": {f: block([r for r in rows if r["family"] == f]) for f in fams},
+    test = [r for r in rows if r.get("group", "test") == "test"]
+    hard = [r for r in rows if r.get("group") == "hard"]
+    fams = sorted({r["family"] for r in test})
+    out = {
+        "all": block(test),
+        "by_family": {f: block([r for r in test if r["family"] == f]) for f in fams},
     }
+    if hard:
+        out["hard"] = block(hard)
+    return out

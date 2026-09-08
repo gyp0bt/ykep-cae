@@ -56,6 +56,30 @@ def seeds_to_split(samples: Sequence[Sample], seeds: dict[str, list[int]]) -> di
     return {k: [pos[sd] for sd in v if sd in pos] for k, v in seeds.items()}
 
 
+def divergence_loss(x: Tensor, yhat: Tensor) -> Tensor:
+    """離散連続式のペナルティ: 正規化速度 (u/u_in, v/u_in) と h/h0 = exp(x0) から面流束 h_f u_f の発散を作り 2 乗平均.
+
+    nsb の p 方程式（質量保存）の残差は予測速度の発散で決まる。面値は隣接セル平均（Rhie–Chow なし）で近似する。
+    無次元化: 発散 × (dx·dy)/(h0 u_in) 相当になるよう、面流束を h/h0·u/u_in、格子幅 dx = LX/NX, dy = LY/NY で組む。
+    """
+    from nsbm.families import DX, DY
+
+    h = torch.exp(x[:, 0:1])
+    u, v = yhat[:, 0:1], yhat[:, 1:2]
+    fx = h * u  # (B,1,NX,NY)
+    fy = h * v
+    fe = 0.5 * (fx[:, :, 1:, :] + fx[:, :, :-1, :])  # x 方向内部面 (NX-1, NY)
+    fn = 0.5 * (fy[:, :, :, 1:] + fy[:, :, :, :-1])  # y 方向内部面 (NX, NY-1)
+    div = torch.zeros_like(u)
+    div[:, :, 1:, :] += fe * DY
+    div[:, :, :-1, :] -= fe * DY
+    div[:, :, :, 1:] += fn * DX
+    div[:, :, :, :-1] -= fn * DX
+    # 境界面（inlet/outlet/wall）は流束不明なので内部面だけで評価し、境界セルは除く
+    inner = div[:, :, 1:-1, 1:-1] / (DX * DY)
+    return (inner**2).mean() * (DX * DY)
+
+
 def to_tensors(samples: Sequence[Sample], idx: Sequence[int]) -> tuple[Tensor, Tensor]:
     x = torch.from_numpy(np.stack([samples[i].x for i in idx]))
     y = torch.from_numpy(np.stack([samples[i].y for i in idx]))
@@ -88,6 +112,7 @@ def train(
     widths: tuple[int, ...] = (32, 64, 128, 256),
     seed: int = 0,
     threads: int | None = None,
+    div_weight: float = 0.0,
     log: LogFn | None = print,
 ) -> TrainResult:
     out_dir = Path(out_dir)
@@ -112,7 +137,10 @@ def train(
         tot = 0.0
         for k in range(0, len(perm), batch):
             b = perm[k : k + batch]
-            loss = torch.nn.functional.mse_loss(net(x_tr[b]), y_tr[b])
+            yhat = net(x_tr[b])
+            loss = torch.nn.functional.mse_loss(yhat, y_tr[b])
+            if div_weight > 0:
+                loss = loss + div_weight * divergence_loss(x_tr[b], yhat)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()

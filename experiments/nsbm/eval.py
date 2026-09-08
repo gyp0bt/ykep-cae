@@ -27,6 +27,15 @@ def main() -> None:
     ap.add_argument("--k", type=int, default=4)
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--max-iter", type=int, default=200)
+    ap.add_argument(
+        "--cfl-init", type=float, default=0.25, help="SER の出発 CFL 係数（3 方式とも同じ値）"
+    )
+    ap.add_argument(
+        "--hard",
+        type=int,
+        default=60,
+        help="Stokes 発進で未収束だったサンプルを何件、別枠で評価するか",
+    )
     ap.add_argument("--limit", type=int, default=0, help="テスト件数の上限（0 で全件）")
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
@@ -45,24 +54,29 @@ def main() -> None:
     split = seeds_to_split(samples, json.loads((args.run / "split.json").read_text()))
     if args.limit:
         split["test"] = split["test"][: args.limit]
+    hard = [k for k, smp in enumerate(samples) if not smp.converged]
+    split["hard"] = hard[: args.hard]
     net = load_model(args.run / "best.pt")
 
     def predict(s):
         with torch.no_grad():
             return net(torch.from_numpy(s.x[None])).numpy()[0]
 
-    print(f"test={len(split['test'])} train={len(split['train'])} run={args.run}", flush=True)
+    print(
+        f"test={len(split['test'])} hard={len(split['hard'])} train={len(split['train'])} run={args.run} cfl_init={args.cfl_init}",
+        flush=True,
+    )
     rows = evaluate(
         predict,
         samples,
         split,
         k=args.k,
         n_workers=args.workers,
-        settings=NSBSettings(newton_max_iter=args.max_iter),
+        settings=NSBSettings(newton_max_iter=args.max_iter, cfl_init=args.cfl_init),
         log=lambda m: print(m, flush=True),
     )
     summary = summarize(rows)
-    out = args.out or (HERE / "results" / f"eval-{args.run.name}")
+    out = args.out or (HERE / "results" / f"eval-{args.run.name}-cfl{args.cfl_init:g}")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.with_suffix(".yaml").write_text(
         yaml.safe_dump(summary, sort_keys=False, allow_unicode=True)
@@ -71,7 +85,10 @@ def main() -> None:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()
         w.writerows(rows)
-    print(yaml.safe_dump(summary["all"], sort_keys=False), flush=True)
+    print(
+        yaml.safe_dump({k: summary[k] for k in ("all", "hard") if k in summary}, sort_keys=False),
+        flush=True,
+    )
     print(f"-> {out.with_suffix('.yaml')}", flush=True)
     _ = np
 

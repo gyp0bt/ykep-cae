@@ -24,6 +24,9 @@ def main() -> None:
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--widths", type=str, default="32,64,128,256")
+    ap.add_argument(
+        "--div-weight", type=float, default=0.0, help="離散連続式ペナルティの重み（0 で MSE のみ）"
+    )
     args = ap.parse_args()
 
     from nsbm.dataset import load_shards
@@ -44,6 +47,7 @@ def main() -> None:
         widths=tuple(int(w) for w in args.widths.split(",")),
         seed=args.seed,
         threads=args.threads,
+        div_weight=args.div_weight,
         log=lambda m: print(m, flush=True),
     )
     print(f"best epoch {res.best_epoch} val {res.best_val:.3e} -> {res.best_path}", flush=True)
