@@ -71,6 +71,8 @@ def field_metrics(
             "r2_pooled": float(1.0 - sse / max(sst, 1e-30)),
             "r2_median": float(np.median(r2_each)),
             "r2_p10": float(np.percentile(r2_each, 10)),
+            "r2_p90": float(np.percentile(r2_each, 90)),
+            "r2_min": float(r2_each.min()),
             "rmse": float(np.sqrt(((a - b) ** 2).mean())),
             "max_err_abs_median": float(np.median(np.abs(e_max))),
             "max_err_abs_p90": float(np.percentile(np.abs(e_max), 90)),

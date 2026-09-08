@@ -7,9 +7,10 @@
 時間ではなく反復数だけを見る（gyp さんの指定）。
 
 ```
- families ──▶ dataset ──▶ model/train ──▶ evaluate
- θ を乱数で    並列に nsb を   UNet(8ch → 3ch)   テスト θ で Stokes / kNN / UNet の
- 8 ファミリ    解き npz へ     MSE, CPU torch     初期場から solve_steady、n_iter を比較
+ families ──▶ dataset ──▶ model/train ◀──▶ residual_loss ──▶ evaluate
+ θ を乱数で    並列に nsb を   UNet(8ch → 3ch 場     予測場・予測 cfl で   テスト θ で Stokes / UNet ×
+ 8 ファミリ    解き npz へ     + log cfl_init)       nsb を 5 歩、残差和    cfl_init の方式ごとに n_iter、
+                              MSE + λ·残差和        と随伴勾配を並列に     場の R² と max/min 誤差
 ```
 
 ## 使い方
@@ -17,9 +18,14 @@
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu      # CPU 版で足りる
 bash experiments/nsbm/gen_chunks.sh 4000 250        # 空きコア追従でデータ生成（experiments/nsbm/data/）
-python experiments/nsbm/train.py --epochs 120 --threads 8 --out experiments/nsbm/runs/unet-a
-python experiments/nsbm/eval.py --run experiments/nsbm/runs/unet-a
+python experiments/nsbm/train.py --epochs 120 --threads 8 --out experiments/nsbm/runs/unet-a        # 場だけ（MSE）
+~/.claude/hooks/memcap -m 24G -- python experiments/nsbm/train.py --out experiments/nsbm/runs/unet-r \
+    --init-from experiments/nsbm/runs/unet-a/best.pt --res-weight 1e-4 --res-workers 16 --epochs 30 --lr 3e-4  # 残差損失で微調整
+python experiments/nsbm/eval.py --run experiments/nsbm/runs/unet-r --methods stokes,stokes@4,stokes@pred,unet,unet@pred
 ```
+
+方式名は `base[_nK][@cfl]`: `stokes@4` は Stokes 発進で `cfl_init`=4、`unet@pred` は UNet の場 + 予測 `cfl_init`、
+`stokes@pred` は Stokes 場 + 予測 `cfl_init`（cfl ヘッドだけの効果）。
 
 ```python
 from nsbm import sample_theta, build_input
@@ -34,9 +40,10 @@ s = solve_sample(7)                                   # 解いて Sample（x: 8c
 | `families.py` | `Theta`（JSON 化可）、`sample_theta`（閉塞系は inlet-outlet 連結まで再抽選）、`build_h` / `build_bc` / `build_input`、`port_cells` / `connected` |
 | `features.py` | 入力 8 ch（log(h/h0)、log h0、log u_in、inlet の u_in·n、outlet マスク、x/LX、y/LY）、出力の正規化 u/u_in, v/u_in, p/p_ref（p_ref = 12μu_in LX/h0² + ρu_in²） |
 | `dataset.py` | `solve_sample` / `generate`（spawn Pool、ワーカー 1 スレッド）/ `save_shard` / `load_shards` |
-| `model.py` | `UNet`（4 段 72×48→9×6、GroupNorm+GELU、約 2M パラメータ） |
-| `train.py` | `split_by_family`（収束サンプルのみ、ファミリ層化 80/10/10、`split.json`）、`train`（AdamW + cosine、val 最良を `best.pt`）、`load_model` |
-| `evaluate.py` | `knn_predict`（標準化した入力画像の L2 近傍 k=4、距離逆数重み）、`run_with_init`、`evaluate`（並列）、`summarize` |
+| `model.py` | `UNet`（4 段 72×48→9×6、GroupNorm+GELU、約 2M パラメータ）。出力は (場 3ch, log cfl_init)。cfl ヘッドはボトルネックの大域プーリング → MLP、`log 0.25 + ln64·tanh(z)` で [0.004, 16] に制限、ゼロ初期化（学習前は既定 0.25） |
+| `train.py` | `split_by_family`（収束サンプルのみ、ファミリ層化 80/10/10、`split.json`）、`train`（MSE + `res_weight`×残差損失、AdamW + cosine、`init_from` で引き継ぎ、val 目的関数最良を `best.pt`）、`load_model`（cfl ヘッド無しの旧 ckpt も可） |
+| `residual_loss.py` | `unroll`（予測場から nsb の `solve_linear` で擬似時間 Newton を K 歩、状態列は実機と同じ）、`residual_loss`（Σ_k |R(x_k)|/|R_ref| と凍結ヤコビアン随伴による ∂/∂x_0・∂/∂log cfl_init）、`ResidualLossPool`（spawn 並列）、`straight_through`（torch へ値と勾配を直通） |
+| `evaluate.py` | `knn_predict`（標準化した入力画像の L2 近傍 k=4、距離逆数重み）、`run_with_init`、`evaluate`（並列、`base[_nK][@cfl]`）、`summarize`、`field_metrics`（R²、場の最大・最小値の誤差） |
 
 ## h 場のファミリ（`families.py`）
 

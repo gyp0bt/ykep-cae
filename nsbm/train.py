@@ -151,6 +151,9 @@ def _residual_term(
         meta["r_ref"][list(sel)],
         with_grad=with_grad,
     )
+    if not with_grad:  # 検証用: 値だけ（勾配は持たない）
+        ok = [o["loss"] for o in outs if np.isfinite(o["loss"])]
+        return torch.tensor(float(np.mean(ok)) if ok else 0.0), outs
     loss, _n_ok = straight_through(fields, lc, outs)
     return loss, outs
 
@@ -264,6 +267,11 @@ def train(
                             .item()
                         )
                         g_mse_norm, g_res_norm = g1, g2
+                        if log is not None:
+                            log(
+                                f"epoch {ep:4d} first batch: |g|head mse {g1:.2e} res {g2:.2e} "
+                                f"(res/mse {g2 / max(g1, 1e-30):.1e}) res mean {np.mean([o['loss'] for o in outs if np.isfinite(o['loss'])]):.2f}"
+                            )
                     loss = loss + res_weight * res_loss
                     ok = [o["loss"] for o in outs if np.isfinite(o["loss"])]
                     tot_res += float(np.sum(ok))
