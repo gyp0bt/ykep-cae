@@ -342,11 +342,13 @@ class ResidualLossPool:
         self.close()
 
 
-def straight_through(fields, logcfl, outs: list[dict[str, Any]]):
+def straight_through(fields, logcfl, outs: list[dict[str, Any]], cfl_gain: float = 1.0):
     """torch の損失テンソルを作る: 値は Σ_b L_b / B、勾配はワーカーが返した (∂L/∂x_0, ∂L/∂log cfl) をそのまま流す.
 
     surrogate = mean_b [ L_b + (x_b − x_b.detach())·ḡ_x + (c_b − c_b.detach())·ḡ_c ] は値が L の平均で、
     x_b・c_b に関する勾配がちょうど ḡ になる（custom autograd Function を書かずに済む）。失敗したサンプル（nan）は除く。
+    cfl_gain: log cfl_init の勾配だけに掛ける倍率。場の勾配（1e2〜1e3）と cfl の勾配（1e0〜1e1）はスケールが 2 桁違い、
+    場側に合わせた小さな res_weight では cfl ヘッドがほぼ動かない（unet-r 初回: 2 epoch で 0.25 → 0.258）。
     """
     import torch
 
@@ -358,5 +360,5 @@ def straight_through(fields, logcfl, outs: list[dict[str, Any]]):
     vals = torch.tensor([outs[b]["loss"] for b in ok], dtype=fields.dtype)
     idx = torch.tensor(ok)
     f, c = fields[idx], logcfl[idx]
-    sur = vals + ((f - f.detach()) * g_x).sum(dim=(1, 2, 3)) + (c - c.detach()) * g_c
+    sur = vals + ((f - f.detach()) * g_x).sum(dim=(1, 2, 3)) + (c - c.detach()) * (cfl_gain * g_c)
     return sur.mean(), len(ok)

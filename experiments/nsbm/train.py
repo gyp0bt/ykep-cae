@@ -49,6 +49,12 @@ def main() -> None:
         "--res-frac", type=float, default=1.0, help="各バッチで残差損失を評価するサンプルの割合"
     )
     ap.add_argument(
+        "--res-cfl-gain",
+        type=float,
+        default=1.0,
+        help="log cfl_init の勾配に掛ける倍率（場の勾配と 2 桁違う）",
+    )
+    ap.add_argument(
         "--split-from",
         type=Path,
         default=None,
@@ -88,6 +94,7 @@ def main() -> None:
         res_transform=args.res_transform,
         res_workers=args.res_workers,
         res_frac=args.res_frac,
+        res_cfl_gain=args.res_cfl_gain,
         log=lambda m: print(m, flush=True),
     )
     print(f"best epoch {res.best_epoch} val {res.best_val:.3e} -> {res.best_path}", flush=True)

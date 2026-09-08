@@ -139,6 +139,7 @@ def _residual_term(
     meta: dict[str, Any],
     sel: Sequence[int],
     with_grad: bool,
+    cfl_gain: float = 1.0,
 ) -> tuple[Tensor, list[dict[str, Any]]]:
     """バッチの sel 位置のサンプルについて残差損失を評価し、(torch 損失, ワーカー出力) を返す."""
     sel_t = torch.tensor(list(sel))
@@ -154,7 +155,7 @@ def _residual_term(
     if not with_grad:  # 検証用: 値だけ（勾配は持たない）
         ok = [o["loss"] for o in outs if np.isfinite(o["loss"])]
         return torch.tensor(float(np.mean(ok)) if ok else 0.0), outs
-    loss, _n_ok = straight_through(fields, lc, outs)
+    loss, _n_ok = straight_through(fields, lc, outs, cfl_gain)
     return loss, outs
 
 
@@ -176,6 +177,7 @@ def train(
     res_transform: str = "ratio",
     res_workers: int = 8,
     res_frac: float = 1.0,
+    res_cfl_gain: float = 1.0,
     grad_clip: float = 1.0,
     log: LogFn | None = print,
 ) -> TrainResult:
@@ -253,7 +255,7 @@ def train(
                         for kk, v in meta_tr.items()
                     }
                     res_loss, outs = _residual_term(
-                        pool, xb, yhat, logcfl, sub, sel, with_grad=True
+                        pool, xb, yhat, logcfl, sub, sel, with_grad=True, cfl_gain=res_cfl_gain
                     )
                     if k == 0:  # 最初のバッチで両項の勾配ノルムを測る（res_weight の目安）
                         g1 = (
@@ -312,6 +314,7 @@ def train(
                         "res_weight": res_weight,
                         "res_steps": res_steps,
                         "res_transform": res_transform,
+                        "res_cfl_gain": res_cfl_gain,
                     },
                     best_path,
                 )
