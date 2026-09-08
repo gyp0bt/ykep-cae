@@ -55,6 +55,8 @@ class UNet(nn.Module):
                 x = self.pool(x)
         for block in self.dec:
             s = skips.pop()
-            x = nn.functional.interpolate(x, size=s.shape[-2:], mode="bilinear", align_corners=False)
+            x = nn.functional.interpolate(
+                x, size=s.shape[-2:], mode="bilinear", align_corners=False
+            )
             x = block(torch.cat([x, s], dim=1))
         return self.head(x)

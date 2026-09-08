@@ -19,3 +19,7 @@ examples/inp/*.log
 
 # messi の使用刻印（Mesher.load が cwd に書く。MiradorExportProcess / ykep view を走らせると出る）
 .messi
+
+# nsbm の生成データと学習チェックポイント
+experiments/nsbm/data/
+experiments/nsbm/runs/

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from nsbm.families import LX, LY, NX, NY, X, Y, Theta, port_cells, port_normal
+from nsbm.families import LX, LY, NX, NY, Theta, X, Y, port_cells, port_normal
 
 IN_CH = 8
 OUT_CH = 3
