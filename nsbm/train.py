@@ -144,7 +144,7 @@ def train(
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
-            tot += float(loss) * len(b)
+            tot += loss.item() * len(b)
         sched.step()
         tr = tot / len(perm)
         net.eval()

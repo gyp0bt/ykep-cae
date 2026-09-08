@@ -188,6 +188,57 @@ def fig_fields(run: Path, data: Path, rows: list[dict], out: Path, n_cases: int 
     plt.close(fig)
 
 
+def fig_dataset(data: Path, out: Path) -> dict:
+    """データセット統計: ファミリ別の収束率と Stokes 発進の Newton 反復数分布、u_in・h0 依存."""
+    from nsbm.dataset import load_shards
+
+    S = load_shards(data)
+    fams = [f for f in FAMILIES if any(s.theta.family == f for s in S)]
+    fig, axes = plt.subplots(1, 3, figsize=(13, 3.8))
+    conv = {f: np.mean([s.converged for s in S if s.theta.family == f]) for f in fams}
+    axes[0].bar(range(len(fams)), [conv[f] for f in fams], color=[FAM_COLORS[f] for f in fams])
+    axes[0].set_xticks(range(len(fams)))
+    axes[0].set_xticklabels(fams, rotation=30, ha="right", fontsize=8)
+    axes[0].set_ylim(0, 1.05)
+    axes[0].set_ylabel("収束率（Stokes 発進、200 反復以内）")
+    axes[0].grid(axis="y", alpha=0.3)
+    data_it = [[s.n_iter for s in S if s.theta.family == f and s.converged] for f in fams]
+    axes[1].boxplot(data_it, showfliers=False, patch_artist=True)
+    for b, f in zip(axes[1].patches, fams, strict=False):
+        b.set_facecolor(FAM_COLORS[f])
+        b.set_alpha(0.7)
+    axes[1].set_xticks(range(1, len(fams) + 1))
+    axes[1].set_xticklabels(fams, rotation=30, ha="right", fontsize=8)
+    axes[1].set_ylabel("Newton 反復数（収束例）")
+    axes[1].grid(axis="y", alpha=0.3)
+    u = np.array([s.theta.u_in for s in S])
+    h0 = np.array([s.theta.h0 for s in S])
+    c = np.array([s.converged for s in S])
+    sc = axes[2].scatter(u, h0 * 1e3, c=np.where(c, "tab:blue", "tab:red"), s=4, alpha=0.5)
+    axes[2].set_xscale("log")
+    axes[2].set_yscale("log")
+    axes[2].set_xlabel("u_in [m/s]")
+    axes[2].set_ylabel("h0 [mm]")
+    axes[2].set_title("青: 収束 / 赤: 未収束", fontsize=9)
+    axes[2].grid(alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(out, dpi=130)
+    plt.close(fig)
+    _ = sc
+    return {
+        "n": len(S),
+        "converged": int(c.sum()),
+        "by_family": {
+            f: {
+                "n": int(sum(s.theta.family == f for s in S)),
+                "conv": float(conv[f]),
+                "newton_median": float(np.median(d)),
+            }
+            for f, d in zip(fams, data_it, strict=True)
+        },
+    }
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", type=Path, default=HERE / "runs" / "unet-a")
@@ -197,6 +248,11 @@ def main() -> None:
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     fig_families(args.out / "families.png")
+    if args.data.exists():
+        stats = fig_dataset(args.data, args.out / "dataset.png")
+        (args.out / "dataset_stats.json").write_text(
+            json.dumps(stats, indent=1, ensure_ascii=False)
+        )
     rows_path = args.rows or (HERE / "results" / f"eval-{args.run.name}.csv")
     if rows_path.exists():
         rows = load_rows(rows_path)

@@ -1,0 +1,46 @@
+{
+ "n": 4000,
+ "converged": 3582,
+ "by_family": {
+  "uniform": {
+   "n": 455,
+   "conv": 0.989010989010989,
+   "newton_median": 13.0
+  },
+  "sin2d": {
+   "n": 471,
+   "conv": 0.9872611464968153,
+   "newton_median": 14.0
+  },
+  "quad": {
+   "n": 558,
+   "conv": 0.9946236559139785,
+   "newton_median": 13.0
+  },
+  "grf": {
+   "n": 493,
+   "conv": 0.9249492900608519,
+   "newton_median": 15.0
+  },
+  "uturn": {
+   "n": 520,
+   "conv": 0.8884615384615384,
+   "newton_median": 13.0
+  },
+  "serpentine": {
+   "n": 551,
+   "conv": 0.5843920145190563,
+   "newton_median": 12.0
+  },
+  "pins": {
+   "n": 518,
+   "conv": 0.9498069498069498,
+   "newton_median": 13.0
+  },
+  "blobs": {
+   "n": 434,
+   "conv": 0.8755760368663594,
+   "newton_median": 13.0
+  }
+ }
+}
