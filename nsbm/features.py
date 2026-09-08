@@ -45,3 +45,22 @@ def normalize_y(theta: Theta, u: np.ndarray, v: np.ndarray, p: np.ndarray) -> np
 def denormalize_y(theta: Theta, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     y = np.asarray(y, dtype=np.float64)
     return y[0] * theta.u_in, y[1] * theta.u_in, y[2] * p_ref(theta)
+
+
+def blocked_mask_from_x(x: np.ndarray) -> np.ndarray:
+    """入力画像の ch0 = log(h/h0) から閉塞セル（h ≤ 1.5 h0/100）を復元する."""
+    return x[0] < np.log(1.5 / 100.0)
+
+
+def mask_blocked(
+    x: np.ndarray, fields: tuple[np.ndarray, np.ndarray, np.ndarray]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """初期場の後処理: 閉塞セルの速度を 0 にする.
+
+    閉塞セルの抗力係数 12μ/h² は開きセルの 1e4 倍なので、予測や補間で残る僅かな速度が
+    運動量残差を Stokes 参照の 1000 倍にし、SER の出発 CFL = cfl_init·|R_ref|/|R_init| を潰す
+    （pilot 計測: マスクで |R|/|R_ref| 1000 → 2）。圧力はそのまま。
+    """
+    u, v, p = fields
+    b = blocked_mask_from_x(x)
+    return np.where(b, 0.0, u), np.where(b, 0.0, v), p

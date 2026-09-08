@@ -42,3 +42,19 @@ def test_make_x_channels():
     io, jo = port_cells(th.outlet)
     assert x[5].sum() == len(io) and x[5][io, jo].all()
     assert x[6].min() > 0 and x[6].max() < 1 and x[7].min() > 0 and x[7].max() < 1
+
+
+def test_mask_blocked_zeroes_velocity_in_blocked_cells():
+    from nsbm.features import blocked_mask_from_x, mask_blocked
+
+    th = sample_theta(seed=0, families=["serpentine"])
+    h = build_h(th)
+    x = make_x(th, h)
+    b = blocked_mask_from_x(x)
+    assert np.array_equal(b, h <= th.h_blocked * 1.5) and b.any() and not b.all()
+    u = np.ones((72, 48))
+    v = np.ones((72, 48))
+    p = np.full((72, 48), 3.0)
+    u2, v2, p2 = mask_blocked(x, (u, v, p))
+    assert (u2[b] == 0).all() and (v2[b] == 0).all() and (u2[~b] == 1).all()
+    assert np.array_equal(p2, p)

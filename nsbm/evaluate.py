@@ -2,6 +2,7 @@
 
 [kNN] 入力画像 x をチャネルごとに標準化して平坦化し、train 集合との L2 距離で近傍 k 件、距離逆数重みで y を平均。
   学習なしでデータセットの近さだけを使う基準。UNet がこれに勝たなければ学習の価値はない。
+[後処理] kNN / UNet の初期場は `mask_blocked` で閉塞セルの速度を 0 にしてから渡す（残差比 1000 → 数倍）。
 [Stokes] 生成時と同じ（u0/v0/p0 なし）。反復数は再走行して揃える（r0_ratio と cfl0 も取る）。
 [指標] n_iter、converged、r0_ratio = |R(x0)|/|R_ref|（初期残差の比、Stokes は 1.0 のはず）、cfl0（SER の出発 CFL）。
 """
@@ -19,7 +20,7 @@ from nsb.core import NSBSettings
 from nsb.solver import solve_steady
 from nsbm.dataset import Sample
 from nsbm.families import Theta, build_input
-from nsbm.features import denormalize_y
+from nsbm.features import denormalize_y, mask_blocked
 
 LogFn = Callable[[str], None]
 METHODS = ("stokes", "knn", "unet")
@@ -106,9 +107,11 @@ def evaluate(
         }
         inits = {"stokes": None}
         if "knn" in methods:
-            inits["knn"] = denormalize_y(s.theta, knn_predict(x_tr, y_tr, s.x, k, stats))
+            inits["knn"] = mask_blocked(
+                s.x, denormalize_y(s.theta, knn_predict(x_tr, y_tr, s.x, k, stats))
+            )
         if "unet" in methods:
-            inits["unet"] = denormalize_y(s.theta, predict(s))
+            inits["unet"] = mask_blocked(s.x, denormalize_y(s.theta, predict(s)))
         for m in methods:
             jobs.append((k_idx, m, s.theta.to_dict(), inits[m], settings))
     t0 = time.perf_counter()
