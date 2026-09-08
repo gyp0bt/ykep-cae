@@ -1,0 +1,22 @@
+=== uturn r2 U=2 nested 1,2 prolong=bilinear ranks=8
+[bench] level 1/2 72x48 tol=1e-04
+[nsbp] it=0 init=stokes |R|=2.1134e+02 rel=1.000e+00 cfl=0.25
+[nsbp] it=17 limiter frozen (rel=5.073e-04 after freeze)
+[nsbp] done converged=True reason='' it=18 m_in=2.0000e+02 m_out=2.0000e+02 jacobians=21 pc_setups=21 ksp_total=347 residuals=1657 t[resid=0.2 jac=0.1 ksp=0.1 stokes=0.1] elapsed=0.3s
+[bench] level 2/2 144x96 tol=1e-06
+[nsbp] init=u0/v0/p0 is worse than the Stokes field (rel=1.621e+02), fall back to stokes
+[nsbp] it=0 init=stokes(fallback) |R|=1.6210e+02 rel=1.000e+00 cfl=0.25
+[nsbp] it=58 limiter frozen (rel=3.971e-04 after freeze)
+[nsbp] done converged=True reason='' it=61 m_in=2.0000e+02 m_out=2.0000e+02 jacobians=64 pc_setups=64 ksp_total=2778 residuals=5055 t[resid=0.7 jac=0.7 ksp=2.9 stokes=0.1] elapsed=3.6s
+[bench-json] {"tag": "", "model": "uturn", "refine": 2, "u": 2.0, "ranks": 8, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "1,2", "prolong": "bilinear", "converged": true, "reason": "", "it": 61, "it_tot
+=== uturn r2 U=2 nested 1,2 prolong=inject ranks=8
+[bench] level 1/2 72x48 tol=1e-04
+[nsbp] it=0 init=stokes |R|=2.1134e+02 rel=1.000e+00 cfl=0.25
+[nsbp] it=17 limiter frozen (rel=5.073e-04 after freeze)
+[nsbp] done converged=True reason='' it=18 m_in=2.0000e+02 m_out=2.0000e+02 jacobians=21 pc_setups=21 ksp_total=347 residuals=1657 t[resid=0.2 jac=0.1 ksp=0.1 stokes=0.1] elapsed=0.3s
+[bench] level 2/2 144x96 tol=1e-06
+[nsbp] init=u0/v0/p0 is worse than the Stokes field (rel=2.398e+00), fall back to stokes
+[nsbp] it=0 init=stokes(fallback) |R|=1.6210e+02 rel=1.000e+00 cfl=0.25
+[nsbp] it=58 limiter frozen (rel=3.971e-04 after freeze)
+[nsbp] done converged=True reason='' it=61 m_in=2.0000e+02 m_out=2.0000e+02 jacobians=64 pc_setups=64 ksp_total=2778 residuals=5055 t[resid=0.7 jac=0.7 ksp=2.9 stokes=0.1] elapsed=3.6s
+[bench-json] {"tag": "", "model": "uturn", "refine": 2, "u": 2.0, "ranks": 8, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "1,2", "prolong": "inject", "converged": true, "reason": "", "it": 61, "it_total

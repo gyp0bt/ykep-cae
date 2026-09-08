@@ -1,0 +1,37 @@
+=== r8_n8 (ranks=8): --model flat --refine 8 --u 0.1 --max-iter 80
+[nsbp] stokes ref (newton=2 ksp=400 not converged ratio=2.1e-03 |R_stokes|/|R_stokes(0)|=3.7e-03): |R_stokes(0)|=1.0206e+00 |R_ref|=2.9084e-01 speed_max=0.59 m/s t=8.43s
+[nsbp] it=16 limiter frozen (rel=3.210e-04 after freeze)
+[nsbp] done converged=True reason='' it=18 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=20 pc_setups=20 ksp_total=2515 residuals=1580 t[resid=2.2 jac=2.7 ksp=49.9 stokes=8.4] elapsed=53.2s
+[bench-json] {"tag": "r8_n8", "model": "flat", "refine": 8, "u": 0.1, "ranks": 8, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 18, "it_total": 18, "ksp_total": 2515, "jacobians": 20, "pc_setups": 20, "elapsed_final": 53.18308999299916, "elapsed_total": 53.71937615300703, "timings": {"resid": 2.226, "jac": 2.7
+=== r8_n16 (ranks=16): --model flat --refine 8 --u 0.1 --max-iter 80
+[nsbp] stokes ref (newton=2 ksp=400 not converged ratio=2.8e-03 |R_stokes|/|R_stokes(0)|=4.1e-03): |R_stokes(0)|=1.0206e+00 |R_ref|=2.9037e-01 speed_max=0.59 m/s t=8.76s
+[nsbp] it=16 limiter frozen (rel=3.337e-04 after freeze)
+[nsbp] done converged=True reason='' it=18 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=20 pc_setups=20 ksp_total=2697 residuals=1580 t[resid=2.3 jac=2.7 ksp=55.9 stokes=8.8] elapsed=59.3s
+[bench-json] {"tag": "r8_n16", "model": "flat", "refine": 8, "u": 0.1, "ranks": 16, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 18, "it_total": 18, "ksp_total": 2697, "jacobians": 20, "pc_setups": 20, "elapsed_final": 59.305552527002874, "elapsed_total": 59.88315330500336, "timings": {"resid": 2.305, "jac": 
+=== r8_nest_n16 (ranks=16): --model flat --refine 8 --u 0.1 --max-iter 80 --nested 1,2,4,8
+[nsbp] stokes ref (newton=2 ksp=33 ratio=7.8e-05 |R_stokes|/|R_stokes(0)|=2.0e-03): |R_stokes(0)|=2.8868e+00 |R_ref|=4.8994e-01 speed_max=0.24 m/s t=0.12s
+[nsbp] done converged=True reason='' it=8 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=10 pc_setups=10 ksp_total=177 residuals=789 t[resid=0.1 jac=0.0 ksp=0.0 stokes=0.1] elapsed=0.2s
+[nsbp] stokes ref (newton=2 ksp=49 ratio=9.7e-05 |R_stokes|/|R_stokes(0)|=3.6e-03): |R_stokes(0)|=2.0412e+00 |R_ref|=4.1215e-01 speed_max=0.329 m/s t=0.08s
+[nsbp] it=8 limiter frozen (rel=1.661e-04 after freeze)
+[nsbp] done converged=True reason='' it=9 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=11 pc_setups=11 ksp_total=288 residuals=869 t[resid=0.1 jac=0.1 ksp=0.3 stokes=0.1] elapsed=0.4s
+[nsbp] stokes ref (newton=2 ksp=145 ratio=9.8e-05 |R_stokes|/|R_stokes(0)|=4.0e-03): |R_stokes(0)|=1.4434e+00 |R_ref|=3.5484e-01 speed_max=0.448 m/s t=0.88s
+[nsbp] it=7 limiter frozen (rel=3.790e-04 after freeze)
+[nsbp] done converged=True reason='' it=8 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=10 pc_setups=10 ksp_total=592 residuals=790 t[resid=0.2 jac=0.2 ksp=3.3 stokes=0.9] elapsed=3.6s
+[nsbp] stokes ref (newton=2 ksp=400 not converged ratio=2.8e-03 |R_stokes|/|R_stokes(0)|=4.1e-03): |R_stokes(0)|=1.0206e+00 |R_ref|=2.9037e-01 speed_max=0.59 m/s t=8.71s
+[nsbp] it=6 limiter frozen (rel=9.484e-04 after freeze)
+[nsbp] done converged=True reason='' it=10 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=12 pc_setups=12 ksp_total=1695 residuals=948 t[resid=1.4 jac=1.7 ksp=35.4 stokes=8.7] elapsed=37.3s
+[bench-json] {"tag": "r8_nest_n16", "model": "flat", "refine": 8, "u": 0.1, "ranks": 16, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "1,2,4,8", "converged": true, "reason": "", "it": 10, "it_total": 35, "ksp_total": 1695, "jacobians": 12, "pc_setups": 12, "elapsed_final": 37.314173928003584, "elapsed_total": 42.264320911999675, "timings": {"resid": 1
+=== r8_nest_n8 (ranks=8): --model flat --refine 8 --u 0.1 --max-iter 80 --nested 1,2,4,8
+[nsbp] stokes ref (newton=2 ksp=29 ratio=7.4e-05 |R_stokes|/|R_stokes(0)|=2.0e-03): |R_stokes(0)|=2.8868e+00 |R_ref|=4.8992e-01 speed_max=0.24 m/s t=0.10s
+[nsbp] done converged=True reason='' it=8 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=10 pc_setups=10 ksp_total=154 residuals=789 t[resid=0.1 jac=0.1 ksp=0.1 stokes=0.1] elapsed=0.2s
+[nsbp] stokes ref (newton=2 ksp=46 ratio=9.9e-05 |R_stokes|/|R_stokes(0)|=3.6e-03): |R_stokes(0)|=2.0412e+00 |R_ref|=4.1211e-01 speed_max=0.329 m/s t=0.10s
+[nsbp] it=8 limiter frozen (rel=1.662e-04 after freeze)
+[nsbp] done converged=True reason='' it=9 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=11 pc_setups=11 ksp_total=276 residuals=869 t[resid=0.1 jac=0.1 ksp=0.3 stokes=0.1] elapsed=0.5s
+[nsbp] stokes ref (newton=2 ksp=139 ratio=9.7e-05 |R_stokes|/|R_stokes(0)|=4.0e-03): |R_stokes(0)|=1.4434e+00 |R_ref|=3.5482e-01 speed_max=0.448 m/s t=0.84s
+[nsbp] it=7 limiter frozen (rel=3.765e-04 after freeze)
+[nsbp] done converged=True reason='' it=8 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=10 pc_setups=10 ksp_total=500 residuals=790 t[resid=0.3 jac=0.3 ksp=2.7 stokes=0.8] elapsed=3.1s
+[nsbp] stokes ref (newton=2 ksp=400 not converged ratio=2.1e-03 |R_stokes|/|R_stokes(0)|=3.7e-03): |R_stokes(0)|=1.0206e+00 |R_ref|=2.9084e-01 speed_max=0.59 m/s t=8.33s
+[nsbp] it=6 limiter frozen (rel=9.464e-04 after freeze)
+[nsbp] done converged=True reason='' it=10 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=12 pc_setups=12 ksp_total=1684 residuals=948 t[resid=1.2 jac=1.6 ksp=33.4 stokes=8.3] elapsed=35.3s
+[bench-json] {"tag": "r8_nest_n8", "model": "flat", "refine": 8, "u": 0.1, "ranks": 8, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "1,2,4,8", "converged": true, "reason": "", "it": 10, "it_total": 35, "ksp_total": 1684, "jacobians": 12, "pc_setups": 12, "elapsed_final": 35.270271821005736, "elapsed_total": 39.70464023199747, "timings": {"resid": 1.20
+TIMING_DONE

@@ -1,0 +1,12 @@
+=== euclid2 (ranks=8): --pc lu --opts -pc_type hypre -pc_hypre_type euclid -pc_hypre_euclid_level 2
+[nsbp] it=12 limiter frozen (rel=7.595e-04 after freeze)
+[nsbp] done converged=True reason='' it=15 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=17 pc_setups=17 ksp_total=1078 residuals=1343 t[resid=0.5 jac=0.5 ksp=87.2 stokes=4.5] elapsed=87.9s
+=== asm_ov2 (ranks=8): --pc asm
+[nsbp] it=12 limiter frozen (rel=7.630e-04 after freeze)
+[nsbp] done converged=True reason='' it=15 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=17 pc_setups=17 ksp_total=851 residuals=1343 t[resid=0.5 jac=0.6 ksp=4.5 stokes=0.9] elapsed=5.2s
+=== asm_ov4 (ranks=8): --pc asm --opts -pc_asm_overlap 4
+[nsbp] it=12 limiter frozen (rel=7.604e-04 after freeze)
+[nsbp] done converged=True reason='' it=15 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=17 pc_setups=17 ksp_total=738 residuals=1343 t[resid=0.5 jac=0.5 ksp=4.4 stokes=0.8] elapsed=5.1s
+=== asm_ov2_ilu3 (ranks=8): --pc asm --opts -sub_pc_factor_levels 3
+[nsbp] it=12 limiter frozen (rel=7.645e-04 after freeze)
+[nsbp] done converged=True reason='' it=15 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=17 pc_setups=17 ksp_total=561 residuals=1343 t[resid=0.6 jac=0.6 ksp=4.4 stokes=0.9] elapsed=5.1s

@@ -1,0 +1,58 @@
+=== lu: --pc lu
+[nsbp] stokes ref (newton=5 ksp=5 ratio=2.3e-12 |R_stokes|/|R_stokes(0)|=4.4e-14): |R_stokes(0)|=2.8868e+01 |R_ref|=5.2220e+01 speed_max=2.1 m/s t=1.02s
+[nsbp] it=1 |R_tau|=1.3644e+00 rel=2.613e-02 |R_steady|/|R_ref|=6.195e-01 cfl=0.25 dtau=[7.01e-04,2.08e-02] ksp=1 jac_age=1 pc_age=1
+[nsbp] it=2 |R_tau|=6.3087e-01 rel=1.208e-02 |R_steady|/|R_ref|=4.110e-01 cfl=0.404 dtau=[1.15e-03,3.36e-02] ksp=1 jac_age=1 pc_age=1
+[nsbp] it=5 |R_tau|=1.1455e+00 rel=2.194e-02 |R_steady|/|R_ref|=1.617e-01 cfl=1.2 dtau=[3.75e-03,1.00e-01] ksp=1 jac_age=1 pc_age=1
+[nsbp] it=10 |R_tau|=2.9135e-01 rel=5.579e-03 |R_steady|/|R_ref|=2.209e-02 cfl=6.09 dtau=[2.05e-02,5.08e-01] ksp=1 jac_age=1 pc_age=1
+[nsbp] done converged=True reason='' it=16 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=21 pc_setups=21 ksp_total=21 residuals=1652 t[resid=0.5 jac=0.4 ksp=3.4 stokes=1.0] elapsed=4.0s
+[bench-json] {"tag": "lu", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "lu/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 16, "it_total": 16, "ksp_total": 21, "jacobian
+=== diagscale: --opts -ksp_diagonal_scale -ksp_diagonal_scale_fix
+[nsbp] stokes ref (newton=5 ksp=288 ratio=1.2e-10 |R_stokes|/|R_stokes(0)|=4.3e-14): |R_stokes(0)|=2.8868e+01 |R_ref|=5.2220e+01 speed_max=2.1 m/s t=0.93s
+[nsbp] it=1 |R_tau|=1.2381e+00 rel=2.371e-02 |R_steady|/|R_ref|=6.195e-01 cfl=0.25 dtau=[7.01e-04,2.08e-02] ksp=164 jac_age=1 pc_age=1
+[nsbp] it=2 |R_tau|=6.3089e-01 rel=1.208e-02 |R_steady|/|R_ref|=4.110e-01 cfl=0.404 dtau=[1.15e-03,3.36e-02] ksp=164 jac_age=1 pc_age=1
+[nsbp] it=5 |R_tau|=1.1454e+00 rel=2.193e-02 |R_steady|/|R_ref|=1.617e-01 cfl=1.2 dtau=[3.75e-03,1.00e-01] ksp=200 jac_age=1 pc_age=1 (ksp not converged: 3.9e-05 reason=-3)
+[nsbp] it=10 |R_tau|=2.9131e-01 rel=5.578e-03 |R_steady|/|R_ref|=2.211e-02 cfl=6.09 dtau=[2.05e-02,5.08e-01] ksp=200 jac_age=1 pc_age=1 (ksp not converged: 4.0e-04 reason=-3)
+[nsbp] it=16 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=4.07e-01), rejected, cfl -> 36.2
+[nsbp] it=17 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=4.80e-01), rejected, cfl -> 3.62
+[nsbp] done converged=True reason='' it=27 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=32 pc_setups=32 ksp_total=5427 residuals=2517 t[resid=0.7 jac=0.7 ksp=12.4 stokes=0.9] elapsed=13.2s
+[bench-json] {"tag": "diagscale", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "schur/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "-ksp_diagonal_scale -ksp_diagonal_scale_fix", "nested": "", "converged": true, "reason": "",
+=== ilu3: --opts -fieldsplit_0_sub_pc_factor_levels 3
+[nsbp] stokes ref (newton=6 ksp=822 not converged ratio=2.2e+00 |R_stokes|/|R_stokes(0)|=1.3e-03): |R_stokes(0)|=2.8868e+01 |R_ref|=5.2221e+01 speed_max=2.1 m/s t=2.88s
+[nsbp] it=1 |R_tau|=1.5168e+00 rel=2.905e-02 |R_steady|/|R_ref|=6.199e-01 cfl=0.25 dtau=[7.01e-04,2.08e-02] ksp=200 jac_age=1 pc_age=1 (ksp not converged: 1.7e-03 reason=-3)
+[nsbp] it=2 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.15e+00), rejected, cfl -> 0.0403
+[nsbp] it=5 |R_tau|=3.0971e-02 rel=5.931e-04 |R_steady|/|R_ref|=5.149e-01 cfl=0.0457 dtau=[1.31e-04,3.81e-03] ksp=9 jac_age=1 pc_age=1
+[nsbp] it=10 |R_tau|=3.0231e-02 rel=5.789e-04 |R_steady|/|R_ref|=3.834e-01 cfl=0.0615 dtau=[1.80e-04,5.13e-03] ksp=10 jac_age=1 pc_age=1
+[nsbp] done converged=False reason='max_iter' it=40 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=46 pc_setups=46 ksp_total=1533 residuals=3623 t[resid=1.0 jac=1.0 ksp=5.7 stokes=2.9] elapsed=6.8s
+[bench-json] {"tag": "ilu3", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "schur/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "-fieldsplit_0_sub_pc_factor_levels 3", "nested": "", "converged": false, "reason": "max_iter", "i
+=== mom_lu: --opts -fieldsplit_0_pc_type lu
+[nsbp] stokes ref (newton=6 ksp=629 not converged ratio=7.4e+00 |R_stokes|/|R_stokes(0)|=6.8e-02): |R_stokes(0)|=2.8868e+01 |R_ref|=5.2347e+01 speed_max=2.1 m/s t=3.95s
+[nsbp] it=1 |R_tau|=1.0450e+00 rel=1.996e-02 |R_steady|/|R_ref|=6.195e-01 cfl=0.25 dtau=[7.01e-04,2.08e-02] ksp=200 jac_age=1 pc_age=1 (ksp not converged: 1.8e-03 reason=-3)
+[nsbp] it=2 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.08e+00), rejected, cfl -> 0.0404
+[nsbp] it=5 |R_tau|=2.8757e-02 rel=5.494e-04 |R_steady|/|R_ref|=5.144e-01 cfl=0.0457 dtau=[1.31e-04,3.81e-03] ksp=17 jac_age=1 pc_age=1
+[nsbp] it=10 |R_tau|=3.0482e-02 rel=5.823e-04 |R_steady|/|R_ref|=3.829e-01 cfl=0.0616 dtau=[1.80e-04,5.13e-03] ksp=7 jac_age=1 pc_age=1
+[nsbp] done converged=False reason='max_iter' it=40 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=46 pc_setups=46 ksp_total=1347 residuals=3623 t[resid=1.0 jac=1.0 ksp=10.2 stokes=3.9] elapsed=11.3s
+[bench-json] {"tag": "mom_lu", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "schur/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "-fieldsplit_0_pc_type lu", "nested": "", "converged": false, "reason": "max_iter", "it": 40, "i
+=== upper: --schur-fact upper
+[nsbp] stokes ref (newton=6 ksp=1015 not converged ratio=3.8e+00 |R_stokes|/|R_stokes(0)|=1.7e+00): |R_stokes(0)|=2.8868e+01 |R_ref|=3.4596e+02 speed_max=6.46 m/s t=2.25s
+[nsbp] it=1 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=3.77e+00), rejected, cfl -> 0.025
+[nsbp] it=2 |R_tau|=4.6789e+01 rel=1.352e-01 |R_steady|/|R_ref|=1.734e+00 cfl=0.025 dtau=[2.66e-05,2.08e-03] ksp=17 jac_age=1 pc_age=1
+[nsbp] it=5 |R_tau|=6.2703e-01 rel=1.812e-03 |R_steady|/|R_ref|=1.524e+00 cfl=0.0157 dtau=[1.76e-05,1.31e-03] ksp=12 jac_age=1 pc_age=1
+[nsbp] it=10 |R_tau|=5.2764e-01 rel=1.525e-03 |R_steady|/|R_ref|=1.250e+00 cfl=0.0192 dtau=[2.32e-05,1.60e-03] ksp=7 jac_age=1 pc_age=1
+[nsbp] done converged=False reason='max_iter' it=40 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=46 pc_setups=46 ksp_total=2305 residuals=3623 t[resid=1.0 jac=1.0 ksp=5.2 stokes=2.3] elapsed=6.2s
+[bench-json] {"tag": "upper", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "schur/upper/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": false, "reason": "max_iter", "it": 40, "it_total": 40, "ksp_total
+=== asm: --pc asm
+[nsbp] stokes ref (newton=5 ksp=127 ratio=7.0e-11 |R_stokes|/|R_stokes(0)|=4.3e-14): |R_stokes(0)|=2.8868e+01 |R_ref|=5.2220e+01 speed_max=2.1 m/s t=0.41s
+[nsbp] it=1 |R_tau|=1.0330e+00 rel=1.978e-02 |R_steady|/|R_ref|=6.208e-01 cfl=0.25 dtau=[7.01e-04,2.08e-02] ksp=4 jac_age=1 pc_age=1
+[nsbp] it=2 |R_tau|=6.2784e-01 rel=1.202e-02 |R_steady|/|R_ref|=4.122e-01 cfl=0.403 dtau=[1.15e-03,3.36e-02] ksp=5 jac_age=1 pc_age=1
+[nsbp] it=5 |R_tau|=1.1342e+00 rel=2.172e-02 |R_steady|/|R_ref|=1.617e-01 cfl=1.2 dtau=[3.75e-03,1.00e-01] ksp=7 jac_age=1 pc_age=1
+[nsbp] it=10 |R_tau|=3.0085e-01 rel=5.761e-03 |R_steady|/|R_ref|=2.235e-02 cfl=6.04 dtau=[2.03e-02,5.03e-01] ksp=17 jac_age=1 pc_age=1
+[nsbp] done converged=True reason='' it=16 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=21 pc_setups=21 ksp_total=324 residuals=1652 t[resid=0.5 jac=0.4 ksp=0.7 stokes=0.4] elapsed=1.2s
+[bench-json] {"tag": "asm", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 16, "it_total": 16, "ksp_total": 324, "jacob
+=== euclid: --opts -fieldsplit_0_pc_type hypre -fieldsplit_0_pc_hypre_type euclid
+[nsbp] stokes ref (newton=6 ksp=1008 not converged ratio=5.2e+00 |R_stokes|/|R_stokes(0)|=5.1e-02): |R_stokes(0)|=2.8868e+01 |R_ref|=5.2288e+01 speed_max=2.1 m/s t=1.99s
+[nsbp] it=1 |R_tau|=1.0373e+00 rel=1.984e-02 |R_steady|/|R_ref|=6.202e-01 cfl=0.25 dtau=[7.00e-04,2.08e-02] ksp=147 jac_age=1 pc_age=1
+[nsbp] it=2 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=8.66e-01), rejected, cfl -> 0.0403
+[nsbp] it=5 |R_tau|=8.4190e-02 rel=1.610e-03 |R_steady|/|R_ref|=5.154e-01 cfl=0.0457 dtau=[1.31e-04,3.81e-03] ksp=8 jac_age=1 pc_age=1
+[nsbp] it=10 |R_tau|=3.3690e-02 rel=6.443e-04 |R_steady|/|R_ref|=3.835e-01 cfl=0.0615 dtau=[1.79e-04,5.13e-03] ksp=5 jac_age=1 pc_age=1
+[nsbp] done converged=False reason='max_iter' it=40 m_in=1.0000e+02 m_out=9.9998e+01 jacobians=46 pc_setups=46 ksp_total=1678 residuals=3623 t[resid=1.0 jac=1.0 ksp=3.9 stokes=2.0] elapsed=5.0s
+[bench-json] {"tag": "euclid", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "schur/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "-fieldsplit_0_pc_type hypre -fieldsplit_0_pc_hypre_type euclid", "nested": "", "converged": fal

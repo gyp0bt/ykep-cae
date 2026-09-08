@@ -1,0 +1,17 @@
+=== base_asm (ranks=8): --pc asm
+[nsbp] it=12 limiter frozen (rel=3.709e-04 after freeze)
+[nsbp] done converged=True reason='' it=14 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=20 pc_setups=20 ksp_total=1755 residuals=3072 t[resid=1.1 jac=0.7 ksp=10.2 stokes=7.1] elapsed=11.0s
+=== mg3_rich (ranks=8): --pc asm --opts -pc_type mg -pc_mg_levels 3 -pc_mg_galerkin both -mg_levels_ksp_type richardson -mg_levels_ksp_max_it 1 -mg_levels_pc_type asm -mg_levels_sub_pc_type ilu -mg_levels_sub_pc_factor_levels 1 -mg_coarse_ksp_type preonly -mg_coarse_pc_type redundant -mg_coarse_redundant_pc_type lu
+[nsbp] it=1 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.41e+01), rejected, cfl -> 0.025
+[nsbp] it=2 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.41e+01), rejected, cfl -> 0.0025
+[nsbp] it=3 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.41e+01), rejected, cfl -> 0.00025
+[nsbp] it=4 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.41e+01), rejected, cfl -> 2.5e-05
+[nsbp] it=5 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.41e+01), rejected, cfl -> 2.5e-06
+[nsbp] it=6 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.41e+01), rejected, cfl -> 2.5e-07
+=== mg3_gmres (ranks=8): --pc asm --opts -pc_type mg -pc_mg_levels 3 -pc_mg_galerkin both -mg_levels_ksp_type gmres -mg_levels_ksp_max_it 2 -mg_levels_pc_type asm -mg_levels_sub_pc_type ilu -mg_levels_sub_pc_factor_levels 1 -mg_coarse_ksp_type preonly -mg_coarse_pc_type redundant -mg_coarse_redundant_pc_type lu
+[nsbp] it=1 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=7.14e-01), rejected, cfl -> 0.025
+[nsbp] it=2 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=7.14e-01), rejected, cfl -> 0.0025
+[nsbp] it=3 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=7.14e-01), rejected, cfl -> 0.00025
+[nsbp] it=4 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=7.14e-01), rejected, cfl -> 2.5e-05
+[nsbp] it=5 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=7.14e-01), rejected, cfl -> 2.5e-06
+[nsbp] it=6 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=7.14e-01), rejected, cfl -> 2.5e-07
