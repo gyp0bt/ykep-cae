@@ -55,6 +55,11 @@ s = solve_sample(7)                                   # 解いて Sample（x: 8c
 （同じ壁なら重ならない）。滑らか系は log(h/h0) を ±2 に留める。閉塞系はポートから内側へ最初の開きセルまで
 廊下を切り、`scipy.ndimage.label` で inlet-outlet の連結を確認する（棄却率 約 3%）。
 
-## 結果
+## 結果（status-43）
 
-[status-43](../docs/status/status-43.md) を参照。
+テスト 357 件（72×48、`cfl_init` 0.25）で、UNet 初期場は Stokes 発進に **41 勝 17 分 299 敗**（Newton 中央値 19 vs 13）、
+kNN 補間も 34 勝 302 敗。効くのは Stokes 発進が遅い裾と、Stokes で未収束だった 60 件のうち 8 件の救済だけ。
+機構は 3 つ: (a) 閉塞セルに残る速度が Brinkman 抗力 12μ/h² で 1e4 倍に増幅され残差比 1000 になる（`mask_blocked` で 2〜7）、
+(b) 72×48 の反復数は SER の CFL 梯子（0.25 → 数百）で決まり、予測場の残差比 2〜8 では出発 CFL が上がらない、
+(c) 予測場は Newton の吸引域の外（減衰なしの 1 歩 `nsbm/project.py` は 6 割で残差が増えて棄却）。
+`cfl_init` 4 の方が効く（Stokes 発進 13 → 7、未収束 3%）。詳細と TODO は [status-43](../docs/status/status-43.md)。

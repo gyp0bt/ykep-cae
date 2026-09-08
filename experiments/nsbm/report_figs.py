@@ -148,7 +148,10 @@ def fig_fields(run: Path, data: Path, rows: list[dict], out: Path, n_cases: int 
     net = load_model(run / "best.pt")
     # 反復数の削減が大きい順から、ファミリが重ならないように選ぶ
     picked, seen = [], set()
-    for r in sorted(rows, key=lambda r: r["unet_n_iter"] / max(r["stokes_n_iter"], 1)):
+    test_rows = [
+        r for r in rows if r.get("group", "test") == "test"
+    ]  # hard は正解場が未収束なので除く
+    for r in sorted(test_rows, key=lambda r: r["unet_n_iter"] / max(r["stokes_n_iter"], 1)):
         if r["family"] not in seen and int(r["seed"]) in samples:
             picked.append(r)
             seen.add(r["family"])

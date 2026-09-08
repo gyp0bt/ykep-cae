@@ -21,9 +21,16 @@ from nsb.solver import solve_steady
 from nsbm.dataset import Sample
 from nsbm.families import Theta, build_input
 from nsbm.features import denormalize_y, mask_blocked
+from nsbm.project import newton_project
 
 LogFn = Callable[[str], None]
 METHODS = ("stokes", "knn", "unet")
+
+
+def parse_method(name: str) -> tuple[str, int]:
+    """ "unet_n2" → ("unet", 2): 基底の初期場と Newton 射影の歩数."""
+    base, _, suffix = name.partition("_")
+    return base, int(suffix[1:]) if suffix.startswith("n") else 0
 
 
 def channel_stats(x_train: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -63,10 +70,21 @@ def run_with_init(
     }
 
 
-def _job(args: tuple[int, str, dict, Any, NSBSettings | None]) -> tuple[int, str, dict[str, Any]]:
-    k, method, theta_d, init, settings = args
+def _job(
+    args: tuple[int, str, dict, Any, NSBSettings | None, np.ndarray | None],
+) -> tuple[int, str, dict[str, Any]]:
+    k, method, theta_d, init, settings, x_img = args
     theta = Theta.from_dict(theta_d)
-    return k, method, run_with_init(theta, init, settings)
+    _, steps = parse_method(method)
+    extra: dict[str, Any] = {}
+    if steps > 0 and init is not None:
+        init, info = newton_project(build_input(theta, settings), init, x_img, steps)
+        extra = {
+            "proj_r_before": info["r_before"],
+            "proj_r_after": info["r_after"],
+            "proj_steps": info["steps_taken"],
+        }
+    return k, method, {**run_with_init(theta, init, settings), **extra}
 
 
 def _init_worker() -> None:
@@ -106,15 +124,16 @@ def evaluate(
             "outlet": s.theta.outlet.wall,
             "n_iter_dataset": s.n_iter,
         }
-        inits = {"stokes": None}
-        if "knn" in methods:
+        bases = {parse_method(m)[0] for m in methods}
+        inits: dict[str, Any] = {"stokes": None}
+        if "knn" in bases:
             inits["knn"] = mask_blocked(
                 s.x, denormalize_y(s.theta, knn_predict(x_tr, y_tr, s.x, k, stats))
             )
-        if "unet" in methods:
+        if "unet" in bases:
             inits["unet"] = mask_blocked(s.x, denormalize_y(s.theta, predict(s)))
         for m in methods:
-            jobs.append((k_idx, m, s.theta.to_dict(), inits[m], settings))
+            jobs.append((k_idx, m, s.theta.to_dict(), inits[parse_method(m)[0]], settings, s.x))
     t0 = time.perf_counter()
     ctx = mp.get_context("spawn")
     with ctx.Pool(n_workers, initializer=_init_worker) as pool:

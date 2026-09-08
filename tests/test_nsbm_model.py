@@ -138,3 +138,11 @@ def test_divergence_loss_zero_for_uniform_flow_and_positive_for_source():
     y2 = torch.zeros(1, 3, 72, 48)
     y2[:, 0, 30:40, :] = 1.0  # 途中で始まる流れ → 発散あり
     assert float(divergence_loss(x, y2)) > 0
+
+
+def test_parse_method():
+    from nsbm.evaluate import parse_method
+
+    assert parse_method("stokes") == ("stokes", 0)
+    assert parse_method("unet_n2") == ("unet", 2)
+    assert parse_method("knn_n1") == ("knn", 1)

@@ -187,6 +187,11 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [ ] nsbp: 入れ子で細格子の Stokes 参照場（576×384 で 8 s）を省く。粗格子の |R_ref| からのスケーリング推定か、参照場の定義変更 — status-42 TODO
 - [ ] nsbp: `pc_lag` / `jacobian_lag` / `ksp_rtol` / ILU レベル / SER 成長率の掃引（厳密ヤコビアンでは成長率 2 超が効く可能性）— status-42 TODO
 - [ ] nsbp: リミター凍結の閾値（1e-3）と凍結解のずれの定量（uturn で nsb との差 2e-4）— status-42 TODO
+- [x] **nsbm**（`nsbm/`）: nsb（72×48 固定）の初期場を教師あり UNet で出す。8 ファミリ × 4 壁ポートの θ サンプラー、4000 件の並列生成（収束 89.6%）、Stokes / kNN / UNet の Newton 反復数比較。**既定の制御則では減らない**（41 勝 299 敗、中央値 19 vs 13）。閉塞セル速度の抗力増幅（マスクで解消）、SER の CFL 梯子が反復数を決める、予測場は Newton 吸引域の外、の 3 機構を同定 — status-43
+- [ ] nsbm: 残差駆動の学習（損失 = |R(net(θ))|、彩色 FD ヤコビアンの J^T v で autograd）。予測場の残差比を 1 未満にできるかが分岐点 — status-43 TODO
+- [ ] nsbm: 出発 CFL の予測（cfl 4 で中央値 13 → 7、未収束 3%。未収束になる θ を避ける分類器で十分） — status-43 TODO
+- [ ] nsbm: 細格子 288×192 での評価（Stokes 発進 43 Newton。UNet 初期場を双一次補間して入れ子の粗格子解と比べる） — status-43 TODO
+- [ ] nsbm: hard 集合（剥離で定常解に届かない θ）の非定常判定を `NSBResult.failure_reason` に — status-43 TODO
 - [ ] 既存テストの失敗 18 件（`test_inp_runner` 9 + `test_post_mirador` 8 は `VizMixin.export_html()` が `vector_field` を受けない同一原因、`test_natural_convection::TestAMGPressureSolver::test_adaptive_relaxation` 未収束）。status-37 以降全件が回っておらず status-42 で検出 — status-42 TODO
 - [ ] nsbp: uturn の入れ子は厚さ境界をまたぐ補間で初期場が壊れる（参照の 162 倍）。厚さ場を見た補間（閉塞セルへ流速を持ち込まない）— status-42 TODO
 - [ ] 前処理適用（ILU 三角解 + V サイクル ≈ 10 ms × GMRES 45〜56 反復）の numba 化 — status-39 TODO

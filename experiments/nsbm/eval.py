@@ -38,6 +38,12 @@ def main() -> None:
     )
     ap.add_argument("--limit", type=int, default=0, help="テスト件数の上限（0 で全件）")
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument(
+        "--methods",
+        type=str,
+        default="stokes,knn,unet",
+        help="例: stokes,knn_n1,unet_n1,unet_n2（_nK は Newton 射影 K 歩）",
+    )
     args = ap.parse_args()
 
     import numpy as np
@@ -73,15 +79,17 @@ def main() -> None:
         k=args.k,
         n_workers=args.workers,
         settings=NSBSettings(newton_max_iter=args.max_iter, cfl_init=args.cfl_init),
+        methods=tuple(args.methods.split(",")),
         log=lambda m: print(m, flush=True),
     )
-    summary = summarize(rows)
-    out = args.out or (HERE / "results" / f"eval-{args.run.name}-cfl{args.cfl_init:g}")
+    summary = summarize(rows, methods=tuple(args.methods.split(",")))
+    tag = "" if args.methods == "stokes,knn,unet" else "-" + args.methods.replace(",", "+")
+    out = args.out or (HERE / "results" / f"eval-{args.run.name}-cfl{args.cfl_init:g}{tag}")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.with_suffix(".yaml").write_text(
-        yaml.safe_dump(summary, sort_keys=False, allow_unicode=True)
-    )
-    with out.with_suffix(".csv").open("w", newline="") as f:
+    # with_suffix は "cfl0.25" の ".25" を拡張子扱いするので使わない
+    out_yaml, out_csv = Path(f"{out}.yaml"), Path(f"{out}.csv")
+    out_yaml.write_text(yaml.safe_dump(summary, sort_keys=False, allow_unicode=True))
+    with out_csv.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()
         w.writerows(rows)
@@ -89,7 +97,7 @@ def main() -> None:
         yaml.safe_dump({k: summary[k] for k in ("all", "hard") if k in summary}, sort_keys=False),
         flush=True,
     )
-    print(f"-> {out.with_suffix('.yaml')}", flush=True)
+    print(f"-> {out_yaml}", flush=True)
     _ = np
 
 
