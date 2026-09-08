@@ -1,0 +1,29 @@
+=== s_lu: --model uturn --refine 1 --u 1 --max-iter 40 --opts -fieldsplit_1_pc_type lu
+[nsbp] stokes ref (newton=5 ksp=20 ratio=9.4e-12 |R_stokes|/|R_stokes(0)|=4.4e-14): |R_stokes(0)|=2.8868e+01 |R_ref|=5.2220e+01 speed_max=2.1 m/s t=0.53s
+[nsbp] done converged=True reason='' it=16 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=21 pc_setups=21 ksp_total=624 residuals=1652 t[resid=0.5 jac=0.4 ksp=3.0 stokes=0.5] elapsed=3.5s
+[bench-json] {"tag": "s_lu", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "schur/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "-fieldsplit_1_pc_type lu", "nested": "", "converged": true, "reason": "", "it": 16, "it_total": 16, "ksp_total": 624, "jacobians": 21, "p
+=== s_gamg: --model uturn --refine 1 --u 1 --max-iter 40 --amg gamg
+[nsbp] stokes ref (newton=5 ksp=164 ratio=9.4e-11 |R_stokes|/|R_stokes(0)|=4.3e-14): |R_stokes(0)|=2.8868e+01 |R_ref|=5.2220e+01 speed_max=2.1 m/s t=0.90s
+[nsbp] done converged=True reason='' it=16 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=21 pc_setups=21 ksp_total=1410 residuals=1652 t[resid=0.5 jac=0.5 ksp=5.5 stokes=0.9] elapsed=6.0s
+[bench-json] {"tag": "s_gamg", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "schur/full/gamg", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 16, "it_total": 16, "ksp_total": 1410, "jacobians": 21, "pc_setups": 21, "elapse
+=== s_a11: --model uturn --refine 1 --u 1 --max-iter 40 --opts -pc_fieldsplit_schur_precondition a11
+[nsbp] stokes ref (newton=6 ksp=1096 not converged ratio=2.1e-01 |R_stokes|/|R_stokes(0)|=1.1e-06): |R_stokes(0)|=2.8868e+01 |R_ref|=5.2220e+01 speed_max=2.1 m/s t=2.12s
+[nsbp] done converged=True reason='' it=16 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=22 pc_setups=22 ksp_total=3135 residuals=1729 t[resid=0.5 jac=0.5 ksp=5.6 stokes=2.1] elapsed=6.2s
+[bench-json] {"tag": "s_a11", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "schur/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "-pc_fieldsplit_schur_precondition a11", "nested": "", "converged": true, "reason": "", "it": 16, "it_total": 16, "ksp_total": 3135, "jac
+=== s_inner: --model uturn --refine 1 --u 1 --max-iter 40 --opts -fieldsplit_1_ksp_type gmres -fieldsplit_1_ksp_max_it 10 -fieldsplit_1_ksp_rtol 1e-2
+[nsbp] stokes ref (newton=5 ksp=218 not converged ratio=7.9e-01 |R_stokes|/|R_stokes(0)|=5.8e-14): |R_stokes(0)|=2.8868e+01 |R_ref|=5.2220e+01 speed_max=2.1 m/s t=3.54s
+[nsbp] it=3 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.07e+00), rejected, cfl -> 0.058
+[nsbp] done converged=False reason='max_iter' it=40 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=45 pc_setups=45 ksp_total=932 residuals=3546 t[resid=0.9 jac=0.9 ksp=10.6 stokes=3.5] elapsed=11.6s
+[bench-json] {"tag": "s_inner", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "schur/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "-fieldsplit_1_ksp_type gmres -fieldsplit_1_ksp_max_it 10 -fieldsplit_1_ksp_rtol 1e-2", "nested": "", "converged": false, "reason": "ma
+=== bj1: --model uturn --refine 1 --u 1 --max-iter 40 --pc bjacobi
+[nsbp] stokes ref (newton=5 ksp=127 ratio=7.0e-11 |R_stokes|/|R_stokes(0)|=4.3e-14): |R_stokes(0)|=2.8868e+01 |R_ref|=5.2220e+01 speed_max=2.1 m/s t=0.38s
+[nsbp] done converged=True reason='' it=16 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=21 pc_setups=21 ksp_total=324 residuals=1652 t[resid=0.5 jac=0.4 ksp=0.6 stokes=0.4] elapsed=1.1s
+[bench-json] {"tag": "bj1", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "bjacobi/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 16, "it_total": 16, "ksp_total": 324, "jacobians": 21, "pc_setups": 21, "elapsed
+=== asm0: --model uturn --refine 1 --u 1 --max-iter 40 --pc asm --opts -sub_pc_factor_levels 0
+[nsbp] stokes ref (newton=5 ksp=177 ratio=8.4e-11 |R_stokes|/|R_stokes(0)|=4.4e-14): |R_stokes(0)|=2.8868e+01 |R_ref|=5.2220e+01 speed_max=2.1 m/s t=0.37s
+[nsbp] done converged=True reason='' it=16 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=21 pc_setups=21 ksp_total=488 residuals=1652 t[resid=0.4 jac=0.4 ksp=0.6 stokes=0.4] elapsed=1.1s
+[bench-json] {"tag": "asm0", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "-sub_pc_factor_levels 0", "nested": "", "converged": true, "reason": "", "it": 16, "it_total": 16, "ksp_total": 488, "jacobians": 21, "pc_s
+=== asm2: --model uturn --refine 1 --u 1 --max-iter 40 --pc asm --opts -sub_pc_factor_levels 2
+[nsbp] stokes ref (newton=5 ksp=102 ratio=7.3e-11 |R_stokes|/|R_stokes(0)|=4.3e-14): |R_stokes(0)|=2.8868e+01 |R_ref|=5.2220e+01 speed_max=2.1 m/s t=0.46s
+[nsbp] done converged=True reason='' it=16 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=21 pc_setups=21 ksp_total=242 residuals=1652 t[resid=0.5 jac=0.4 ksp=0.8 stokes=0.5] elapsed=1.3s
+[bench-json] {"tag": "asm2", "model": "uturn", "refine": 1, "u": 1.0, "ranks": 1, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "-sub_pc_factor_levels 2", "nested": "", "converged": true, "reason": "", "it": 16, "it_total": 16, "ksp_total": 242, "jacobians": 21, "pc_s

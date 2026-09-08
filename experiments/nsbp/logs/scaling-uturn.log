@@ -1,0 +1,120 @@
+=== u2U1_n1 (ranks=1): --model uturn --refine 2 --u 1 --max-iter 80
+[nsbp] stokes ref (newton=3 ksp=67 ratio=8.7e-05 |R_stokes|/|R_stokes(0)|=5.3e-04): |R_stokes(0)|=2.0412e+01 |R_ref|=4.0086e+01 speed_max=2.66 m/s t=0.66s
+[nsbp] it=24 limiter frozen (rel=5.003e-04 after freeze)
+[nsbp] done converged=True reason='' it=27 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=30 pc_setups=30 ksp_total=811 residuals=2368 t[resid=1.2 jac=1.2 ksp=4.2 stokes=0.7] elapsed=5.6s
+[bench-json] {"tag": "u2U1_n1", "model": "uturn", "refine": 2, "u": 1.0, "ranks": 1, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 27, "it_total": 27, "ksp_total": 811, "jacobians": 30, "pc_setups": 30, "elapsed_final": 5.613558318997093, "elapsed_total": 5.790529612000682, "timings": {"resid": 1.183, "jac": 1
+=== u2U1_n4 (ranks=4): --model uturn --refine 2 --u 1 --max-iter 80
+[nsbp] stokes ref (newton=3 ksp=74 ratio=8.3e-05 |R_stokes|/|R_stokes(0)|=5.3e-04): |R_stokes(0)|=2.0412e+01 |R_ref|=4.0087e+01 speed_max=2.66 m/s t=0.31s
+[nsbp] it=23 limiter frozen (rel=9.035e-04 after freeze)
+[nsbp] done converged=True reason='' it=26 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=29 pc_setups=29 ksp_total=633 residuals=2289 t[resid=0.6 jac=0.5 ksp=1.3 stokes=0.3] elapsed=1.9s
+[bench-json] {"tag": "u2U1_n4", "model": "uturn", "refine": 2, "u": 1.0, "ranks": 4, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 26, "it_total": 26, "ksp_total": 633, "jacobians": 29, "pc_setups": 29, "elapsed_final": 1.93152139599988, "elapsed_total": 1.990078529001039, "timings": {"resid": 0.57, "jac": 0.5
+=== u2U1_n8 (ranks=8): --model uturn --refine 2 --u 1 --max-iter 80
+[nsbp] stokes ref (newton=3 ksp=78 ratio=9.1e-05 |R_stokes|/|R_stokes(0)|=5.3e-04): |R_stokes(0)|=2.0412e+01 |R_ref|=4.0086e+01 speed_max=2.66 m/s t=0.22s
+[nsbp] it=23 limiter frozen (rel=8.893e-04 after freeze)
+[nsbp] done converged=True reason='' it=26 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=29 pc_setups=29 ksp_total=564 residuals=2289 t[resid=0.4 jac=0.3 ksp=0.7 stokes=0.2] elapsed=1.2s
+[bench-json] {"tag": "u2U1_n8", "model": "uturn", "refine": 2, "u": 1.0, "ranks": 8, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 26, "it_total": 26, "ksp_total": 564, "jacobians": 29, "pc_setups": 29, "elapsed_final": 1.1554776750053861, "elapsed_total": 1.2046152360053384, "timings": {"resid": 0.391, "jac":
+=== u2U2_n1 (ranks=1): --model uturn --refine 2 --u 2 --max-iter 80
+[nsbp] stokes ref (newton=3 ksp=71 ratio=9.6e-05 |R_stokes|/|R_stokes(0)|=1.8e-04): |R_stokes(0)|=4.0825e+01 |R_ref|=1.6209e+02 speed_max=5.38 m/s t=0.67s
+[nsbp] it=35 limiter frozen (rel=6.246e-04 after freeze)
+[nsbp] done converged=True reason='' it=40 m_in=2.0000e+02 m_out=2.0000e+02 jacobians=43 pc_setups=43 ksp_total=1080 residuals=3395 t[resid=1.6 jac=1.7 ksp=5.8 stokes=0.7] elapsed=7.7s
+[bench-json] {"tag": "u2U2_n1", "model": "uturn", "refine": 2, "u": 2.0, "ranks": 1, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 40, "it_total": 40, "ksp_total": 1080, "jacobians": 43, "pc_setups": 43, "elapsed_final": 7.693734762993699, "elapsed_total": 7.871154968001065, "timings": {"resid": 1.638, "jac": 
+=== u2U2_n4 (ranks=4): --model uturn --refine 2 --u 2 --max-iter 80
+[nsbp] stokes ref (newton=3 ksp=76 ratio=9.8e-05 |R_stokes|/|R_stokes(0)|=1.8e-04): |R_stokes(0)|=4.0825e+01 |R_ref|=1.6209e+02 speed_max=5.38 m/s t=0.31s
+[nsbp] it=38 limiter frozen (rel=8.906e-04 after freeze)
+[nsbp] it=40 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=7.60e-01), rejected, cfl -> 3.45
+[nsbp] done converged=True reason='' it=47 m_in=2.0000e+02 m_out=2.0000e+02 jacobians=50 pc_setups=50 ksp_total=1885 residuals=3946 t[resid=0.9 jac=0.9 ksp=3.3 stokes=0.3] elapsed=4.3s
+[bench-json] {"tag": "u2U2_n4", "model": "uturn", "refine": 2, "u": 2.0, "ranks": 4, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 47, "it_total": 47, "ksp_total": 1885, "jacobians": 50, "pc_setups": 50, "elapsed_final": 4.328041127999313, "elapsed_total": 4.384897001000354, "timings": {"resid": 0.914, "jac": 
+=== u2U2_n8 (ranks=8): --model uturn --refine 2 --u 2 --max-iter 80
+[nsbp] stokes ref (newton=3 ksp=75 ratio=1.0e-04 |R_stokes|/|R_stokes(0)|=1.8e-04): |R_stokes(0)|=4.0825e+01 |R_ref|=1.6210e+02 speed_max=5.38 m/s t=0.22s
+[nsbp] it=58 limiter frozen (rel=3.971e-04 after freeze)
+[nsbp] done converged=True reason='' it=61 m_in=2.0000e+02 m_out=2.0000e+02 jacobians=64 pc_setups=64 ksp_total=2778 residuals=5054 t[resid=0.8 jac=0.7 ksp=2.9 stokes=0.2] elapsed=3.8s
+[bench-json] {"tag": "u2U2_n8", "model": "uturn", "refine": 2, "u": 2.0, "ranks": 8, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 61, "it_total": 61, "ksp_total": 2778, "jacobians": 64, "pc_setups": 64, "elapsed_final": 3.7526898099968093, "elapsed_total": 3.7991819509989, "timings": {"resid": 0.757, "jac": 0
+=== u1U2_n4 (ranks=4): --model uturn --refine 1 --u 2 --max-iter 80
+[nsbp] stokes ref (newton=3 ksp=47 ratio=5.7e-05 |R_stokes|/|R_stokes(0)|=6.9e-04): |R_stokes(0)|=5.7735e+01 |R_ref|=2.1135e+02 speed_max=4.27 m/s t=0.13s
+[nsbp] it=17 limiter frozen (rel=5.075e-04 after freeze)
+[nsbp] done converged=True reason='' it=20 m_in=2.0000e+02 m_out=2.0000e+02 jacobians=23 pc_setups=23 ksp_total=319 residuals=1815 t[resid=0.3 jac=0.2 ksp=0.2 stokes=0.1] elapsed=0.5s
+[bench-json] {"tag": "u1U2_n4", "model": "uturn", "refine": 1, "u": 2.0, "ranks": 4, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 20, "it_total": 20, "ksp_total": 319, "jacobians": 23, "pc_setups": 23, "elapsed_final": 0.4639592729945434, "elapsed_total": 0.48159325499727856, "timings": {"resid": 0.269, "jac"
+=== u2U2_nest_n8 (ranks=8): --model uturn --refine 2 --u 2 --max-iter 80 --nested 1,2
+[nsbp] stokes ref (newton=3 ksp=51 ratio=8.3e-05 |R_stokes|/|R_stokes(0)|=6.9e-04): |R_stokes(0)|=5.7735e+01 |R_ref|=2.1134e+02 speed_max=4.27 m/s t=0.11s
+[nsbp] it=17 limiter frozen (rel=5.073e-04 after freeze)
+[nsbp] done converged=True reason='' it=18 m_in=2.0000e+02 m_out=2.0000e+02 jacobians=21 pc_setups=21 ksp_total=347 residuals=1657 t[resid=0.2 jac=0.1 ksp=0.1 stokes=0.1] elapsed=0.3s
+[nsbp] stokes ref (newton=3 ksp=75 ratio=1.0e-04 |R_stokes|/|R_stokes(0)|=1.8e-04): |R_stokes(0)|=4.0825e+01 |R_ref|=1.6210e+02 speed_max=5.38 m/s t=0.15s
+[nsbp] it=4 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.88e+00), rejected, cfl -> 0.0011
+[nsbp] it=5 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=5.09e-01), rejected, cfl -> 0.00011
+[nsbp] it=6 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=5.20e-01), rejected, cfl -> 1.1e-05
+[nsbp] it=7 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.45e+00), rejected, cfl -> 1.1e-06
+[nsbp] it=8 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.26e+00), rejected, cfl -> 1.1e-07
+[nsbp] it=9 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.08e+00), rejected, cfl -> 1.1e-08
+[nsbp] it=10 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.22e+00), rejected, cfl -> 1.1e-09
+[nsbp] it=11 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=3.40e+00), rejected, cfl -> 1.1e-10
+[nsbp] it=12 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=9.90e-01), rejected, cfl -> 1.1e-11
+[nsbp] it=13 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.08e+00), rejected, cfl -> 1.1e-12
+[nsbp] it=14 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=9.90e-01), rejected, cfl -> 1.1e-13
+[nsbp] it=15 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=9.94e-01), rejected, cfl -> 1.1e-14
+[nsbp] it=16 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=3.76e+00), rejected, cfl -> 1.1e-15
+[nsbp] it=17 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.01e+00), rejected, cfl -> 1.1e-16
+[nsbp] it=18 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.38e+00), rejected, cfl -> 1.1e-17
+[nsbp] it=19 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.99e+00), rejected, cfl -> 1.1e-18
+[nsbp] it=20 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=9.94e-01), rejected, cfl -> 1.1e-19
+[nsbp] it=21 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.01e+00), rejected, cfl -> 1.1e-20
+[nsbp] it=22 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.00e+00), rejected, cfl -> 1.1e-21
+[nsbp] it=23 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.44e+00), rejected, cfl -> 1.1e-22
+[nsbp] it=24 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=3.71e+00), rejected, cfl -> 1.1e-23
+[nsbp] it=25 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.55e+00), rejected, cfl -> 1.1e-24
+[nsbp] it=26 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.77e+00), rejected, cfl -> 1.1e-25
+[nsbp] it=27 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.00e+00), rejected, cfl -> 1.1e-26
+[nsbp] it=28 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.75e+00), rejected, cfl -> 1.1e-27
+[nsbp] it=29 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.52e+00), rejected, cfl -> 1.1e-28
+[nsbp] it=30 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.06e+00), rejected, cfl -> 1.1e-29
+[nsbp] it=31 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.77e+00), rejected, cfl -> 1.1e-30
+[nsbp] it=32 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.18e+00), rejected, cfl -> 1.1e-31
+[nsbp] it=33 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.56e+00), rejected, cfl -> 1.1e-32
+[nsbp] it=34 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.33e+00), rejected, cfl -> 1.1e-33
+[nsbp] it=35 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.03e+00), rejected, cfl -> 1.1e-34
+[nsbp] it=36 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.27e+00), rejected, cfl -> 1.1e-35
+[nsbp] it=37 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.01e+00), rejected, cfl -> 1.1e-36
+[nsbp] it=38 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.02e+00), rejected, cfl -> 1.1e-37
+[nsbp] it=39 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.44e+00), rejected, cfl -> 1.1e-38
+[nsbp] it=40 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.01e+00), rejected, cfl -> 1.1e-39
+[nsbp] it=41 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.48e+00), rejected, cfl -> 1.1e-40
+[nsbp] it=42 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.97e+00), rejected, cfl -> 1.1e-41
+[nsbp] it=43 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.66e+00), rejected, cfl -> 1.1e-42
+[nsbp] it=44 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.36e+00), rejected, cfl -> 1.1e-43
+[nsbp] it=45 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.28e+00), rejected, cfl -> 1.1e-44
+[nsbp] it=46 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.82e+00), rejected, cfl -> 1.1e-45
+[nsbp] it=47 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.04e+00), rejected, cfl -> 1.1e-46
+[nsbp] it=48 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.05e+00), rejected, cfl -> 1.1e-47
+[nsbp] it=49 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.64e+00), rejected, cfl -> 1.1e-48
+[nsbp] it=50 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.07e+00), rejected, cfl -> 1.1e-49
+[nsbp] it=51 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.67e+00), rejected, cfl -> 1.1e-50
+[nsbp] it=52 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.98e+00), rejected, cfl -> 1.1e-51
+[nsbp] it=53 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.24e+00), rejected, cfl -> 1.1e-52
+[nsbp] it=54 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.16e+00), rejected, cfl -> 1.1e-53
+[nsbp] it=55 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.03e+00), rejected, cfl -> 1.1e-54
+[nsbp] it=56 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=3.53e+00), rejected, cfl -> 1.1e-55
+[nsbp] it=57 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.00e+00), rejected, cfl -> 1.1e-56
+[nsbp] it=58 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.13e+00), rejected, cfl -> 1.1e-57
+[nsbp] it=59 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.38e+00), rejected, cfl -> 1.1e-58
+[nsbp] it=60 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.18e+00), rejected, cfl -> 1.1e-59
+[nsbp] it=61 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.85e+00), rejected, cfl -> 1.1e-60
+[nsbp] it=62 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.72e+00), rejected, cfl -> 1.1e-61
+[nsbp] it=63 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.68e+00), rejected, cfl -> 1.1e-62
+[nsbp] it=64 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.29e+00), rejected, cfl -> 1.1e-63
+[nsbp] it=65 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.30e+00), rejected, cfl -> 1.1e-64
+[nsbp] it=66 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.43e+00), rejected, cfl -> 1.1e-65
+[nsbp] it=67 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.90e+00), rejected, cfl -> 1.1e-66
+[nsbp] it=68 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.85e+00), rejected, cfl -> 1.1e-67
+[nsbp] it=69 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=3.37e+00), rejected, cfl -> 1.1e-68
+[nsbp] it=70 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.00e+00), rejected, cfl -> 1.1e-69
+[nsbp] it=71 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.03e+00), rejected, cfl -> 1.1e-70
+[nsbp] it=72 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.61e+00), rejected, cfl -> 1.1e-71
+[nsbp] it=73 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.08e+00), rejected, cfl -> 1.1e-72
+[nsbp] it=74 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.15e+00), rejected, cfl -> 1.1e-73
+[nsbp] it=75 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.40e+00), rejected, cfl -> 1.1e-74
+[nsbp] it=76 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.81e+00), rejected, cfl -> 1.1e-75
+[nsbp] it=77 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.40e+00), rejected, cfl -> 1.1e-76
+[nsbp] it=78 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=2.23e+00), rejected, cfl -> 1.1e-77
+[nsbp] it=79 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.03e+00), rejected, cfl -> 1.1e-78
+[nsbp] it=80 linear solve failed (ksp=200 reason=-3, |b-Ax|/|b|=1.75e+00), rejected, cfl -> 1.1e-79
+[nsbp] done converged=False reason='max_iter' it=80 m_in=2.0000e+02 m_out=1.9493e+02 jacobians=83 pc_setups=83 ksp_total=16075 residuals=6400 t[resid=1.1 jac=1.2 ksp=14.5 stokes=0.1] elapsed=15.8s
+[bench-json] {"tag": "u2U2_nest_n8", "model": "uturn", "refine": 2, "u": 2.0, "ranks": 8, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "1,2", "converged": false, "reason": "max_iter", "it": 80, "it_total": 98, "ksp_total": 16075, "jacobians": 83, "pc_setups": 83, "elapsed_final": 15.759850663998805, "elapsed_total": 16.120402136002667, "timings": {"re

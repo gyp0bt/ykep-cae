@@ -1,0 +1,16 @@
+=== schur: --model flat --refine 4 --u 0.1 --max-iter 60 --pc schur
+[nsbp] stokes ref (newton=4 ksp=32 ratio=4.1e-11 |R_stokes|/|R_stokes(0)|=2.6e-13): |R_stokes(0)|=1.4434e+00 |R_ref|=3.5472e-01 speed_max=0.448 m/s t=4.34s
+[nsbp] done converged=False reason='max_iter' it=60 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=64 pc_setups=64 ksp_total=1863 residuals=5051 t[resid=4.7 jac=6.2 ksp=132.4 stokes=4.3] elapsed=139.4s
+[bench-json] {"tag": "schur", "model": "flat", "refine": 4, "u": 0.1, "ranks": 1, "pc": "schur/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": false, "reason": "max_iter", "it": 60, "it_total": 60, "ksp_total": 1863, "jacobians": 64, "pc_setups": 64,
+=== asm1: --model flat --refine 4 --u 0.1 --max-iter 60 --pc asm
+[nsbp] stokes ref (newton=4 ksp=780 not converged ratio=1.1e-06 |R_stokes|/|R_stokes(0)|=2.5e-13): |R_stokes(0)|=1.4434e+00 |R_ref|=3.5472e-01 speed_max=0.448 m/s t=17.00s
+[nsbp] done converged=False reason='max_iter' it=60 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=64 pc_setups=64 ksp_total=1725 residuals=5051 t[resid=4.6 jac=6.1 ksp=47.1 stokes=17.0] elapsed=54.0s
+[bench-json] {"tag": "asm1", "model": "flat", "refine": 4, "u": 0.1, "ranks": 1, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": false, "reason": "max_iter", "it": 60, "it_total": 60, "ksp_total": 1725, "jacobians": 64, "pc_setups": 64, "e
+=== asm2: --model flat --refine 4 --u 0.1 --max-iter 60 --pc asm --opts -sub_pc_factor_levels 2
+[nsbp] stokes ref (newton=4 ksp=449 ratio=1.0e-10 |R_stokes|/|R_stokes(0)|=2.6e-13): |R_stokes(0)|=1.4434e+00 |R_ref|=3.5472e-01 speed_max=0.448 m/s t=14.33s
+[nsbp] done converged=False reason='max_iter' it=60 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=64 pc_setups=64 ksp_total=1038 residuals=5051 t[resid=4.7 jac=6.2 ksp=50.2 stokes=14.3] elapsed=57.2s
+[bench-json] {"tag": "asm2", "model": "flat", "refine": 4, "u": 0.1, "ranks": 1, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "-sub_pc_factor_levels 2", "nested": "", "converged": false, "reason": "max_iter", "it": 60, "it_total": 60, "ksp_total": 1038, "jacobians": 
+=== bj1: --model flat --refine 4 --u 0.1 --max-iter 60 --pc bjacobi
+[nsbp] stokes ref (newton=4 ksp=780 not converged ratio=1.1e-06 |R_stokes|/|R_stokes(0)|=2.5e-13): |R_stokes(0)|=1.4434e+00 |R_ref|=3.5472e-01 speed_max=0.448 m/s t=16.40s
+[nsbp] done converged=False reason='max_iter' it=60 m_in=1.0000e+01 m_out=1.0000e+01 jacobians=64 pc_setups=64 ksp_total=1725 residuals=5051 t[resid=4.6 jac=6.1 ksp=42.3 stokes=16.4] elapsed=49.2s
+[bench-json] {"tag": "bj1", "model": "flat", "refine": 4, "u": 0.1, "ranks": 1, "pc": "bjacobi/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": false, "reason": "max_iter", "it": 60, "it_total": 60, "ksp_total": 1725, "jacobians": 64, "pc_setups": 64,

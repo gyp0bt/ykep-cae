@@ -1,0 +1,13 @@
+=== asm1_U1: --model uturn --refine 2 --max-iter 60 --u 1 --pc asm
+[nsbp] stokes ref (newton=5 ksp=277 ratio=9.4e-11 |R_stokes|/|R_stokes(0)|=6.4e-14): |R_stokes(0)|=2.0412e+01 |R_ref|=4.0087e+01 speed_max=2.66 m/s t=2.05s
+[nsbp] done converged=False reason='max_iter' it=60 m_in=1.0000e+02 m_out=1.0000e+02 jacobians=65 pc_setups=65 ksp_total=999 residuals=5128 t[resid=2.3 jac=2.6 ksp=8.2 stokes=2.1] elapsed=11.1s
+[bench-json] {"tag": "asm1_U1", "model": "uturn", "refine": 2, "u": 1.0, "ranks": 1, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": false, "reason": "max_iter", "it": 60, "it_total": 60, "ksp_total": 999, "jacobians": 65, "pc_setups": 65,
+=== asm1_U2: --model uturn --refine 2 --max-iter 60 --u 2 --pc asm
+[nsbp] stokes ref (newton=4 ksp=387 ratio=9.7e-11 |R_stokes|/|R_stokes(0)|=2.5e-09): |R_stokes(0)|=4.0825e+01 |R_ref|=1.6208e+02 speed_max=5.38 m/s t=2.48s
+[nsbp] done converged=True reason='' it=41 m_in=2.0000e+02 m_out=2.0000e+02 jacobians=45 pc_setups=45 ksp_total=1283 residuals=3550 t[resid=1.6 jac=1.8 ksp=8.6 stokes=2.5] elapsed=10.6s
+[bench-json] {"tag": "asm1_U2", "model": "uturn", "refine": 2, "u": 2.0, "ranks": 1, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "", "nested": "", "converged": true, "reason": "", "it": 41, "it_total": 41, "ksp_total": 1283, "jacobians": 45, "pc_setups": 45, "elapse
+=== asm2_U2: --model uturn --refine 2 --max-iter 60 --u 2 --pc asm --opts -sub_pc_factor_levels 2
+[nsbp] stokes ref (newton=4 ksp=156 ratio=8.6e-11 |R_stokes|/|R_stokes(0)|=2.5e-09): |R_stokes(0)|=4.0825e+01 |R_ref|=1.6208e+02 speed_max=5.38 m/s t=1.88s
+[nsbp] done converged=True reason='' it=44 m_in=2.0000e+02 m_out=2.0000e+02 jacobians=48 pc_setups=48 ksp_total=931 residuals=3787 t[resid=1.7 jac=1.9 ksp=11.0 stokes=1.9] elapsed=13.2s
+[bench-json] {"tag": "asm2_U2", "model": "uturn", "refine": 2, "u": 2.0, "ranks": 1, "pc": "asm/full/hypre", "ksp_rtol": 0.001, "jac_lag": 1, "pc_lag": 1, "opts": "-sub_pc_factor_levels 2", "nested": "", "converged": true, "reason": "", "it": 44, "it_total": 44, "ksp_total": 931, "jacobians": 48, "p
+SWEEP_DONE

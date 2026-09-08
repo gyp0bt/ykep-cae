@@ -182,6 +182,13 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [ ] 576×384 で 1 Newton 反復あたり GMRES 100〜140（288×192 は 63）。運動量 ILU の規模依存で、細格子ほど入れ子の効きが鈍る（1.6×）— status-41 TODO
 - [x] SER 制御の掃引（成長率・減少率・cfl_init・cfl_max・前処理更新則・古典形目標則・GMRES 余力則）。`cfl_init` 0.5 → 0.25、線形解失敗ステップの棄却 `reject_lin_ratio=0.3` を安全規則として追加。uturn 144×96 U=1/2 の発散を解消 — status-41
 - [ ] uturn U=2 で GMRES が CFL 10〜18 で 160〜200 反復に膨れる（SIMPLE 型前処理が Brinkman 抗力の厚さ変化に弱い）。CFL の上限が線形ソルバーの余力で決まっており、前処理改善が次の律速 — status-41 TODO
+- [x] **nsbp**（`nsbp/`）: nsb の離散化をそのまま PETSc（petsc4py）で解く別パッケージ。DMDA の MPI 分割 + FD カラーリングの厳密ヤコビアン（13 点パターン）+ FGMRES/ASM(重なり 2)/ILU(2) + 定常残差駆動の SER + リミター凍結。flat 288×192 が 8 ランク 5.2 s（nsb 44.5 s）、入れ子 4.3 s（nsb 18.5 s）、576×384 入れ子 39.1 s（nsb 195 s）、uturn 144×96 U=1 が 1.2 s（nsb 13.2 s）。解の差 1e-5〜2e-4 — status-42
+- [ ] nsbp: KSP が律速（576×384 で 1 Newton 140 反復、8 ランク超で帯域律速）。粗格子補正のある前処理（Ŝ に smoothed aggregation、抗力の対角スケーリング後の hypre、幾何 MG の平滑化の再設計）が次の一手 — status-42 TODO
+- [ ] nsbp: 入れ子で細格子の Stokes 参照場（576×384 で 8 s）を省く。粗格子の |R_ref| からのスケーリング推定か、参照場の定義変更 — status-42 TODO
+- [ ] nsbp: `pc_lag` / `jacobian_lag` / `ksp_rtol` / ILU レベル / SER 成長率の掃引（厳密ヤコビアンでは成長率 2 超が効く可能性）— status-42 TODO
+- [ ] nsbp: リミター凍結の閾値（1e-3）と凍結解のずれの定量（uturn で nsb との差 2e-4）— status-42 TODO
+- [ ] 既存テストの失敗 18 件（`test_inp_runner` 9 + `test_post_mirador` 8 は `VizMixin.export_html()` が `vector_field` を受けない同一原因、`test_natural_convection::TestAMGPressureSolver::test_adaptive_relaxation` 未収束）。status-37 以降全件が回っておらず status-42 で検出 — status-42 TODO
+- [ ] nsbp: uturn の入れ子は厚さ境界をまたぐ補間で初期場が壊れる（参照の 162 倍）。厚さ場を見た補間（閉塞セルへ流速を持ち込まない）— status-42 TODO
 - [ ] 前処理適用（ILU 三角解 + V サイクル ≈ 10 ms × GMRES 45〜56 反復）の numba 化 — status-39 TODO
 - [ ] `dc_simple` + 小さな `gmres_maxiter` の固定サイクル外部反復（Fluent 型）— status-38 TODO（FGMRES は status-39 で実装済み）
 - [ ] 境界 inlet の位置・幅の連続化、冷却設計向け目的関数 — status-31 TODO
