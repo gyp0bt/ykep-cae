@@ -231,9 +231,15 @@ def test_train_floor_smoke(tmp_path):
     net = UNet(in_ch=11, widths=(8, 16, 32, 64)).eval()
     torch.nn.init.zeros_(net.head.weight)
     torch.nn.init.zeros_(net.head.bias)
-    x_ext, sc, open_mask = floor_input(samples[0].x, floor[samples[0].theta.seed])
+    x_ext, sc, open_mask = floor_input(samples[0].x, floor[samples[0].theta.seed], samples[0].theta)
     assert x_ext.shape == (11, 72, 48) and sc.shape == (3,)
-    assert np.allclose(sc, instance_scale(floor[samples[0].theta.seed], open_mask))
+    from nsbm.floor import inertial_share
+
+    assert np.allclose(
+        sc,
+        instance_scale(floor[samples[0].theta.seed], open_mask, inertial_share(samples[0].theta)),
+    )
+    assert 0.0 < inertial_share(samples[0].theta) < 1.0
     with torch.no_grad():
         c, _ = net(torch.from_numpy(x_ext[None]))
         y = floor_predict(

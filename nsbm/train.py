@@ -138,7 +138,7 @@ def _floor_tensors(
     xs, ss, ms, ys = [], [], [], []
     for i in idx:
         s = samples[i]
-        x_ext, sc, open_mask = floor_input(s.x, floor[s.theta.seed])
+        x_ext, sc, open_mask = floor_input(s.x, floor[s.theta.seed], s.theta)
         xs.append(x_ext)
         ss.append(sc)
         ms.append(open_mask[None])

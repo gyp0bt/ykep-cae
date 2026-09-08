@@ -75,7 +75,7 @@ def main() -> None:
             if floor is None:
                 y, logcfl = net(torch.from_numpy(s.x[None]))
             else:
-                x_ext, sc, open_mask = floor_input(s.x, floor[s.theta.seed])
+                x_ext, sc, open_mask = floor_input(s.x, floor[s.theta.seed], s.theta)
                 c, logcfl = net(torch.from_numpy(x_ext[None]))
                 y = floor_predict(
                     torch.from_numpy(floor[s.theta.seed][None]),
