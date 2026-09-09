@@ -1,0 +1,29 @@
+memcap: unit=memcap-train.py_-1004250.scope MemoryMax=24G MemorySwapMax=0 :: python experiments/nsbm/train.py --out experiments/nsbm/runs/unet-r2 --init-from experiments/nsbm/runs/unet-a/best.pt --res-weight 1e-5 --res-transform log --res-cfl-gain 300 --res-frac 0.5 --res-workers 12 --epochs 12 --lr 1e-4 --threads 4 --val-solve 96 --save-all
+samples=4000 converged=3582 (89.5%)
+split from experiments/nsbm/runs/unet-a/split.json
+{'train': 2867, 'val': 358, 'test': 357}
+epoch    0 first batch: |g|head mse 2.40e-02 res 3.28e+03 (res/mse 1.4e+05) res mean 8.33
+epoch    0 train mse 5.784e-03 res 6.149 | val mse 2.433e-02 floor 0.000e+00 res 6.935 obj 3.140e+01 best 3.140e+01@0 | n_iter mean 31.40 med 20.5 fail 5 | cfl med 0.246 [0.241,0.248] fail 0 | skipped 0 |g|head mse 2.40e-02 res 3.28e+03 lr 9.83e-05   350.8s
+epoch    1 first batch: |g|head mse 3.00e-02 res 3.25e+01 (res/mse 1.1e+03) res mean 12.53
+epoch    1 train mse 5.579e-03 res 5.652 | val mse 2.361e-02 floor 0.000e+00 res 7.539 obj 3.551e+01 best 3.140e+01@0 | n_iter mean 35.51 med 20.0 fail 8 | cfl med 0.258 [0.25,0.262] fail 0 | skipped 0 |g|head mse 3.00e-02 res 3.25e+01 lr 9.33e-05   720.0s
+epoch    2 first batch: |g|head mse 1.79e-02 res 3.24e+02 (res/mse 1.8e+04) res mean 2.08
+epoch    2 train mse 5.802e-03 res 5.467 | val mse 2.295e-02 floor 0.000e+00 res 6.676 obj 2.972e+01 best 2.972e+01@2 | n_iter mean 29.72 med 20.0 fail 4 | cfl med 0.251 [0.244,0.255] fail 0 | skipped 0 |g|head mse 1.79e-02 res 3.24e+02 lr 8.54e-05  1078.6s
+epoch    3 first batch: |g|head mse 1.31e-02 res 3.96e+01 (res/mse 3.0e+03) res mean 10.70
+epoch    3 train mse 5.411e-03 res 5.520 | val mse 2.323e-02 floor 0.000e+00 res 6.104 obj 3.210e+01 best 2.972e+01@2 | n_iter mean 32.10 med 19.5 fail 7 | cfl med 0.271 [0.25,0.282] fail 0 | skipped 0 |g|head mse 1.31e-02 res 3.96e+01 lr 7.50e-05  1446.9s
+epoch    4 first batch: |g|head mse 2.31e-02 res 2.28e+01 (res/mse 9.9e+02) res mean 7.90
+epoch    4 train mse 5.496e-03 res 5.249 | val mse 2.393e-02 floor 0.000e+00 res 6.189 obj 3.198e+01 best 2.972e+01@2 | n_iter mean 31.98 med 19.5 fail 8 | cfl med 0.269 [0.245,0.284] fail 0 | skipped 0 |g|head mse 2.31e-02 res 2.28e+01 lr 6.29e-05  1819.0s
+epoch    5 first batch: |g|head mse 2.71e-02 res 2.40e+01 (res/mse 8.9e+02) res mean 4.03
+epoch    5 train mse 5.335e-03 res 5.057 | val mse 2.447e-02 floor 0.000e+00 res 5.651 obj 3.274e+01 best 2.972e+01@2 | n_iter mean 32.74 med 19.0 fail 10 | cfl med 0.312 [0.258,0.349] fail 0 | skipped 0 |g|head mse 2.71e-02 res 2.40e+01 lr 5.00e-05  2142.6s
+epoch    6 first batch: |g|head mse 2.99e-02 res 3.78e+01 (res/mse 1.3e+03) res mean 6.48
+epoch    6 train mse 5.282e-03 res 4.365 | val mse 2.394e-02 floor 0.000e+00 res 4.981 obj 3.207e+01 best 2.972e+01@2 | n_iter mean 32.07 med 19.0 fail 6 | cfl med 0.333 [0.263,0.379] fail 0 | skipped 0 |g|head mse 2.99e-02 res 3.78e+01 lr 3.71e-05  2505.4s
+epoch    7 first batch: |g|head mse 2.26e-02 res 2.59e+02 (res/mse 1.1e+04) res mean 3.41
+epoch    7 train mse 5.176e-03 res 4.210 | val mse 2.433e-02 floor 0.000e+00 res 4.226 obj 3.359e+01 best 2.972e+01@2 | n_iter mean 33.59 med 18.0 fail 11 | cfl med 0.394 [0.275,0.476] fail 0 | skipped 0 |g|head mse 2.26e-02 res 2.59e+02 lr 2.50e-05  2864.8s
+epoch    8 first batch: |g|head mse 1.58e-02 res 1.35e+01 (res/mse 8.5e+02) res mean 0.67
+epoch    8 train mse 5.338e-03 res 3.260 | val mse 2.405e-02 floor 0.000e+00 res 3.633 obj 3.268e+01 best 2.972e+01@2 | n_iter mean 32.68 med 17.0 fail 11 | cfl med 0.48 [0.303,0.605] fail 0 | skipped 0 |g|head mse 1.58e-02 res 1.35e+01 lr 1.46e-05  3292.4s
+epoch    9 first batch: |g|head mse 5.72e-03 res 8.15e+01 (res/mse 1.4e+04) res mean 6.54
+epoch    9 train mse 5.285e-03 res 3.038 | val mse 2.408e-02 floor 0.000e+00 res 2.984 obj 3.241e+01 best 2.972e+01@2 | n_iter mean 32.41 med 16.0 fail 13 | cfl med 0.563 [0.328,0.723] fail 0 | skipped 0 |g|head mse 5.72e-03 res 8.15e+01 lr 6.70e-06  3611.2s
+epoch   10 first batch: |g|head mse 1.52e-02 res 2.58e+02 (res/mse 1.7e+04) res mean 2.65
+epoch   10 train mse 5.180e-03 res 2.071 | val mse 2.395e-02 floor 0.000e+00 res 3.118 obj 3.157e+01 best 2.972e+01@2 | n_iter mean 31.57 med 16.0 fail 7 | cfl med 0.574 [0.329,0.742] fail 0 | skipped 1 |g|head mse 1.52e-02 res 2.58e+02 lr 1.70e-06  3910.3s
+epoch   11 first batch: |g|head mse 1.46e-02 res 7.71e+02 (res/mse 5.3e+04) res mean 0.70
+epoch   11 train mse 5.194e-03 res 2.308 | val mse 2.400e-02 floor 0.000e+00 res 2.781 obj 3.285e+01 best 2.972e+01@2 | n_iter mean 32.85 med 16.0 fail 10 | cfl med 0.582 [0.33,0.755] fail 0 | skipped 0 |g|head mse 1.46e-02 res 7.71e+02 lr 0.00e+00  4217.4s
+best epoch 2 val 2.972e+01 -> experiments/nsbm/runs/unet-r2/best.pt
