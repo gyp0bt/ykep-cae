@@ -195,7 +195,10 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] nsb: 色分け有限差分の厳密ヤコビアン（`nsb/fdjac.py`、`jacobian="fd"`）と τ 2 重カウント修正。厳密ステップの真の残差比 92 → 0.11、0.0015 kg/s が 22 反復で収束 — status-45
 - [x] nsb: リミター凍結（`limiter_freeze_rel`、ψ 安定条件 + 解凍 patience 3）。継続法が 1 段先まで登る（内部 0.005、壁 0.015）が次の段は凍結閾値より上で停滞。隙間の摩擦則（`friction_re_crit`）は収束性を悪化 — status-46
 - [x] nsb: 物理時間の陰的非定常 `nsb/unsteady.py`（後退 Euler、Δt 後退、プローブ）。細格子で過渡追跡（走行中） — status-46
-- [ ] nsb: 非定常 G4 を最後まで走らせて定常化/振動を判定。定常化するなら「非定常で吸引域まで運んでから定常 Newton + 凍結」 — status-46 TODO
+- [x] **nsb: OpenFOAM による独立検算**（`experiments/nsb/trama_of_*.py`、ゲート G3 の Docker ラッパと `foam_io` を転用）。`simpleFoam` も 0.15 kg/s で 8000 反復 平坦（p 残差 8.4e-2）。**0.15 kg/s には定常解が存在しない**。決めるのは N = L_drag/w = ρuh²/(12μw)（渦が抗力で消える移動距離 ÷ 流路幅）で、境目は N 1.33 収束 / 2.22 停滞 ＝ nsb の継続法の境目と一致。Reynolds 数ではない（Re_h 1449 のまま h を 1/12 にすると N 1.11 で収束） — status-47
+- [ ] nsb: 非定常 G4 を最後まで走らせて時間平均を取る（OpenFOAM の結果からは定常化しない見込み）。OpenFOAM の時間平均（入口 25.5 ± 2.3 kPa、変動/平均 45%）と突き合わせる — status-47 TODO
+- [ ] nsb: 非定常の 1 ステップ費用を OpenFOAM 並みに（閉塞セル 68312 個を解かない、毎ステップの直接 LU をやめる）。現状 25 s/step vs 0.20 s/step — status-47 TODO
+- [ ] nsb: 定常解が無いことを検出して報告する（残差が平坦なまま CFL が潰れたら「定常解なし、非定常へ」と `failure_reason` に）— status-47 TODO
 - [ ] nsb: 停滞段（内部 0.015、壁 0.05）の跳ねの正体（風上切替 / sink の clip）をステップ分解で同定 — status-46 TODO
 - [ ] nsb: τ 修正後の SER 制御則の再掃引（status-41 の掃引は J+2τ の作用素）。既定は定常残差 SER に切替済 — status-46 TODO
 - [ ] nsb: 閉塞セル圧力の谷底を埋める（h_blocked 1e-5 → 1e-4 で κ 2e12 → 1e10、または閉塞セルの圧力緩和項）— status-45 TODO

@@ -477,3 +477,298 @@ $P --mass 0.15 --dx 1.5 --unsteady 0.005 --n-steps 600 --newton-per-step 6 --sav
    --linear-solver jfnk --ls 4 --tag G4                                               # 非定常（J1 LU + ラインサーチ）
 python experiments/nsb/trama_plots2.py                                               # f8, f9
 ```
+
+## 11. OpenFOAM による独立検算 — 定常解が存在しない流量を挟む（2026-09-10 朝、gyp さん「openfoam で同じ問題を解いてくれますか」）
+
+status-47。ゲート G3（押し出し機）で作った OpenFOAM オラクル一式
+（Docker ラッパ `~/work/1a/a02/tools/of`、`experiments/extruder/foam_io.py`）をそのまま転用した。
+
+先に結論:
+
+| 問い | 答え |
+|---|---|
+| OpenFOAM なら 0.15 kg/s が定常で解けるか | **解けない**。`simpleFoam` も 8000 反復で p の初期残差が平坦に張り付く（両変種） |
+| なぜか | この流量では**定常解が存在しない**。隙間の抗力が横渦を殺すのに要る移動距離 L_drag = (Re_h/12)·h が流路幅の 13 倍あり、渦は次のターンまで生き延びる |
+| どこから解けなくなるか | N = L_drag/w が 1.3 までは収束、4.4 で床が 4 桁跳ぶ。**nsb の継続法が登れた段と一致する** |
+| nsb の解法が悪かったのか | 悪くない。同じ式を別の離散化・別の解法・別の前処理に食わせても同じ壁に当たる |
+
+### 11.1 舞台: nsb と OpenFOAM に同じ式を食わせる
+
+nsb が解いているのは単位深さの 2 次元非圧縮 Navier–Stokes に Brinkman 抗力を足したもので、
+連続式に厚さ h の重みは無い（`nsb/assembly.py` の `r_p = div(fx, fy) − q_in + q_out`、
+`fx = ρ dy u`）。h は運動量式の抗力 12μ/h²·u にしか現れない。だから OpenFOAM 側は
+**非圧縮 `simpleFoam` ＋ DarcyForchheimer 多孔質源（d = 12/h²）** で同じ式になる。
+
+| nsb の項 | OpenFOAM の対応 | 数値 |
+|---|---|---|
+| 対流（2 次風上 + Venkatakrishnan ψ） | `div(phi,U) bounded Gauss linearUpwind cellLimited` | — |
+| 拡散 μ∇²u | `laplacianSchemes Gauss linear corrected` | ν = 3e-6 m²/s |
+| Brinkman 抗力 12μ/h² u | `explicitPorositySource`（DarcyForchheimer、力は ν·d·U） | d = 12/h²：流路 8.31e5、閉塞 1.2e11 1/m² |
+| 圧力–速度連成（Rhie–Chow、d_f = V/a_P） | SIMPLE の rAU = 1/UEqn.A() | — |
+| 内部ポート（円板セルの質量ソース / 圧力シンク） | 円板セルを刳り抜いた実パッチ（流量指定 / p = 0） | 半径 w/2 − 2Δx = 14.25 mm |
+
+`explicitPorositySource` は名前に反して `eqn -= porosityEqn` と**行列ごと**引くので、抗力は
+運動量行列の対角に陰的に入り rAU にも反映される。nsb が `a_p` に `drag·V` を足すのと同じ構造で、
+「抗力が強い場所ほど圧力–速度結合が弱くなる」という nsb の弱点も同じ形で再現される。
+
+### 11.2 2 つの変種 — 閉塞を「栓」で表すか「壁」で表すか
+
+| 変種 | 閉塞域の扱い | セル数 | 位置づけ |
+|---|---|---|---|
+| `porous` | 領域 600×350 mm を丸ごと格子にし、閉塞セルに d = 12/h_blocked² = 1.2e11 1/m²（νd = 3.6e5 1/s） | 92366 | **nsb の離散化そのもの** |
+| `walls`  | 流路セルだけ `subsetMesh` で切り出し、側壁を no-slip の実壁に。流路に d = 12/h_channel²（νd = 2.49 1/s） | 24054 | 物理的に正しい深さ平均モデル |
+
+ポートは半径 w/2 − 2Δx = 14.25 mm の円板セルを刳り抜き、露出面を inlet（体積流量指定
+1.5e-4 m³/s）/ outlet（p = 0）にする。**半径を w/2 ちょうどにしてはいけない**: 円周が流路と
+閉塞域の境目にちょうど乗り、`porous` 変種では入口の外周が栓に接して流量を栓の中へ押し込む。
+実測で入口の圧力が 16.7 kPa → **1.51 MPa** に化けた（栓の抗力 3.6e5 1/s に逆らって注入するため）。
+nsb 側は円板「セル」に体積ソースを置くので同じ問題は起きない（質量は行ける方へ流れる）。
+
+### 11.3 定常は OpenFOAM でも収束しない
+
+`simpleFoam`（SIMPLE、U 0.7 / p 0.3、GAMG + PBiCGStab、層流）を 8000 反復。
+
+![f10](../../experiments/nsb/results/trama_figs/f10_of_fields.png)
+
+
+両変種とも 100 反復ほどで残差が下がり、そこから**最後まで完全に平坦**。
+
+![f11](../../experiments/nsb/results/trama_figs/f11_of_residuals.png)
+
+判定 1e-6 に対して 4〜5 桁上で振動し続ける。線形ソルバーは毎回 3〜4 反復で解けているので、
+「解けていない」のではなく**収束先が無い**。
+
+### 11.4 なぜ定常解が無いか — 決めるのは 1 つの比
+
+深さ平均した運動量式で、面内の速度差 Δu を消せるのは隙間の抗力 12μ/h²·Δu だけ。
+これは Δu を **指数で** 減衰させるので、時間の物差しと距離の物差しが 1 本ずつ立つ:
+
+    τ_drag = ρh²/(12μ) = 0.40 s        速度差が 1/e になる時間
+    L_drag = u·τ_drag = (Re_h/12)·h    その間に流れが進む距離 = 459 mm
+
+一方、ターンの内側で剥がれた渦の大きさは流路幅 w = 34.5 mm、次のターンまでの直線は
+172.5 mm。つまり **渦は 13.3 流路幅ぶん走らないと消えないのに、5.0 幅ぶんで次のターンに着く**。
+抗力は「面内のせん断を均す粘り」ではなく「場全体を 0.4 秒で止めるブレーキ」なので、
+渦の回転周期 w/u = 30 ms に対して 13 倍遅く、間に合わない。
+
+支配パラメータはこの比 1 つ:
+
+    N = L_drag / w = ρ u h² / (12 μ w) = ṁ h / (12 μ w²) = 88.65 ṁ [kg/s]
+
+渦が消えるまでに要る距離が流路幅の何倍か、という比 1 つ。分子は慣性 ρu²/w、分母は抗力 12μu/h² なので、
+**N はそのまま慣性/抗力の比**でもある（面内の粘性拡散 ν(2π/w)² は抗力の 4% しかないので無視できる）。
+
+<figure>
+<svg viewBox="0 0 780 250" role="img" aria-label="ターンで剥がれた渦が抗力で消えるまでの距離と、次のターンまでの距離の比較" style="max-width:100%;height:auto;font-family:sans-serif;font-size:12px">
+  <defs>
+    <marker id="a11" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0 8,4 0,8" fill="currentColor"/></marker>
+    <marker id="a11r" markerWidth="8" markerHeight="8" refX="1" refY="4" orient="auto"><polygon points="8,0 0,4 8,8" fill="currentColor"/></marker>
+  </defs>
+
+  <!-- 流路（1 直線区間） -->
+  <rect x="60" y="60" width="660" height="46" fill="none" stroke="currentColor" stroke-width="1.2"/>
+  <text x="46" y="88" text-anchor="end">流路</text>
+
+  <!-- 幅の寸法 -->
+  <line x1="70" y1="60" x2="70" y2="106" stroke="#B24714" stroke-width="1.5" marker-start="url(#a11r)" marker-end="url(#a11)"/>
+  <text x="80" y="84" fill="#B24714">w = 34.5 mm</text>
+
+  <!-- ターンで剥がれた渦 -->
+  <circle cx="150" cy="83" r="19" fill="none" stroke="#1F6FB4" stroke-width="1.6"/>
+  <path d="M150 64 a19 19 0 0 1 16 10" fill="none" stroke="#1F6FB4" stroke-width="1.6" marker-end="url(#a11)"/>
+  <text x="150" y="132" text-anchor="middle" fill="#1F6FB4">ターンの内側で剥がれた渦</text>
+  <text x="150" y="148" text-anchor="middle" fill="#1F6FB4">回転周期 w/u = 30 ms</text>
+
+  <!-- 減衰距離 -->
+  <line x1="150" y1="182" x2="700" y2="182" stroke="#1F6FB4" stroke-width="1.5" marker-end="url(#a11)"/>
+  <text x="425" y="176" text-anchor="middle" fill="#1F6FB4">L_drag = (Re_h/12)·h = 459 mm = 13.3 w　（速度差が 1/e になる移動距離）</text>
+
+  <!-- 次のターンまで -->
+  <line x1="150" y1="215" x2="330" y2="215" stroke="#B24714" stroke-width="1.5" marker-end="url(#a11)"/>
+  <text x="340" y="219" fill="#B24714">次のターンまで 172.5 mm = 5.0 w</text>
+
+  <!-- 次のターン -->
+  <path d="M330 60 v-18 h60 v82 h-60 v-18" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <text x="360" y="36" text-anchor="middle">次のターン</text>
+</svg>
+<figcaption>図 11-1: 定常解があるかどうかは「渦が抗力で消える距離 L_drag」と「流路幅 w」の比 N = L_drag/w だけで決まる。0.15 kg/s では N = 13.3 で、渦は次のターンに 5 幅ぶんしか進めないうちに到達する。N ≲ 1 まで流量を落とすと渦は 1 幅ぶんで消え、定常解が現れる。</figcaption>
+</figure>
+
+### 11.5 流量を振って境目を挟む
+
+`walls` 変種、`simpleFoam` 8000 反復。判定は p の初期残差 1e-6（1e-5 未満なら定常解に着いたと読む。
+階段状の壁の折れ点で 2〜3e-6 の小さな床が残るケースがあるため）。
+
+| ṁ [kg/s] | h [mm] | μ [Pa·s] | Re_h | Re_w | **N** | 反復 | 定常解 | 最終 p 残差 |
+|---|---|---|---|---|---|---|---|---|
+| 0.0015 | 3.8 | 3e-3 | 14 | 132 | 0.13 | 65 | **あり** | 2.3e-8 |
+| 0.005 | 3.8 | 3e-3 | 48 | 439 | 0.44 | 8000 | あり（床 3.0e-6） | 3.0e-6 |
+| 0.15 | 3.8 | **0.0399** | 109 | 990 | 1.00 | 185 | **あり** | 2.0e-8 |
+| **0.15** | **0.317** | 3e-3 | **1449** | **157895** | **1.11** | 233 | **あり** | 2.6e-8 |
+| 0.015 | 3.8 | 3e-3 | 145 | 1316 | 1.33 | 251 | **あり** | 1.8e-8 |
+| 0.025 | 3.8 | 3e-3 | 241 | 2193 | 2.22 | 8000 | **なし** | 3.1e-4 |
+| 0.015 | **7.6** | 3e-3 | 145 | 658 | 2.66 | 724 | あり | 5.5e-8 |
+| 0.15 | 3.8 | **9.97e-3** | 436 | 3958 | 4.00 | 8000 | **なし** | 1.6e-2 |
+| 0.05 | 3.8 | 3e-3 | 483 | 4386 | 4.43 | 8000 | **なし** | 2.2e-2 |
+| 0.15 | 3.8 | 3e-3 | 1449 | 13158 | 13.3 | 8000 | **なし** | 8.4e-2 |
+
+![f12](../../experiments/nsb/results/trama_figs/f12_of_sweep.png)
+
+![f13](../../experiments/nsb/results/trama_figs/f13_of_map.png)
+
+
+**決め手は Reynolds 数ではない。** 4 行目は流量 0.15 kg/s のまま隙間だけ 12 分の 1（3.8 → 0.317 mm）に
+したケースで、u ∝ 1/h だから **Re_h は 1449 のまま**、面内の Re_w はむしろ 13158 → 157895 に上がる。
+それでも N が 13.3 → 1.11 に下がるだけで **233 反復で収束する**。定常解の有無を決めているのは
+隙間の抗力であって、どの Reynolds 数でもない。
+
+**ただし N だけでもない。** 7 行目（隙間を 2 倍にして Re_h 145 のまま N を 2.66 に上げた）は収束する。
+渦を殺せなくても、そもそも面内で剥離が立たなければ振動しない。データは
+「**N ≳ 2（抗力が渦を殺せない）かつ Re_w ≳ 2000（剥離が立つ）**の両方が揃ったときだけ定常解が消える」
+と読める。0.15 kg/s は N 13.3・Re_w 13158 で両方とも大きく超えている。
+
+床の高さが N とともに 3.1e-4 → 1.6e-2 → 2.2e-2 → 8.4e-2 と滑らかに育つのは、
+極限周期の振幅が分岐点からの距離とともに育つ形（超臨界 Hopf）で、これも「定常解が消えた」読み方と合う。
+
+### 11.6 床はリミターのせいではない
+
+nsb では折れ点（Venkatakrishnan リミター）が残差の床を作るので、同じ疑いを OpenFOAM でも潰しておいた。
+`cellLimited` 勾配リミターを外した対照:
+
+| ケース | リミターあり | リミターなし |
+|---|---|---|
+| 0.015 kg/s（N 1.33） | 251 反復で収束 | 281 反復で収束 |
+| 0.005 kg/s（N 0.44） | 床 3.0e-6 | 床 2.1e-6 |
+| 0.15 kg/s（N 13.3） | 床 8.4e-2 | 床 1.4e-1 |
+
+高い床（1e-4 以上）はリミターと無関係。低い床（2〜3e-6）はリミターを外しても残るので、
+階段状の壁と斜め区間の幾何そのものが作っている。物理由来の床とは 2 桁以上離れている。
+
+### 11.7 0.15 kg/s の答え — 時間平均と、その振れ幅
+
+定常解が無いのだから、答えは 1 枚の場ではなく「時間平均場 ＋ 変動の大きさ」になる。
+`pimpleFoam`（後退 Euler 相当の Euler、Δt 1 ms、PIMPLE 3 外側 × 2 圧力、`walls` 変種）で
+定常反復の場から 3.0 秒ぶん進め、1.0 秒以降を平均した。
+
+![f14](../../experiments/nsb/results/trama_figs/f14_of_transient.png)
+
+
+| 量 | 値 |
+|---|---|
+| 入口の必要圧力ヘッド | **25.5 ± 2.3 kPa**（17.6 〜 29.8 kPa、変動 ±9.0%） |
+| 時間平均の最大流速 | 5.50 m/s（公称平均 1.14 m/s の 4.8 倍。ターン内側のジェット） |
+| 流路内の時間平均流速 | 1.34 m/s |
+| 速度変動の実効値 √(u′²+v′²) | 平均 0.61 m/s（**時間平均流速の 45%**）、最大 2.10 m/s |
+| 計算費用 | 3019 ステップ / 615 秒（24054 セル、4 コア） |
+
+変動場の絵が機構をそのまま見せる。**入口から最初のターンまでの直線は変動がゼロ**（真っ黒）で、
+渦は最初のターンで生まれ、そこから下流のターンごとに積み上がって流路中央部で最大になる。
+抗力が渦を殺し切れないまま次のターンに着く、という §11.4 の読みと合う。
+
+「必要な圧力ヘッド」が ±9% 振れるということは、この流路を定圧で駆動すると流量が振れ、
+定流量で駆動すると圧力が振れる。**定常計算が返す 1 つの Δp は、そもそも存在しない量**である。
+
+### 11.8 定常解がある流量では、両者は同じ場を返す（オラクル検算）
+
+定常解が両方で求まる 0.005 kg/s（N = 0.44）で、場そのものを突き合わせた。
+nsb は内部ポート・リミター凍結・継続法（0.0015 → 0.005、46 + 69 反復）、
+OpenFOAM は `porous` 変種（＝ nsb と同じ離散化: 閉塞を抗力の栓で表す）で 8000 反復。
+ポートの与え方だけは違う（nsb はセル内の質量ソース／圧力シンク、OpenFOAM は円板を刳り抜いた実パッチ）ので、
+ポート中心からの距離で除外半径を変えて見た:
+
+| ポートから除外 | 比較セル数 | 速度の L2 相対差 | 圧力の L2 相対差 | 流路平均流速の差 |
+|---|---|---|---|---|
+| 15 mm | 24264 | 20.9% | 3.75% | 0.12% |
+| 30 mm | 23602 | 11.1% | 0.150% | 0.51% |
+| 60 mm | 22655 | **8.2%** | **0.089%** | 0.60% |
+| 100 mm | 20985 | 8.0% | 0.094% | 0.59% |
+
+圧力差 [Pa]（圧力は基準が違う: nsb の出口シンクは q = C·p の下駄を履くので比較マスク上の平均を引いた）:
+nsb 142.3 Pa / OpenFOAM 141.0 Pa、**0.87% 一致**。
+
+- ポートから 60 mm 離れると差は 8% で頭打ちになる。図 f15 の差分マップを見ると、
+  大きい差は**入口の円板から下流の帯**に集中していて、そこから先の U ターンのジェットは 2 つの絵が重なる。
+  帯の差はポートの与え方（体積ソース vs 実パッチ）そのもの。
+- 残る 8% は離散化の差（nsb の 2 次風上 + Venkatakrishnan vs OpenFOAM の linearUpwind + cellLimited、
+  Rhie–Chow の細部）。積分量（圧力差 0.9%、平均流速 0.6%）は 1% で一致する。
+
+![f15](../../experiments/nsb/results/trama_figs/f15_of_verify.png)
+
+**この一致があるから、§11.3〜11.5 の「収束しない」も同じ問題について言えている。**
+
+### 11.9 nsb と OpenFOAM は同じ流量で壁に当たる
+
+OpenFOAM の境目（0.015 収束 / 0.025 で床）を予測として、nsb でも同じ段を跨ぐ継続法を回した
+（壁ポート、リミター凍結 1e-3、定常残差 SER、各段 max_iter 120）:
+
+| 段 [kg/s] | N | nsb 反復（収束判定 rel 1e-6） | OpenFOAM 反復（判定 1e-6） |
+|---|---|---|---|
+| 0.0015 | 0.13 | **18** | **65** |
+| 0.005 | 0.44 | **43** | 床 3.0e-6（実質収束） |
+| 0.015 | 1.33 | **99** | **251** |
+| 0.025 | 2.22 | **停滞 1.04e-3**（120 反復） | **床 3.1e-4**（8000 反復） |
+| 0.05 | 4.43 | 停滞 5.8e-2（status-46） | 床 2.2e-2 |
+| 0.15 | 13.3 | 未収束（全手法） | 床 8.4e-2 |
+
+離散化（FVM の実装）も線形化（Newton + 擬似時間 vs SIMPLE）も前処理も、ポートの与え方
+（セル内ソース vs 実パッチ）も違う 2 つのコードが、**同じ流量で同じ壁に当たる**。
+これで「nsb の解法が悪いから収束しない」という読みは消える。
+
+### 11.10 nsb の症状はすべて「定常解が無い」で説明が付く
+
+| nsb の症状（status-45/46） | 読み替え |
+|---|---|
+| CFL ≈ 1 のステップで残差が 3〜8 倍に跳ね、SER が CFL を潰す | 擬似時間刻み Δτ が物理の不安定モードの成長時間に届いた点。Δτ を伸ばすほど擬似時間積分は不安定モードを抑えられない。SER が CFL を下げるのは**正しい反応**で、大域化の工夫では超えられない |
+| 継続法が壁ポート 0.015 kg/s まで登り、その先で停滞 | OpenFOAM の境目と同じ位置（N ≈ 2） |
+| 停滞する残差比が流量とともに 1e-3 → 6e-2 と育つ | 極限周期の振幅が分岐点からの距離とともに育つ（超臨界 Hopf） |
+| リミター凍結が「1 段先まで」しか効かない | 凍結が消せるのは折れ点由来の床（1e-6 付近）だけ。物理由来の床（1e-3 以上）には効かない。OpenFOAM でリミターを外しても高い床が残ることと同じ |
+| ラインサーチが棄却連鎖になり CFL が 1e-60 に潰れる | 定常残差に零点が無い。減らせる方向が無いのだから、全部の試し歩が棄却されるのが正しい |
+| 内部ポートの方が壁ポートより厳しい | 内部ポートは出口 sink セルの非線形性が加わるぶん、同じ N でも折れ点が増える（境目そのものは動かない） |
+
+### 11.11 結論 — 0.15 kg/s をどう解くか
+
+1. **定常で解こうとしてはいけない。** この流量では定常解が存在しない。nsb の解法
+   （Newton + 擬似時間 SER + JFNK + SIMPLE 前処理）に不備があったのではなく、探しにいく先が無い。
+2. 定常な答えが要るなら **渦粘性を入れて定常解を存在させる**。深さ平均モデルの正攻法は水平渦粘性 ν_t を足すこと
+   （実質的に L_drag を縮めて N を下げる操作にあたる）。隙間の摩擦則（status-46）が効かなかったのは、
+   抗力を 1.3 倍しても N が 13.3 → 10.2 にしかならず、境目の N ≈ 2 に遠く届かないため。
+3. 渦粘性を入れないなら **非定常で解いて時間平均する**。`nsb/unsteady.py`（status-46）はその正しい方向。
+4. nsb 側に直すべき実装の問題は残っている（`jacobian="fd"` と SIMPLE の組み合わせ、
+   ラインサーチの棄却連鎖）が、0.15 kg/s が収束しないことの説明にはならない。
+
+### 付録 §11: 再現コマンド
+
+```bash
+# ケース生成 → メッシュ → simpleFoam（Docker、メモリ・CPU 上限つき）
+python experiments/nsb/run_trama_of.py --variant walls  --out /tmp/of-trama/walls  --end-time 8000 \
+    2>&1 | tee experiments/nsb/logs/of-trama-walls-$(date +%s).log
+python experiments/nsb/run_trama_of.py --variant porous --out /tmp/of-trama/porous --end-time 8000
+
+# 流量掃引（N を振る）と、Re を固定して N だけ動かす対照
+for m in 0.0015 0.005 0.015 0.025 0.05; do
+  python experiments/nsb/run_trama_of.py --variant walls --mass $m --out /tmp/of-trama/walls-m$m --end-time 8000
+done
+python experiments/nsb/run_trama_of.py --variant walls --mass 0.15 --h-channel 0.00031666666 \
+    --out /tmp/of-trama/walls-E1-hsmall --end-time 8000     # Re_h 1449 のまま N 1.11
+python experiments/nsb/run_trama_of.py --variant walls --mass 0.015 --h-channel 0.0076 \
+    --out /tmp/of-trama/walls-E2-hbig --end-time 8000       # Re_h 145 のまま N 2.66
+
+# 非定常（時間平均が「答え」）
+python experiments/nsb/run_trama_of.py --variant walls --out /tmp/of-trama/walls-t --transient \
+    --end-time-s 3.0 --avg-start 1.0 --init-from /tmp/of-trama/walls
+
+# まとめと図
+python experiments/nsb/trama_of_sweep.py --work /tmp/of-trama
+python experiments/nsb/trama_of_compare.py --work /tmp/of-trama --variants porous walls
+python experiments/nsb/trama_of_transient.py --case /tmp/of-trama/walls-t
+
+# nsb 側の同じ境目（壁ポート、リミター凍結、定常残差 SER）
+NUMBA_NUM_THREADS=4 OMP_NUM_THREADS=2 ~/.claude/hooks/memcap -m 8G -- \
+  python experiments/nsb/trama_case.py --mass 0.05 --dx 1.5 --port wall --steady-ser --freeze 1e-3 \
+    --max-iter 120 --continuation 0.0015,0.005,0.015,0.025,0.035,0.05 --tag N-wall-cont-fine \
+    2>&1 | tee experiments/nsb/logs/trama-N-wall-cont-fine-$(date +%s).log
+```
+
+OpenFOAM は Docker（`~/work/1a/a02/tools/of`、`opencfd/openfoam-run:2312`、`OF_MEM` / `OF_CPUS` で上限）。
+ケース生成は `experiments/nsb/trama_of_case.py`、実行は `run_trama_of.py`、
+Foam フィールドの読み書きはゲート G3 の `experiments/extruder/foam_io.py` を再利用した。

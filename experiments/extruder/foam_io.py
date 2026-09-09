@@ -46,6 +46,9 @@ def latest_time(case: str) -> str:
     return max(times)[1]
 
 
+_NCOMP = {"vector": 3, "symmTensor": 6, "tensor": 9}
+"""nonuniform List<...> の 1 要素あたりの成分数."""
+
 _LIST_RE = re.compile(r"nonuniform\s+List<(\w+)>\s*\n?\s*(\d+)\s*\n?\s*\(", re.S)
 
 
@@ -57,11 +60,13 @@ def _parse_list(text: str, start: int, kind: str, count: int) -> np.ndarray:
             msg = "scalar リストの閉じ括弧が見つからない"
             raise ValueError(msg)
         vals = np.fromstring(m.group(1), sep=" ")
-    elif kind == "vector":
-        # (x y z) を count 個
+    elif kind in _NCOMP:
+        # (a b ...) を count 個。vector 3 / symmTensor 6 / tensor 9 成分
         body_end = text.index("\n)", start)
         body = text[start:body_end]
-        vals = np.fromstring(body.replace("(", " ").replace(")", " "), sep=" ").reshape(-1, 3)
+        vals = np.fromstring(body.replace("(", " ").replace(")", " "), sep=" ").reshape(
+            -1, _NCOMP[kind]
+        )
     else:
         msg = f"未対応の List 型: {kind}"
         raise ValueError(msg)

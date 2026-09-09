@@ -1,0 +1,14 @@
+{
+ "time": "3",
+ "speed_max_mean": 5.498277354776739,
+ "speed_mean_channel": 1.341499320145175,
+ "dp_mean_pa": 49068.760753,
+ "p_inlet_mean_pa": 25472.79845089552,
+ "p_inlet_std_pa": 2288.649513902908,
+ "p_inlet_min_pa": 17584.78167,
+ "p_inlet_max_pa": 29770.129539999998,
+ "p_inlet_rel_swing": 0.08984680337791659,
+ "rms_max": 2.0983391328167142,
+ "rms_mean_channel": 0.6056579642530946,
+ "rms_over_umean": 0.45147839820563695
+}
