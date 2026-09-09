@@ -191,6 +191,12 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [x] nsbm: 残差駆動の学習（5 歩の残差和 + cfl_init ヘッド、凍結ヤコビアン随伴）。残差項は下がるが実反復数は増える。局所 Galerkin で残差比 0.6 にしても五分で、残差を減らした場ほど破綻 — status-44
 - [x] nsbm: 出発 CFL の予測。全 θ × {1,2,4,8,16} の掃引、選択器（平均 20.6 → 16.8）、早期やり直し規則（15.9、学習なし）、オラクル 10.8。失敗する θ は特徴から見分けられず、5 反復後の残差比なら見分けられる — status-44
 - [ ] nsbm: 細格子 288×192 での評価（Stokes 発進 43 Newton。unet-s（Stokes 床 + 補正、R² 0.965）の初期場を双一次補間して入れ子の粗格子解と比べる） — status-43/44 TODO
+- [x] nsb: 蛇行流路（messi trama、0.15 kg/s、Re_h 1450）の収束不良を 3 観点で可視化。条件数は閉塞領域が決めて Re で不変、主因は「RC 結合 d ∝ 1/Re で J1 の圧力方向が平らになり Newton 歩が飛ぶ」×「SIMPLE + JFNK がその方向を増幅」。階段は無関係 — status-45
+- [ ] nsb: 圧力レベル方向で J1 と真の作用素を揃える（出口 pressure sink の運動量項・円板縁の RC 結合の厳密化、または defect correction）。厳密歩の真の残差比 81 → O(1) 未満が目標 — status-45 TODO
+- [ ] nsb: 閉塞セル圧力の谷底を埋める（h_blocked 1e-5 → 1e-4 で κ 2e12 → 1e10、または閉塞セルの圧力緩和項）— status-45 TODO
+- [ ] nsb: 高 Re 用の Schur 近似（SIMPLEC / PCD / LSC）。0.05 kg/s で SIMPLE の組立が壊れる（Ritz 3e17）件も含む — status-45 TODO
+- [ ] nsb: JFNK の有限差分 matvec の τ 2 重カウント（`solve_linear` に `resid` を渡しつつ `diag_aug` を足す）を直す — status-45 TODO
+- [ ] nsb: 圧力歩のガード（|δp| が場の |p| の数倍を超えたら線探索で縮小）— status-45 TODO
 - [ ] nsb: 早期やり直し規則（cfl 4 で出発、10 反復後に残差比 > 0.3 なら 0.25 でやり直す）を `solve_steady` の制御則に入れる（平均 20.6 → 15.9） — status-44 TODO
 - [ ] nsb: 初期反復の GMRES 許容（1e-3）を残差比で締める実験（厳密解だと予測場からの残差が 2〜3 倍速く落ちた） — status-44 TODO
 - [ ] nsbm: 遅い裾（q90 36）の正体を SER の経路（CFL 10〜40 の線形解の崩れ）で切り分ける — status-44 TODO
