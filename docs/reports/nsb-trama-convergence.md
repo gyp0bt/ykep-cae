@@ -7,7 +7,7 @@
 
 ## 0. 全体像
 
-<svg viewBox="0 0 980 300" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="13">
+<div style="overflow-x:auto"><svg viewBox="0 0 980 300" width="100%" style="min-width:640px" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="13">
   <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#52514e"/></marker></defs>
   <rect x="10" y="20" width="200" height="70" rx="8" fill="#cde2fb" stroke="#2a78d6"/>
   <text x="110" y="45" text-anchor="middle" font-weight="bold">Newton + 擬似時間（SER）</text>
@@ -23,7 +23,6 @@
   <text x="695" y="82" text-anchor="middle" font-size="11">SIMPLE 型（運動量 ILU + Schur SA-AMG）</text>
   <line x1="210" y1="55" x2="278" y2="55" stroke="#52514e" stroke-width="1.5" marker-end="url(#ar)"/>
   <line x1="510" y1="55" x2="578" y2="55" stroke="#52514e" stroke-width="1.5" marker-end="url(#ar)"/>
-  <!-- 観点 -->
   <rect x="10" y="130" width="300" height="150" rx="8" fill="#fff" stroke="#eb6834"/>
   <text x="20" y="152" font-weight="bold" fill="#eb6834">観点 1: 高 Re</text>
   <text x="20" y="172">a_P が対流支配（対流割合 0.50 → 0.99）</text>
@@ -48,7 +47,7 @@
   <text x="680" y="226">を 1e9 倍に増幅し、そこで有限差分と食い違う</text>
   <text x="680" y="244">→ Givens 推定 0.077 なのに真の残差 30</text>
   <text x="680" y="262" font-weight="bold">LU(J1) なら 3e-3 で解ける</text>
-</svg>
+</svg></div>
 
 **結論を先に。** 0.15 kg/s（Re_h ≈ 1450）で最初の Newton 反復から線形解が「真の残差比 4.1」で棄却され、
 CFL が 1/10 ずつ縮み続けて落ちる。原因は「高 Re」「前処理」の 2 観点が**同じ場所（閉塞領域と出口円板の
