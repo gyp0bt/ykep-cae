@@ -206,8 +206,13 @@ def train(
     res_cfl_gain: float = 1.0,
     grad_clip: float = 1.0,
     floor: dict[int, np.ndarray] | None = None,
+    val_solve: int = 0,
+    val_solve_max_iter: int = 120,
+    save_all: bool = False,
     log: LogFn | None = print,
 ) -> TrainResult:
+    """val_solve > 0 なら（残差プールがあるとき）val の先頭 val_solve 件を予測場・予測 cfl_init で最後まで解き、
+    失敗を val_solve_max_iter として数えた平均反復数で best.pt を選ぶ（本物の目的）。save_all で毎 epoch を epoch-XXX.pt に残す."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     if threads:
@@ -270,9 +275,32 @@ def train(
                     )
                     res_vals += [o["loss"] for o in outs if np.isfinite(o["loss"])]
                     fails += sum(not np.isfinite(o["loss"]) for o in outs)
+        n_iters: list[float] = []
+        n_fail = 0
+        if pool is not None and val_solve > 0:
+            with torch.no_grad():
+                bb = torch.arange(min(val_solve, len(x_va)))
+                xb = x_va[bb]
+                if fl_va is not None:
+                    yhat, logcfl = _predict_floor(net, xb, fl_va, bb)
+                else:
+                    yhat, logcfl = net(xb)
+                fields = to_physical(xb[:, :8], yhat, meta_va["u_in"][bb], meta_va["p_ref"][bb])
+                outs = pool.solve(
+                    [meta_va["theta"][b] for b in bb.tolist()],
+                    fields.double().numpy(),
+                    torch.exp(logcfl).double().numpy(),
+                    val_solve_max_iter,
+                )
+            for o in outs:
+                n_iters.append(float(o["n_iter"]) if o["converged"] else float(val_solve_max_iter))
+                n_fail += int(not o["converged"])
         mse = mse_sum / y_va.numel()
         res = float(np.mean(res_vals)) if res_vals else 0.0
         info = {
+            "n_iter_mean": float(np.mean(n_iters)) if n_iters else float("nan"),
+            "n_iter_median": float(np.median(n_iters)) if n_iters else float("nan"),
+            "n_fail": n_fail,
             "floor_loss": fl_sum / len(x_va),
             "cfl_median": float(np.median(cfls)),
             "cfl_min": float(np.min(cfls)),
@@ -286,6 +314,7 @@ def train(
             net.train()
             perm = torch.randperm(len(x_tr), generator=gen)
             tot_mse, tot_res, n_res = 0.0, 0.0, 0
+            n_skipped = 0
             g_mse_norm = g_res_norm = float("nan")
             for k in range(0, len(perm), batch):
                 b = perm[k : k + batch]
@@ -338,10 +367,20 @@ def train(
                     ok = [o["loss"] for o in outs if np.isfinite(o["loss"])]
                     tot_res += float(np.sum(ok))
                     n_res += len(ok)
+                if not torch.isfinite(
+                    loss
+                ):  # 発散した歩の inf 勾配は clip では防げない: バッチを捨てる
+                    n_skipped += 1
+                    opt.zero_grad(set_to_none=True)
+                    continue
                 opt.zero_grad(set_to_none=True)
                 loss.backward()
                 if grad_clip > 0:
-                    torch.nn.utils.clip_grad_norm_(net.parameters(), grad_clip)
+                    gn = torch.nn.utils.clip_grad_norm_(net.parameters(), grad_clip)
+                    if not torch.isfinite(gn):
+                        n_skipped += 1
+                        opt.zero_grad(set_to_none=True)
+                        continue
                 opt.step()
                 tot_mse += mse.item() * len(b)
             sched.step()
@@ -349,6 +388,8 @@ def train(
             tr_res = tot_res / max(1, n_res)
             va_mse, va_res, info = val_pass()
             va_obj = (info["floor_loss"] if fl_va is not None else va_mse) + res_weight * va_res
+            if val_solve > 0 and pool is not None:
+                va_obj = info["n_iter_mean"]  # 本物の目的: 失敗は上限反復として数えた平均反復数
             history.append(
                 (
                     ep,
@@ -358,35 +399,41 @@ def train(
                     va_res,
                     va_obj,
                     info["cfl_median"],
+                    info["n_iter_mean"],
+                    info["n_iter_median"],
+                    info["n_fail"],
                     time.perf_counter() - t0,
                 )
             )
+            ck = {
+                "state_dict": net.state_dict(),
+                "widths": widths,
+                "epoch": ep,
+                "val_loss": va_obj,
+                "val_mse": va_mse,
+                "val_res": va_res,
+                "val_n_iter_mean": info["n_iter_mean"],
+                "res_weight": res_weight,
+                "res_steps": res_steps,
+                "res_transform": res_transform,
+                "res_cfl_gain": res_cfl_gain,
+                "in_ch": in_ch,
+                "floor": floor is not None,
+            }
+            if save_all:
+                torch.save(ck, out_dir / f"epoch-{ep:03d}.pt")
+            torch.save(ck, out_dir / "last.pt")
             if va_obj < best_val:
                 best_val, best_epoch = va_obj, ep
-                torch.save(
-                    {
-                        "state_dict": net.state_dict(),
-                        "widths": widths,
-                        "epoch": ep,
-                        "val_loss": va_obj,
-                        "val_mse": va_mse,
-                        "val_res": va_res,
-                        "res_weight": res_weight,
-                        "res_steps": res_steps,
-                        "res_transform": res_transform,
-                        "res_cfl_gain": res_cfl_gain,
-                        "in_ch": in_ch,
-                        "floor": floor is not None,
-                    },
-                    best_path,
-                )
+                torch.save(ck, best_path)
             if log is not None:
                 log(
                     f"epoch {ep:4d} train mse {tr_mse:.3e} res {tr_res:.3f} | val mse {va_mse:.3e} "
                     f"floor {info['floor_loss']:.3e} res {va_res:.3f} "
-                    f"obj {va_obj:.3e} best {best_val:.3e}@{best_epoch} | cfl med {info['cfl_median']:.3g} "
+                    f"obj {va_obj:.3e} best {best_val:.3e}@{best_epoch} | n_iter mean {info['n_iter_mean']:.2f} "
+                    f"med {info['n_iter_median']:.1f} fail {info['n_fail']} | cfl med {info['cfl_median']:.3g} "
                     f"[{info['cfl_min']:.3g},{info['cfl_max']:.3g}] fail {info['res_fail']:.0f} "
-                    f"| |g|head mse {g_mse_norm:.2e} res {g_res_norm:.2e} lr {sched.get_last_lr()[0]:.2e} "
+                    f"| skipped {n_skipped} |g|head mse {g_mse_norm:.2e} res {g_res_norm:.2e} lr {sched.get_last_lr()[0]:.2e} "
                     f"{time.perf_counter() - t0:7.1f}s"
                 )
             with (out_dir / "history.csv").open("w", newline="") as f:
@@ -400,6 +447,9 @@ def train(
                         "val_res",
                         "val_obj",
                         "val_cfl_median",
+                        "val_n_iter_mean",
+                        "val_n_iter_median",
+                        "val_n_fail",
                         "elapsed",
                     ]
                 )

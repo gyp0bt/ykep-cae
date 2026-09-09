@@ -297,6 +297,28 @@ def _res_job(args: tuple) -> dict[str, Any]:
     return out
 
 
+def _solve_job(args: tuple) -> dict[str, Any]:
+    import dataclasses
+
+    from nsb.core import NSBSettings
+    from nsbm.evaluate import run_with_init
+    from nsbm.families import Theta
+
+    theta_d, x0, cfl_init, max_iter, settings = args
+    st = dataclasses.replace(settings or NSBSettings(), cfl_init=cfl_init, newton_max_iter=max_iter)
+    x0 = np.asarray(x0, dtype=float)
+    try:
+        return run_with_init(Theta.from_dict(theta_d), (x0[0], x0[1], x0[2]), st)
+    except Exception as exc:
+        return {
+            "n_iter": max_iter,
+            "converged": False,
+            "r0_ratio": float("nan"),
+            "cfl0": float("nan"),
+            "failure": repr(exc),
+        }
+
+
 class ResidualLossPool:
     """spawn プールで `residual_loss` をサンプル並列に評価する（ワーカーは 1 スレッド）."""
 
@@ -331,6 +353,16 @@ class ResidualLossPool:
         ]
         return self.pool.map(_res_job, jobs, chunksize=1)
 
+    def solve(
+        self, thetas: list[dict], x0: np.ndarray, cfl_init: np.ndarray, max_iter: int = 120
+    ) -> list[dict[str, Any]]:
+        """予測場・予測 cfl_init を初期解に nsb を最後まで回す（選抜用の本物の反復数）."""
+        jobs = [
+            (thetas[b], x0[b], float(cfl_init[b]), max_iter, self.settings)
+            for b in range(len(thetas))
+        ]
+        return self.pool.map(_solve_job, jobs, chunksize=1)
+
     def close(self) -> None:
         self.pool.close()
         self.pool.join()
@@ -352,7 +384,13 @@ def straight_through(fields, logcfl, outs: list[dict[str, Any]], cfl_gain: float
     """
     import torch
 
-    ok = [b for b, o in enumerate(outs) if np.isfinite(o["loss"])]
+    ok = [
+        b
+        for b, o in enumerate(outs)
+        if np.isfinite(o["loss"])
+        and np.all(np.isfinite(o["grad_x0"]))
+        and np.isfinite(o["grad_logcfl"])
+    ]
     if not ok:
         return fields.sum() * 0.0 + logcfl.sum() * 0.0, 0
     g_x = torch.from_numpy(np.stack([outs[b]["grad_x0"] for b in ok])).to(fields.dtype)

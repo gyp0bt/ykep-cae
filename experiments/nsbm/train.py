@@ -55,6 +55,15 @@ def main() -> None:
         help="log cfl_init の勾配に掛ける倍率（場の勾配と 2 桁違う）",
     )
     ap.add_argument(
+        "--val-solve",
+        type=int,
+        default=0,
+        help="val の先頭 N 件を予測場・予測 cfl で最後まで解き、平均反復数で best.pt を選ぶ（--res-weight > 0 が要る）",
+    )
+    ap.add_argument(
+        "--save-all", action="store_true", help="毎 epoch のチェックポイントを epoch-XXX.pt に残す"
+    )
+    ap.add_argument(
         "--floor",
         action="store_true",
         help="床モード: data/stokes.npz の Stokes 解を床にして補正量を学ぶ（入力 11ch、per-instance スケール、開きセル損失）",
@@ -107,6 +116,8 @@ def main() -> None:
         res_frac=args.res_frac,
         res_cfl_gain=args.res_cfl_gain,
         floor=floor,
+        val_solve=args.val_solve,
+        save_all=args.save_all,
         log=lambda m: print(m, flush=True),
     )
     print(f"best epoch {res.best_epoch} val {res.best_val:.3e} -> {res.best_path}", flush=True)
