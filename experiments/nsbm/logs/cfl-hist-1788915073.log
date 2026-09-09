@@ -1,0 +1,13 @@
+memcap: unit=memcap-cfl_histories.py_-1008302.scope MemoryMax=8G MemorySwapMax=0 :: python experiments/nsbm/cfl_histories.py --cfls 4,8,16 --workers 4
+jobs=1071
+[100/1071] 45s
+[200/1071] 75s
+[300/1071] 99s
+[400/1071] 146s
+[500/1071] 170s
+[600/1071] 199s
+[700/1071] 233s
+[800/1071] 254s
+[900/1071] 280s
+[1000/1071] 336s
+done -> /home/nishioka/work/ykep-cae/experiments/nsbm/results/cfl_histories.json (366s)

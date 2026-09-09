@@ -1,0 +1,23 @@
+fixed 0.25: mean 20.64 median 13.0
+fixed 4: mean 19.09 median 7.0 fails 12
+  cfl 4 k=3: 失敗 12 件の残差比 中央値 1.1 min 0.18 | 収束 345 件（まだ走っている）の中央値 0.023 q90 0.3
+  cfl 4 k=5: 失敗 12 件の残差比 中央値 16 min 0.12 | 収束 337 件（まだ走っている）の中央値 0.00049 q90 0.12
+  cfl 4 k=8: 失敗 12 件の残差比 中央値 67 min 0.069 | 収束 152 件（まだ走っている）の中央値 0.00094 q90 0.35
+fixed 8: mean 23.94 median 7.0 fails 26
+  cfl 8 k=3: 失敗 26 件の残差比 中央値 5 min 0.01 | 収束 331 件（まだ走っている）の中央値 0.011 q90 0.33
+  cfl 8 k=5: 失敗 26 件の残差比 中央値 13 min 0.00071 | 収束 310 件（まだ走っている）の中央値 0.00015 q90 0.16
+  cfl 8 k=8: 失敗 26 件の残差比 中央値 63 min 0.00033 | 収束 119 件（まだ走っている）の中央値 0.0012 q90 0.64
+fixed 16: mean 23.42 median 7.0 fails 24
+  cfl 16 k=3: 失敗 24 件の残差比 中央値 3 min 0.0071 | 収束 333 件（まだ走っている）の中央値 0.011 q90 0.33
+  cfl 16 k=5: 失敗 24 件の残差比 中央値 4 min 5.6e-05 | 収束 292 件（まだ走っている）の中央値 0.00034 q90 0.2
+  cfl 16 k=8: 失敗 23 件の残差比 中央値 7.8 min 0.00011 | 収束 123 件（まだ走っている）の中央値 0.0031 q90 0.35
+best rule cfl4_k10_tau0.3: {'mean': 15.896358543417367, 'median': 7.0, 'q90': 36.400000000000034, 'restarts': 26, 'fails': 1}
+  cfl4_k10_tau0.3        mean  15.90 median   7.0 q90  36.4 restarts  26 fails 1
+  cfl4_k10_tau3          mean  16.09 median   7.0 q90  36.0 restarts  15 fails 3
+  cfl4_k10_tau1          mean  16.19 median   7.0 q90  36.0 restarts  17 fails 3
+  cfl4_k4_tau0.3         mean  16.23 median   7.0 q90  33.4 restarts  29 fails 2
+  cfl4_k5_tau0.3         mean  16.36 median   7.0 q90  35.0 restarts  24 fails 3
+  cfl4_k8_tau3           mean  16.37 median   7.0 q90  35.4 restarts  13 fails 4
+  cfl4_k10_tau10         mean  16.39 median   7.0 q90  35.4 restarts  13 fails 4
+  cfl4_k8_tau1           mean  16.46 median   7.0 q90  35.4 restarts  16 fails 4
+-> /home/nishioka/work/ykep-cae/experiments/nsbm/results/early_restart.yaml

@@ -1,0 +1,780 @@
+n_test: 357
+fixed_0.25:
+  mean: 20.638655462184875
+  median: 13.0
+best_rule:
+  name: cfl4_k10_tau0.3
+  mean: 15.896358543417367
+  median: 7.0
+  q90: 36.400000000000034
+  restarts: 26
+  fails: 1
+grid:
+  fixed_4:
+    mean: 19.092436974789916
+    median: 7.0
+    fails: 12
+  cfl4_k2_tau0.3:
+    mean: 17.243697478991596
+    median: 7.0
+    q90: 38.400000000000034
+    restarts: 53
+    fails: 4
+  cfl4_k2_tau1:
+    mean: 17.65546218487395
+    median: 7.0
+    q90: 39.400000000000034
+    restarts: 11
+    fails: 7
+  cfl4_k2_tau3:
+    mean: 17.840336134453782
+    median: 7.0
+    q90: 40.2000000000001
+    restarts: 6
+    fails: 8
+  cfl4_k2_tau10:
+    mean: 18.100840336134453
+    median: 7.0
+    q90: 42.80000000000007
+    restarts: 3
+    fails: 9
+  cfl4_k2_tau30:
+    mean: 19.092436974789916
+    median: 7.0
+    q90: 44.400000000000034
+    restarts: 0
+    fails: 12
+  cfl4_k2_tau100:
+    mean: 19.092436974789916
+    median: 7.0
+    q90: 44.400000000000034
+    restarts: 0
+    fails: 12
+  cfl4_k3_tau0.3:
+    mean: 16.983193277310924
+    median: 7.0
+    q90: 35.0
+    restarts: 44
+    fails: 3
+  cfl4_k3_tau1:
+    mean: 16.96358543417367
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 15
+    fails: 5
+  cfl4_k3_tau3:
+    mean: 17.873949579831933
+    median: 7.0
+    q90: 37.2000000000001
+    restarts: 8
+    fails: 8
+  cfl4_k3_tau10:
+    mean: 18.34733893557423
+    median: 7.0
+    q90: 42.80000000000007
+    restarts: 5
+    fails: 9
+  cfl4_k3_tau30:
+    mean: 18.764705882352942
+    median: 7.0
+    q90: 44.400000000000034
+    restarts: 1
+    fails: 11
+  cfl4_k3_tau100:
+    mean: 19.092436974789916
+    median: 7.0
+    q90: 44.400000000000034
+    restarts: 0
+    fails: 12
+  cfl4_k4_tau0.3:
+    mean: 16.22689075630252
+    median: 7.0
+    q90: 33.400000000000034
+    restarts: 29
+    fails: 2
+  cfl4_k4_tau1:
+    mean: 16.689075630252102
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 16
+    fails: 4
+  cfl4_k4_tau3:
+    mean: 16.683473389355743
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 13
+    fails: 4
+  cfl4_k4_tau10:
+    mean: 16.515406162464988
+    median: 7.0
+    q90: 35.0
+    restarts: 10
+    fails: 4
+  cfl4_k4_tau30:
+    mean: 17.467787114845937
+    median: 7.0
+    q90: 37.2000000000001
+    restarts: 5
+    fails: 7
+  cfl4_k4_tau100:
+    mean: 18.442577030812323
+    median: 7.0
+    q90: 40.2000000000001
+    restarts: 2
+    fails: 10
+  cfl4_k5_tau0.3:
+    mean: 16.358543417366946
+    median: 7.0
+    q90: 35.0
+    restarts: 24
+    fails: 3
+  cfl4_k5_tau1:
+    mean: 16.73389355742297
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 16
+    fails: 4
+  cfl4_k5_tau3:
+    mean: 16.61904761904762
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 12
+    fails: 4
+  cfl4_k5_tau10:
+    mean: 16.54341736694678
+    median: 7.0
+    q90: 35.0
+    restarts: 10
+    fails: 4
+  cfl4_k5_tau30:
+    mean: 17.73669467787115
+    median: 7.0
+    q90: 37.2000000000001
+    restarts: 6
+    fails: 7
+  cfl4_k5_tau100:
+    mean: 18.38095238095238
+    median: 7.0
+    q90: 37.2000000000001
+    restarts: 4
+    fails: 9
+  cfl4_k6_tau0.3:
+    mean: 16.7703081232493
+    median: 7.0
+    q90: 36.0
+    restarts: 22
+    fails: 4
+  cfl4_k6_tau1:
+    mean: 16.789915966386555
+    median: 7.0
+    q90: 36.0
+    restarts: 18
+    fails: 4
+  cfl4_k6_tau3:
+    mean: 16.48739495798319
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 13
+    fails: 4
+  cfl4_k6_tau10:
+    mean: 16.50700280112045
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 11
+    fails: 4
+  cfl4_k6_tau30:
+    mean: 17.210084033613445
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 8
+    fails: 6
+  cfl4_k6_tau100:
+    mean: 17.49579831932773
+    median: 7.0
+    q90: 37.2000000000001
+    restarts: 5
+    fails: 7
+  cfl4_k8_tau0.3:
+    mean: 16.73389355742297
+    median: 7.0
+    q90: 38.0
+    restarts: 25
+    fails: 3
+  cfl4_k8_tau1:
+    mean: 16.464985994397757
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 16
+    fails: 4
+  cfl4_k8_tau3:
+    mean: 16.372549019607842
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 13
+    fails: 4
+  cfl4_k8_tau10:
+    mean: 16.677871148459385
+    median: 7.0
+    q90: 35.0
+    restarts: 11
+    fails: 5
+  cfl4_k8_tau30:
+    mean: 17.100840336134453
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 9
+    fails: 5
+  cfl4_k8_tau100:
+    mean: 17.787114845938376
+    median: 7.0
+    q90: 37.2000000000001
+    restarts: 6
+    fails: 7
+  cfl4_k10_tau0.3:
+    mean: 15.896358543417367
+    median: 7.0
+    q90: 36.400000000000034
+    restarts: 26
+    fails: 1
+  cfl4_k10_tau1:
+    mean: 16.19327731092437
+    median: 7.0
+    q90: 36.0
+    restarts: 17
+    fails: 3
+  cfl4_k10_tau3:
+    mean: 16.092436974789916
+    median: 7.0
+    q90: 36.0
+    restarts: 15
+    fails: 3
+  cfl4_k10_tau10:
+    mean: 16.386554621848738
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 13
+    fails: 4
+  cfl4_k10_tau30:
+    mean: 16.599439775910366
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 12
+    fails: 4
+  cfl4_k10_tau100:
+    mean: 17.243697478991596
+    median: 7.0
+    q90: 37.2000000000001
+    restarts: 6
+    fails: 6
+  fixed_8:
+    mean: 23.938375350140056
+    median: 7.0
+    fails: 26
+  cfl8_k2_tau0.3:
+    mean: 18.257703081232492
+    median: 7.0
+    q90: 40.0
+    restarts: 75
+    fails: 4
+  cfl8_k2_tau1:
+    mean: 19.058823529411764
+    median: 7.0
+    q90: 36.0
+    restarts: 27
+    fails: 11
+  cfl8_k2_tau3:
+    mean: 20.61624649859944
+    median: 7.0
+    q90: 40.0
+    restarts: 16
+    fails: 16
+  cfl8_k2_tau10:
+    mean: 20.96358543417367
+    median: 7.0
+    q90: 40.0
+    restarts: 10
+    fails: 17
+  cfl8_k2_tau30:
+    mean: 22.285714285714285
+    median: 7.0
+    q90: 44.2000000000001
+    restarts: 6
+    fails: 21
+  cfl8_k2_tau100:
+    mean: 22.946778711484594
+    median: 7.0
+    q90: 48.400000000000034
+    restarts: 3
+    fails: 23
+  cfl8_k3_tau0.3:
+    mean: 18.4593837535014
+    median: 7.0
+    q90: 38.80000000000007
+    restarts: 54
+    fails: 6
+  cfl8_k3_tau1:
+    mean: 18.26050420168067
+    median: 7.0
+    q90: 34.80000000000007
+    restarts: 27
+    fails: 10
+  cfl8_k3_tau3:
+    mean: 19.403361344537814
+    median: 7.0
+    q90: 36.0
+    restarts: 18
+    fails: 13
+  cfl8_k3_tau10:
+    mean: 19.92156862745098
+    median: 7.0
+    q90: 38.0
+    restarts: 14
+    fails: 14
+  cfl8_k3_tau30:
+    mean: 20.66106442577031
+    median: 7.0
+    q90: 38.400000000000034
+    restarts: 10
+    fails: 16
+  cfl8_k3_tau100:
+    mean: 21.644257703081234
+    median: 7.0
+    q90: 40.400000000000034
+    restarts: 7
+    fails: 19
+  cfl8_k4_tau0.3:
+    mean: 18.19607843137255
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 46
+    fails: 7
+  cfl8_k4_tau1:
+    mean: 18.352941176470587
+    median: 7.0
+    q90: 34.80000000000007
+    restarts: 29
+    fails: 10
+  cfl8_k4_tau3:
+    mean: 18.72829131652661
+    median: 7.0
+    q90: 36.0
+    restarts: 20
+    fails: 11
+  cfl8_k4_tau10:
+    mean: 19.829131652661065
+    median: 7.0
+    q90: 38.0
+    restarts: 15
+    fails: 14
+  cfl8_k4_tau30:
+    mean: 20.689075630252102
+    median: 7.0
+    q90: 38.400000000000034
+    restarts: 10
+    fails: 16
+  cfl8_k4_tau100:
+    mean: 20.689075630252102
+    median: 7.0
+    q90: 38.400000000000034
+    restarts: 10
+    fails: 16
+  cfl8_k5_tau0.3:
+    mean: 17.473389355742295
+    median: 7.0
+    q90: 35.400000000000034
+    restarts: 41
+    fails: 6
+  cfl8_k5_tau1:
+    mean: 18.170868347338935
+    median: 7.0
+    q90: 36.0
+    restarts: 30
+    fails: 9
+  cfl8_k5_tau3:
+    mean: 18.717086834733895
+    median: 7.0
+    q90: 36.80000000000007
+    restarts: 20
+    fails: 11
+  cfl8_k5_tau10:
+    mean: 19.22689075630252
+    median: 7.0
+    q90: 38.0
+    restarts: 17
+    fails: 12
+  cfl8_k5_tau30:
+    mean: 20.0812324929972
+    median: 7.0
+    q90: 38.400000000000034
+    restarts: 13
+    fails: 14
+  cfl8_k5_tau100:
+    mean: 21.03921568627451
+    median: 7.0
+    q90: 40.400000000000034
+    restarts: 9
+    fails: 17
+  cfl8_k6_tau0.3:
+    mean: 17.484593837535012
+    median: 7.0
+    q90: 36.0
+    restarts: 41
+    fails: 6
+  cfl8_k6_tau1:
+    mean: 17.85434173669468
+    median: 7.0
+    q90: 36.0
+    restarts: 31
+    fails: 8
+  cfl8_k6_tau3:
+    mean: 18.73109243697479
+    median: 7.0
+    q90: 36.0
+    restarts: 23
+    fails: 11
+  cfl8_k6_tau10:
+    mean: 19.30532212885154
+    median: 7.0
+    q90: 36.80000000000007
+    restarts: 16
+    fails: 12
+  cfl8_k6_tau30:
+    mean: 19.708683473389357
+    median: 7.0
+    q90: 38.0
+    restarts: 14
+    fails: 13
+  cfl8_k6_tau100:
+    mean: 20.745098039215687
+    median: 7.0
+    q90: 38.400000000000034
+    restarts: 10
+    fails: 16
+  cfl8_k8_tau0.3:
+    mean: 17.969187675070028
+    median: 7.0
+    q90: 36.400000000000034
+    restarts: 38
+    fails: 7
+  cfl8_k8_tau1:
+    mean: 17.943977591036415
+    median: 7.0
+    q90: 36.0
+    restarts: 28
+    fails: 8
+  cfl8_k8_tau3:
+    mean: 18.557422969187677
+    median: 7.0
+    q90: 36.80000000000007
+    restarts: 21
+    fails: 10
+  cfl8_k8_tau10:
+    mean: 18.932773109243698
+    median: 7.0
+    q90: 38.0
+    restarts: 18
+    fails: 11
+  cfl8_k8_tau30:
+    mean: 19.291316526610643
+    median: 7.0
+    q90: 38.0
+    restarts: 16
+    fails: 12
+  cfl8_k8_tau100:
+    mean: 20.801120448179272
+    median: 7.0
+    q90: 38.400000000000034
+    restarts: 10
+    fails: 16
+  cfl8_k10_tau0.3:
+    mean: 18.162464985994397
+    median: 7.0
+    q90: 37.400000000000034
+    restarts: 32
+    fails: 8
+  cfl8_k10_tau1:
+    mean: 18.42296918767507
+    median: 7.0
+    q90: 37.400000000000034
+    restarts: 24
+    fails: 9
+  cfl8_k10_tau3:
+    mean: 18.675070028011206
+    median: 7.0
+    q90: 37.400000000000034
+    restarts: 21
+    fails: 10
+  cfl8_k10_tau10:
+    mean: 19.34173669467787
+    median: 7.0
+    q90: 38.0
+    restarts: 17
+    fails: 12
+  cfl8_k10_tau30:
+    mean: 20.025210084033613
+    median: 7.0
+    q90: 38.0
+    restarts: 14
+    fails: 14
+  cfl8_k10_tau100:
+    mean: 20.857142857142858
+    median: 7.0
+    q90: 39.400000000000034
+    restarts: 10
+    fails: 16
+  fixed_16:
+    mean: 23.41736694677871
+    median: 7.0
+    fails: 24
+  cfl16_k2_tau0.3:
+    mean: 18.9187675070028
+    median: 7.0
+    q90: 40.80000000000007
+    restarts: 78
+    fails: 6
+  cfl16_k2_tau1:
+    mean: 18.69747899159664
+    median: 7.0
+    q90: 41.600000000000136
+    restarts: 28
+    fails: 11
+  cfl16_k2_tau3:
+    mean: 19.168067226890756
+    median: 7.0
+    q90: 43.80000000000007
+    restarts: 15
+    fails: 12
+  cfl16_k2_tau10:
+    mean: 20.910364145658264
+    median: 7.0
+    q90: 51.80000000000024
+    restarts: 8
+    fails: 17
+  cfl16_k2_tau30:
+    mean: 21.571428571428573
+    median: 7.0
+    q90: 57.2000000000001
+    restarts: 6
+    fails: 19
+  cfl16_k2_tau100:
+    mean: 22.425770308123248
+    median: 7.0
+    q90: 63.400000000000034
+    restarts: 3
+    fails: 21
+  cfl16_k3_tau0.3:
+    mean: 19.095238095238095
+    median: 7.0
+    q90: 41.80000000000007
+    restarts: 51
+    fails: 8
+  cfl16_k3_tau1:
+    mean: 18.92156862745098
+    median: 7.0
+    q90: 43.80000000000007
+    restarts: 20
+    fails: 11
+  cfl16_k3_tau3:
+    mean: 19.26050420168067
+    median: 7.0
+    q90: 45.400000000000034
+    restarts: 17
+    fails: 12
+  cfl16_k3_tau10:
+    mean: 20.66386554621849
+    median: 7.0
+    q90: 47.2000000000001
+    restarts: 10
+    fails: 16
+  cfl16_k3_tau30:
+    mean: 21.26050420168067
+    median: 7.0
+    q90: 51.80000000000024
+    restarts: 7
+    fails: 18
+  cfl16_k3_tau100:
+    mean: 22.106442577030812
+    median: 7.0
+    q90: 61.80000000000007
+    restarts: 4
+    fails: 20
+  cfl16_k4_tau0.3:
+    mean: 18.756302521008404
+    median: 7.0
+    q90: 42.80000000000007
+    restarts: 45
+    fails: 8
+  cfl16_k4_tau1:
+    mean: 18.73669467787115
+    median: 7.0
+    q90: 42.400000000000034
+    restarts: 21
+    fails: 10
+  cfl16_k4_tau3:
+    mean: 18.988795518207283
+    median: 7.0
+    q90: 43.80000000000007
+    restarts: 17
+    fails: 11
+  cfl16_k4_tau10:
+    mean: 19.96078431372549
+    median: 7.0
+    q90: 46.0
+    restarts: 13
+    fails: 14
+  cfl16_k4_tau30:
+    mean: 21.280112044817926
+    median: 7.0
+    q90: 51.80000000000024
+    restarts: 7
+    fails: 18
+  cfl16_k4_tau100:
+    mean: 21.467787114845937
+    median: 7.0
+    q90: 57.2000000000001
+    restarts: 6
+    fails: 18
+  cfl16_k5_tau0.3:
+    mean: 17.901960784313726
+    median: 7.0
+    q90: 40.0
+    restarts: 35
+    fails: 7
+  cfl16_k5_tau1:
+    mean: 18.649859943977592
+    median: 7.0
+    q90: 43.0
+    restarts: 23
+    fails: 9
+  cfl16_k5_tau3:
+    mean: 19.03641456582633
+    median: 7.0
+    q90: 43.80000000000007
+    restarts: 17
+    fails: 11
+  cfl16_k5_tau10:
+    mean: 20.333333333333332
+    median: 7.0
+    q90: 46.0
+    restarts: 10
+    fails: 15
+  cfl16_k5_tau30:
+    mean: 21.484593837535012
+    median: 7.0
+    q90: 57.2000000000001
+    restarts: 6
+    fails: 18
+  cfl16_k5_tau100:
+    mean: 21.80672268907563
+    median: 7.0
+    q90: 59.80000000000007
+    restarts: 5
+    fails: 19
+  cfl16_k6_tau0.3:
+    mean: 18.07843137254902
+    median: 7.0
+    q90: 42.400000000000034
+    restarts: 35
+    fails: 7
+  cfl16_k6_tau1:
+    mean: 18.392156862745097
+    median: 7.0
+    q90: 43.400000000000034
+    restarts: 22
+    fails: 9
+  cfl16_k6_tau3:
+    mean: 19.33613445378151
+    median: 7.0
+    q90: 44.400000000000034
+    restarts: 15
+    fails: 12
+  cfl16_k6_tau10:
+    mean: 20.361344537815125
+    median: 7.0
+    q90: 46.0
+    restarts: 10
+    fails: 15
+  cfl16_k6_tau30:
+    mean: 21.182072829131652
+    median: 7.0
+    q90: 51.80000000000024
+    restarts: 7
+    fails: 17
+  cfl16_k6_tau100:
+    mean: 21.50140056022409
+    median: 7.0
+    q90: 57.2000000000001
+    restarts: 6
+    fails: 18
+  cfl16_k8_tau0.3:
+    mean: 18.19607843137255
+    median: 7.0
+    q90: 41.2000000000001
+    restarts: 30
+    fails: 7
+  cfl16_k8_tau1:
+    mean: 18.19047619047619
+    median: 7.0
+    q90: 43.400000000000034
+    restarts: 24
+    fails: 8
+  cfl16_k8_tau3:
+    mean: 18.42016806722689
+    median: 7.0
+    q90: 43.0
+    restarts: 21
+    fails: 9
+  cfl16_k8_tau10:
+    mean: 20.246498599439775
+    median: 7.0
+    q90: 46.0
+    restarts: 11
+    fails: 14
+  cfl16_k8_tau30:
+    mean: 20.907563025210084
+    median: 7.0
+    q90: 48.400000000000034
+    restarts: 8
+    fails: 16
+  cfl16_k8_tau100:
+    mean: 21.22128851540616
+    median: 7.0
+    q90: 51.80000000000024
+    restarts: 7
+    fails: 17
+  cfl16_k10_tau0.3:
+    mean: 18.084033613445378
+    median: 7.0
+    q90: 43.80000000000007
+    restarts: 28
+    fails: 8
+  cfl16_k10_tau1:
+    mean: 18.41736694677871
+    median: 7.0
+    q90: 43.80000000000007
+    restarts: 24
+    fails: 9
+  cfl16_k10_tau3:
+    mean: 19.22128851540616
+    median: 7.0
+    q90: 45.400000000000034
+    restarts: 19
+    fails: 11
+  cfl16_k10_tau10:
+    mean: 20.551820728291318
+    median: 7.0
+    q90: 48.400000000000034
+    restarts: 11
+    fails: 15
+  cfl16_k10_tau30:
+    mean: 21.030812324929972
+    median: 7.0
+    q90: 52.400000000000205
+    restarts: 9
+    fails: 16
+  cfl16_k10_tau100:
+    mean: 21.568627450980394
+    median: 7.0
+    q90: 57.2000000000001
+    restarts: 6
+    fails: 18
