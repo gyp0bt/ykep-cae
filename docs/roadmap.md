@@ -188,9 +188,12 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [ ] nsbp: `pc_lag` / `jacobian_lag` / `ksp_rtol` / ILU レベル / SER 成長率の掃引（厳密ヤコビアンでは成長率 2 超が効く可能性）— status-42 TODO
 - [ ] nsbp: リミター凍結の閾値（1e-3）と凍結解のずれの定量（uturn で nsb との差 2e-4）— status-42 TODO
 - [x] **nsbm**（`nsbm/`）: nsb（72×48 固定）の初期場を教師あり UNet で出す。8 ファミリ × 4 壁ポートの θ サンプラー、4000 件の並列生成（収束 89.6%）、Stokes / kNN / UNet の Newton 反復数比較。**既定の制御則では減らない**（41 勝 299 敗、中央値 19 vs 13）。閉塞セル速度の抗力増幅（マスクで解消）、SER の CFL 梯子が反復数を決める、予測場は Newton 吸引域の外、の 3 機構を同定 — status-43
-- [ ] nsbm: 残差駆動の学習（損失 = |R(net(θ))|、彩色 FD ヤコビアンの J^T v で autograd）。予測場の残差比を 1 未満にできるかが分岐点 — status-43 TODO
-- [ ] nsbm: 出発 CFL の予測（cfl 4 で中央値 13 → 7、未収束 3%。未収束になる θ を避ける分類器で十分） — status-43 TODO
-- [ ] nsbm: 細格子 288×192 での評価（Stokes 発進 43 Newton。UNet 初期場を双一次補間して入れ子の粗格子解と比べる） — status-43 TODO
+- [x] nsbm: 残差駆動の学習（5 歩の残差和 + cfl_init ヘッド、凍結ヤコビアン随伴）。残差項は下がるが実反復数は増える。局所 Galerkin で残差比 0.6 にしても五分で、残差を減らした場ほど破綻 — status-44
+- [x] nsbm: 出発 CFL の予測。全 θ × {1,2,4,8,16} の掃引、選択器（平均 20.6 → 16.8）、早期やり直し規則（15.9、学習なし）、オラクル 10.8。失敗する θ は特徴から見分けられず、5 反復後の残差比なら見分けられる — status-44
+- [ ] nsbm: 細格子 288×192 での評価（Stokes 発進 43 Newton。unet-s（Stokes 床 + 補正、R² 0.965）の初期場を双一次補間して入れ子の粗格子解と比べる） — status-43/44 TODO
+- [ ] nsb: 早期やり直し規則（cfl 4 で出発、10 反復後に残差比 > 0.3 なら 0.25 でやり直す）を `solve_steady` の制御則に入れる（平均 20.6 → 15.9） — status-44 TODO
+- [ ] nsb: 初期反復の GMRES 許容（1e-3）を残差比で締める実験（厳密解だと予測場からの残差が 2〜3 倍速く落ちた） — status-44 TODO
+- [ ] nsbm: 遅い裾（q90 36）の正体を SER の経路（CFL 10〜40 の線形解の崩れ）で切り分ける — status-44 TODO
 - [ ] nsbm: hard 集合（剥離で定常解に届かない θ）の非定常判定を `NSBResult.failure_reason` に — status-43 TODO
 - [ ] 既存テストの失敗 18 件（`test_inp_runner` 9 + `test_post_mirador` 8 は `VizMixin.export_html()` が `vector_field` を受けない同一原因、`test_natural_convection::TestAMGPressureSolver::test_adaptive_relaxation` 未収束）。status-37 以降全件が回っておらず status-42 で検出 — status-42 TODO
 - [ ] nsbp: uturn の入れ子は厚さ境界をまたぐ補間で初期場が壊れる（参照の 162 倍）。厚さ場を見た補間（閉塞セルへ流速を持ち込まない）— status-42 TODO

@@ -62,11 +62,12 @@ s = solve_sample(7)                                   # 解いて Sample（x: 8c
 （同じ壁なら重ならない）。滑らか系は log(h/h0) を ±2 に留める。閉塞系はポートから内側へ最初の開きセルまで
 廊下を切り、`scipy.ndimage.label` で inlet-outlet の連結を確認する（棄却率 約 3%）。
 
-## 結果（status-43）
+## 結果（status-43 → status-44）
 
 テスト 357 件（72×48、`cfl_init` 0.25）で、UNet 初期場は Stokes 発進に **41 勝 17 分 299 敗**（Newton 中央値 19 vs 13）、
-kNN 補間も 34 勝 302 敗。効くのは Stokes 発進が遅い裾と、Stokes で未収束だった 60 件のうち 8 件の救済だけ。
-機構は 3 つ: (a) 閉塞セルに残る速度が Brinkman 抗力 12μ/h² で 1e4 倍に増幅され残差比 1000 になる（`mask_blocked` で 2〜7）、
-(b) 72×48 の反復数は SER の CFL 梯子（0.25 → 数百）で決まり、予測場の残差比 2〜8 では出発 CFL が上がらない、
-(c) 予測場は Newton の吸引域の外（減衰なしの 1 歩 `nsbm/project.py` は 6 割で残差が増えて棄却）。
-`cfl_init` 4 の方が効く（Stokes 発進 13 → 7、未収束 3%）。詳細と TODO は [status-43](../docs/status/status-43.md)。
+Stokes 床 + 補正の unet-s（R² u 0.973、p per-instance 0.97）でも **149 勝 35 分 173 敗**。初期残差比は 2 のまま
+（Stokes 床は R² 0.955 で残差比 1.0）。Newton 射影 1 歩を足すと 207 勝 138 敗で、閉塞のない uniform / quad / sin2d では
+中央値 13 → 7（残差比 0.15〜0.20）、閉塞系は壁際の残差（比 3.6〜5.8）で負ける。残差損失（5 歩の残差和 + cfl ヘッド）は残差項を下げても実反復数は増え、
+局所 Galerkin（Stokes + kNN 解で残差比 0.6）も五分。効くのは cfl_init 側: 固定 0.25 の平均 20.6 → 「cfl 4 で出発し
+10 反復後に残差比 > 0.3 なら 0.25 でやり直す」規則で 15.9、学習した選択器 16.8、オラクル 10.8。
+詳細と TODO は [status-43](../docs/status/status-43.md)、[status-44](../docs/status/status-44.md)。
