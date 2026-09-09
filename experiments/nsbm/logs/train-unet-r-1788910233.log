@@ -1,0 +1,33 @@
+memcap: unit=memcap-train.py_-963118.scope MemoryMax=24G MemorySwapMax=0 :: python experiments/nsbm/train.py --out experiments/nsbm/runs/unet-r --init-from experiments/nsbm/runs/unet-a/best.pt --res-weight 1e-5 --res-transform log --res-cfl-gain 300 --res-frac 0.5 --res-workers 12 --epochs 15 --lr 1e-4 --threads 4
+samples=4000 converged=3582 (89.5%)
+split from experiments/nsbm/runs/unet-a/split.json
+{'train': 2867, 'val': 358, 'test': 357}
+epoch    0 first batch: |g|head mse 2.40e-02 res 3.28e+03 (res/mse 1.4e+05) res mean 8.33
+epoch    0 train mse 5.784e-03 res 6.149 | val mse 2.433e-02 res 6.935 obj 2.440e-02 best 2.440e-02@0 | cfl med 0.246 [0.241,0.248] fail 0 | |g|head mse 2.40e-02 res 3.28e+03 lr 9.89e-05   285.3s
+epoch    1 first batch: |g|head mse 3.00e-02 res 3.25e+01 (res/mse 1.1e+03) res mean 12.53
+epoch    1 train mse 5.781e-03 res 5.679 | val mse 2.333e-02 res 6.521 obj 2.340e-02 best 2.340e-02@1 | cfl med 0.275 [0.252,0.283] fail 0 | |g|head mse 3.00e-02 res 3.25e+01 lr 9.57e-05   572.5s
+epoch    2 first batch: |g|head mse 1.17e-02 res 2.42e+01 (res/mse 2.1e+03) res mean 0.69
+epoch    2 train mse 5.602e-03 res 4.745 | val mse 2.350e-02 res 5.736 obj 2.356e-02 best 2.340e-02@1 | cfl med 0.321 [0.259,0.349] fail 0 | |g|head mse 1.17e-02 res 2.42e+01 lr 9.05e-05   860.7s
+epoch    3 first batch: |g|head mse 2.19e-02 res 4.63e+02 (res/mse 2.1e+04) res mean 8.31
+epoch    3 train mse 5.478e-03 res 3.907 | val mse 2.326e-02 res 4.322 obj 2.331e-02 best 2.331e-02@3 | cfl med 0.415 [0.287,0.503] fail 0 | |g|head mse 2.19e-02 res 4.63e+02 lr 8.35e-05  1185.0s
+epoch    4 first batch: |g|head mse 1.41e-02 res 5.34e+07 (res/mse 3.8e+09) res mean 5.86
+epoch    4 train mse 5.621e-03 res 2.676 | val mse 2.364e-02 res 3.200 obj 2.367e-02 best 2.331e-02@3 | cfl med 0.724 [0.348,1] fail 0 | |g|head mse 1.41e-02 res 5.34e+07 lr 7.50e-05  1517.3s
+epoch    5 first batch: |g|head mse 4.58e-02 res 4.17e+05 (res/mse 9.1e+06) res mean 0.34
+epoch    5 train mse 6.476e-03 res 2.210 | val mse 3.043e-02 res 1.871 obj 3.045e-02 best 2.331e-02@3 | cfl med 3.23 [1.59,4.32] fail 0 | |g|head mse 4.58e-02 res 4.17e+05 lr 6.55e-05  1869.9s
+epoch    6 first batch: |g|head mse 4.31e-02 res 5.57e+02 (res/mse 1.3e+04) res mean -0.38
+epoch    6 train mse 9.929e-03 res 1.555 | val mse 2.559e-02 res 0.330 obj 2.559e-02 best 2.331e-02@3 | cfl med 6.13 [2.16,7.88] fail 0 | |g|head mse 4.31e-02 res 5.57e+02 lr 5.52e-05  2288.8s
+epoch    7 first batch: |g|head mse 2.72e-02 res 1.07e+03 (res/mse 3.9e+04) res mean -1.40
+/home/nishioka/work/ykep-cae/nsbm/residual_loss.py:296: RuntimeWarning: overflow encountered in cast
+  out["grad_x0"] = np.asarray(out["grad_x0"], dtype=np.float32).reshape(np.shape(x0))
+epoch    7 train mse nan res 0.208 | val mse nan res 0.000 obj nan best 2.331e-02@3 | cfl med nan [nan,nan] fail 358 | |g|head mse 2.72e-02 res 1.07e+03 lr 4.48e-05  2414.7s
+/home/nishioka/envs/python/base/lib/python3.14/site-packages/numpy/_core/fromnumeric.py:3824: RuntimeWarning: Mean of empty slice
+  return _methods._mean(a, axis=axis, dtype=dtype,
+/home/nishioka/envs/python/base/lib/python3.14/site-packages/numpy/_core/_methods.py:142: RuntimeWarning: invalid value encountered in scalar divide
+  ret = ret.dtype.type(ret / rcount)
+epoch    8 first batch: |g|head mse nan res nan (res/mse nan) res mean nan
+epoch    8 train mse nan res 0.000 | val mse nan res 0.000 obj nan best 2.331e-02@3 | cfl med nan [nan,nan] fail 358 | |g|head mse nan res nan lr 3.45e-05  2487.4s
+epoch    9 first batch: |g|head mse nan res nan (res/mse nan) res mean nan
+epoch    9 train mse nan res 0.000 | val mse nan res 0.000 obj nan best 2.331e-02@3 | cfl med nan [nan,nan] fail 358 | |g|head mse nan res nan lr 2.50e-05  2570.3s
+epoch   10 first batch: |g|head mse nan res nan (res/mse nan) res mean nan
+/usr/lib/python3.14/multiprocessing/resource_tracker.py:396: UserWarning: resource_tracker: There appear to be 6 leaked semaphore objects to clean up at shutdown: {'/mp-y_aanlc5', '/mp-4pd5q_6s', '/mp-ehu70sw3', '/mp-4gmjdwzc', '/mp-ac9lnft1', '/mp-cstcex23'}
+  warnings.warn(

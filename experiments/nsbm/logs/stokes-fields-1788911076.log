@@ -1,0 +1,10 @@
+memcap: unit=memcap-stokes_fields.py_-965322.scope MemoryMax=8G MemorySwapMax=0 :: python experiments/nsbm/stokes_fields.py --workers 4
+[500/4000] 10s
+[1000/4000] 20s
+[1500/4000] 29s
+[2000/4000] 37s
+[2500/4000] 46s
+[3000/4000] 55s
+[3500/4000] 63s
+[4000/4000] 72s
+done -> /home/nishioka/work/ykep-cae/experiments/nsbm/data/stokes.npz (72s)

@@ -1,0 +1,461 @@
+all:
+  n: 357
+  stokes:
+    converged: 357
+    cfl_init_median: 0.25
+    n_iter_median: 13.0
+    n_iter_q1: 11.0
+    n_iter_q3: 19.0
+    n_iter_mean: 20.638655462184875
+    r0_ratio_median: 1.0
+  stokes@4:
+    converged: 346
+    cfl_init_median: 4.0
+    n_iter_median: 7.0
+    n_iter_q1: 6.0
+    n_iter_q3: 11.0
+    n_iter_mean: 20.100840336134453
+    r0_ratio_median: 1.0
+    ratio_to_stokes_median: 0.5555555555555556
+    wins: 310
+    ties: 10
+    losses: 37
+  unet:
+    converged: 354
+    cfl_init_median: 0.25
+    n_iter_median: 14.0
+    n_iter_q1: 12.0
+    n_iter_q3: 20.0
+    n_iter_mean: 23.322128851540615
+    r0_ratio_median: 2.0513561117227552
+    ratio_to_stokes_median: 1.0666666666666667
+    wins: 118
+    ties: 48
+    losses: 191
+  baseline: stokes
+by_family:
+  blobs:
+    n: 38
+    stokes:
+      converged: 38
+      cfl_init_median: 0.25
+      n_iter_median: 14.0
+      n_iter_q1: 11.0
+      n_iter_q3: 16.75
+      n_iter_mean: 21.68421052631579
+      r0_ratio_median: 1.0
+    stokes@4:
+      converged: 37
+      cfl_init_median: 4.0
+      n_iter_median: 7.5
+      n_iter_q1: 6.0
+      n_iter_q3: 12.0
+      n_iter_mean: 21.55263157894737
+      r0_ratio_median: 1.0
+      ratio_to_stokes_median: 0.5714285714285714
+      wins: 33
+      ties: 1
+      losses: 4
+    unet:
+      converged: 38
+      cfl_init_median: 0.25
+      n_iter_median: 15.0
+      n_iter_q1: 14.0
+      n_iter_q3: 20.0
+      n_iter_mean: 24.763157894736842
+      r0_ratio_median: 3.5739746335496574
+      ratio_to_stokes_median: 1.1835016835016834
+      wins: 5
+      ties: 3
+      losses: 30
+    baseline: stokes
+  grf:
+    n: 45
+    stokes:
+      converged: 45
+      cfl_init_median: 0.25
+      n_iter_median: 17.0
+      n_iter_q1: 13.0
+      n_iter_q3: 21.0
+      n_iter_mean: 24.866666666666667
+      r0_ratio_median: 1.0
+    stokes@4:
+      converged: 45
+      cfl_init_median: 4.0
+      n_iter_median: 8.0
+      n_iter_q1: 7.0
+      n_iter_q3: 10.0
+      n_iter_mean: 14.755555555555556
+      r0_ratio_median: 1.0
+      ratio_to_stokes_median: 0.5
+      wins: 43
+      ties: 0
+      losses: 2
+    unet:
+      converged: 44
+      cfl_init_median: 0.25
+      n_iter_median: 18.0
+      n_iter_q1: 14.0
+      n_iter_q3: 28.0
+      n_iter_mean: 30.91111111111111
+      r0_ratio_median: 2.1476662389957304
+      ratio_to_stokes_median: 1.0769230769230769
+      wins: 15
+      ties: 5
+      losses: 25
+    baseline: stokes
+  pins:
+    n: 49
+    stokes:
+      converged: 49
+      cfl_init_median: 0.25
+      n_iter_median: 14.0
+      n_iter_q1: 11.0
+      n_iter_q3: 19.0
+      n_iter_mean: 21.714285714285715
+      r0_ratio_median: 1.0
+    stokes@4:
+      converged: 47
+      cfl_init_median: 4.0
+      n_iter_median: 7.0
+      n_iter_q1: 6.0
+      n_iter_q3: 9.0
+      n_iter_mean: 21.612244897959183
+      r0_ratio_median: 1.0
+      ratio_to_stokes_median: 0.5555555555555556
+      wins: 45
+      ties: 1
+      losses: 3
+    unet:
+      converged: 49
+      cfl_init_median: 0.25
+      n_iter_median: 16.0
+      n_iter_q1: 13.0
+      n_iter_q3: 20.0
+      n_iter_mean: 24.571428571428573
+      r0_ratio_median: 3.499406994322195
+      ratio_to_stokes_median: 1.1818181818181819
+      wins: 5
+      ties: 3
+      losses: 41
+    baseline: stokes
+  quad:
+    n: 55
+    stokes:
+      converged: 55
+      cfl_init_median: 0.25
+      n_iter_median: 13.0
+      n_iter_q1: 11.0
+      n_iter_q3: 14.5
+      n_iter_mean: 16.363636363636363
+      r0_ratio_median: 1.0
+    stokes@4:
+      converged: 53
+      cfl_init_median: 4.0
+      n_iter_median: 7.0
+      n_iter_q1: 6.0
+      n_iter_q3: 8.5
+      n_iter_mean: 16.90909090909091
+      r0_ratio_median: 1.0
+      ratio_to_stokes_median: 0.5454545454545454
+      wins: 49
+      ties: 1
+      losses: 5
+    unet:
+      converged: 55
+      cfl_init_median: 0.25
+      n_iter_median: 12.0
+      n_iter_q1: 11.0
+      n_iter_q3: 15.0
+      n_iter_mean: 16.945454545454545
+      r0_ratio_median: 1.393193926770023
+      ratio_to_stokes_median: 1.0
+      wins: 25
+      ties: 14
+      losses: 16
+    baseline: stokes
+  serpentine:
+    n: 32
+    stokes:
+      converged: 32
+      cfl_init_median: 0.25
+      n_iter_median: 12.0
+      n_iter_q1: 10.75
+      n_iter_q3: 23.25
+      n_iter_mean: 29.4375
+      r0_ratio_median: 1.0
+    stokes@4:
+      converged: 31
+      cfl_init_median: 4.0
+      n_iter_median: 8.5
+      n_iter_q1: 6.0
+      n_iter_q3: 18.5
+      n_iter_mean: 27.59375
+      r0_ratio_median: 1.0
+      ratio_to_stokes_median: 0.6594202898550725
+      wins: 26
+      ties: 2
+      losses: 4
+    unet:
+      converged: 31
+      cfl_init_median: 0.25
+      n_iter_median: 17.0
+      n_iter_q1: 13.75
+      n_iter_q3: 29.0
+      n_iter_mean: 34.6875
+      r0_ratio_median: 5.2347970328095865
+      ratio_to_stokes_median: 1.2696969696969695
+      wins: 4
+      ties: 0
+      losses: 28
+    baseline: stokes
+  sin2d:
+    n: 47
+    stokes:
+      converged: 47
+      cfl_init_median: 0.25
+      n_iter_median: 14.0
+      n_iter_q1: 11.0
+      n_iter_q3: 18.0
+      n_iter_mean: 18.680851063829788
+      r0_ratio_median: 1.0
+    stokes@4:
+      converged: 46
+      cfl_init_median: 4.0
+      n_iter_median: 7.0
+      n_iter_q1: 6.0
+      n_iter_q3: 9.0
+      n_iter_mean: 17.46808510638298
+      r0_ratio_median: 1.0
+      ratio_to_stokes_median: 0.5384615384615384
+      wins: 43
+      ties: 1
+      losses: 3
+    unet:
+      converged: 47
+      cfl_init_median: 0.25
+      n_iter_median: 13.0
+      n_iter_q1: 11.0
+      n_iter_q3: 16.5
+      n_iter_mean: 18.5531914893617
+      r0_ratio_median: 1.3481754500451726
+      ratio_to_stokes_median: 0.9375
+      wins: 24
+      ties: 8
+      losses: 15
+    baseline: stokes
+  uniform:
+    n: 45
+    stokes:
+      converged: 45
+      cfl_init_median: 0.25
+      n_iter_median: 13.0
+      n_iter_q1: 10.0
+      n_iter_q3: 18.0
+      n_iter_mean: 17.511111111111113
+      r0_ratio_median: 1.0
+    stokes@4:
+      converged: 42
+      cfl_init_median: 4.0
+      n_iter_median: 7.0
+      n_iter_q1: 6.0
+      n_iter_q3: 10.0
+      n_iter_mean: 23.644444444444446
+      r0_ratio_median: 1.0
+      ratio_to_stokes_median: 0.5555555555555556
+      wins: 38
+      ties: 1
+      losses: 6
+    unet:
+      converged: 45
+      cfl_init_median: 0.25
+      n_iter_median: 12.0
+      n_iter_q1: 10.0
+      n_iter_q3: 17.0
+      n_iter_mean: 18.244444444444444
+      r0_ratio_median: 1.5203346552465713
+      ratio_to_stokes_median: 1.0
+      wins: 22
+      ties: 11
+      losses: 12
+    baseline: stokes
+  uturn:
+    n: 46
+    stokes:
+      converged: 46
+      cfl_init_median: 0.25
+      n_iter_median: 13.0
+      n_iter_q1: 11.0
+      n_iter_q3: 17.5
+      n_iter_mean: 18.543478260869566
+      r0_ratio_median: 1.0
+    stokes@4:
+      converged: 45
+      cfl_init_median: 4.0
+      n_iter_median: 8.5
+      n_iter_q1: 6.0
+      n_iter_q3: 15.75
+      n_iter_mean: 20.347826086956523
+      r0_ratio_median: 1.0
+      ratio_to_stokes_median: 0.6306818181818181
+      wins: 33
+      ties: 3
+      losses: 10
+    unet:
+      converged: 45
+      cfl_init_median: 0.25
+      n_iter_median: 13.5
+      n_iter_q1: 11.0
+      n_iter_q3: 16.0
+      n_iter_mean: 22.934782608695652
+      r0_ratio_median: 1.488688682465297
+      ratio_to_stokes_median: 1.0487179487179485
+      wins: 18
+      ties: 4
+      losses: 24
+    baseline: stokes
+hard:
+  n: 60
+  stokes:
+    converged: 0
+    cfl_init_median: 0.25
+    n_iter_median: 200.0
+    n_iter_q1: 200.0
+    n_iter_q3: 200.0
+    n_iter_mean: 200.0
+    r0_ratio_median: 1.0
+  stokes@4:
+    converged: 9
+    cfl_init_median: 4.0
+    n_iter_median: 200.0
+    n_iter_q1: 200.0
+    n_iter_q3: 200.0
+    n_iter_mean: 184.8
+    r0_ratio_median: 1.0
+    ratio_to_stokes_median: 1.0
+    wins: 9
+    ties: 51
+    losses: 0
+  unet:
+    converged: 8
+    cfl_init_median: 0.25
+    n_iter_median: 200.0
+    n_iter_q1: 200.0
+    n_iter_q3: 200.0
+    n_iter_mean: 181.56666666666666
+    r0_ratio_median: 1.6479953014606366
+    ratio_to_stokes_median: 1.0
+    wins: 8
+    ties: 52
+    losses: 0
+  baseline: stokes
+field_metrics:
+  u:
+    r2_pooled: 0.9650487263044555
+    r2_median: 0.9633517521921114
+    r2_p10: 0.7858301732146384
+    r2_p90: 0.9943045416922558
+    r2_min: -0.015884262884477307
+    rmse: 0.06491228180510852
+    max_err_abs_median: 0.1289321780204773
+    max_err_abs_p90: 0.4921267747879029
+    max_err_rel_median: 0.06494873599423069
+    max_err_rel_p90: 0.2701397775010259
+    max_err_signed_mean: 0.1745538582911615
+    min_err_abs_median: 0.10833629965782166
+    min_err_abs_p90: 0.42669980525970463
+    min_err_rel_median: 0.05497149093580733
+    min_err_rel_p90: 0.19661990526343542
+    min_err_signed_mean: -0.10376130133483778
+  v:
+    r2_pooled: 0.8913542410122267
+    r2_median: 0.9407425151221667
+    r2_p10: 0.7211891152735769
+    r2_p90: 0.9848702839452577
+    r2_min: -0.5601782476832324
+    rmse: 0.07357118609928448
+    max_err_abs_median: 0.12368535995483398
+    max_err_abs_p90: 0.6186441898345949
+    max_err_rel_median: 0.06434806818522648
+    max_err_rel_p90: 0.3552522809541937
+    max_err_signed_mean: 0.1988849993415258
+    min_err_abs_median: 0.12129700183868408
+    min_err_abs_p90: 0.6246562004089362
+    min_err_rel_median: 0.06625935466231658
+    min_err_rel_p90: 0.3568208387012389
+    min_err_signed_mean: -0.18060534788178723
+  p:
+    r2_pooled: 0.9599663525285488
+    r2_median: 0.9700274758289654
+    r2_p10: -1.0076660244490236
+    r2_p90: 0.9986735346654549
+    r2_min: -113.4316776064409
+    rmse: 0.10023349370563746
+    max_err_abs_median: 0.01646125316619873
+    max_err_abs_p90: 0.12080138921737671
+    max_err_rel_median: 0.0342800582376663
+    max_err_rel_p90: 0.21188687510541787
+    max_err_signed_mean: -0.006875914477166675
+    min_err_abs_median: 0.009175497340038419
+    min_err_abs_p90: 0.08052877476438884
+    min_err_rel_median: 0.020472757643598287
+    min_err_rel_p90: 0.12476916438216547
+    min_err_signed_mean: -0.012518386923527365
+  stokes_floor:
+    u:
+      r2_pooled: 0.9549429614629364
+      r2_median: 0.9415544623655018
+      r2_p10: 0.6487670806389529
+      r2_p90: 0.9955345614668224
+      r2_min: -0.08794340432727665
+      rmse: 0.0737015623094607
+      max_err_abs_median: 0.11723029613494873
+      max_err_abs_p90: 0.6335923910140997
+      max_err_rel_median: 0.058003398363004194
+      max_err_rel_p90: 0.4063111765292367
+      max_err_signed_mean: 0.20508293247354825
+      min_err_abs_median: 0.1773262619972229
+      min_err_abs_p90: 0.691216814517975
+      min_err_rel_median: 0.07747179879081403
+      min_err_rel_p90: 0.3747108458697646
+      min_err_signed_mean: -0.23366357655856623
+    v:
+      r2_pooled: 0.6368875820260544
+      r2_median: 0.8909452285753692
+      r2_p10: 0.36482604589449896
+      r2_p90: 0.9849865829585241
+      r2_min: -6.900159621342958
+      rmse: 0.1344998869609431
+      max_err_abs_median: 0.16399753093719482
+      max_err_abs_p90: 0.7244272261857987
+      max_err_rel_median: 0.08081227401074954
+      max_err_rel_p90: 0.4527595268397844
+      max_err_signed_mean: 0.2642020660374119
+      min_err_abs_median: 0.1851477026939392
+      min_err_abs_p90: 0.8655235528945924
+      min_err_rel_median: 0.09551399112632993
+      min_err_rel_p90: 0.4759631737095582
+      min_err_signed_mean: -0.3245173583532732
+    p:
+      r2_pooled: 0.7741986858007567
+      r2_median: 0.6987791666952937
+      r2_p10: -17.09995215796628
+      r2_p90: 0.9979851633492597
+      r2_min: -453.6706171282136
+      rmse: 0.23804744287323545
+      max_err_abs_median: 0.04331474006175995
+      max_err_abs_p90: 0.2905818551778795
+      max_err_rel_median: 0.08927438091899818
+      max_err_rel_p90: 0.5360881410282722
+      max_err_signed_mean: -0.11821390261628381
+      min_err_abs_median: 0.005234363488852978
+      min_err_abs_p90: 0.05774304750375452
+      min_err_rel_median: 0.010738570371015105
+      min_err_rel_p90: 0.10941614558891627
+      min_err_signed_mean: -0.012830344953632774
+  cfl_pred:
+    median: 0.25
+    p10: 0.25
+    p90: 0.25
+    min: 0.25
+    max: 0.25

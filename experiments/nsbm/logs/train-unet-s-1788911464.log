@@ -1,0 +1,56 @@
+memcap: unit=memcap-train.py_-968504.scope MemoryMax=16G MemorySwapMax=0 :: python experiments/nsbm/train.py --out experiments/nsbm/runs/unet-s --floor --epochs 100 --lr 1e-3 --threads 6 --split-from experiments/nsbm/runs/unet-a
+samples=4000 converged=3582 (89.5%)
+split from experiments/nsbm/runs/unet-a/split.json
+{'train': 2867, 'val': 358, 'test': 357}
+floor: 4000 Stokes fields from /home/nishioka/work/ykep-cae/experiments/nsbm/data/stokes.npz
+epoch    0 train mse 3.101e-02 res 0.000 | val mse 3.018e-02 floor 3.488e-01 res 0.000 obj 3.488e-01 best 3.488e-01@0 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 1.00e-03    87.1s
+epoch    1 train mse 2.378e-02 res 0.000 | val mse 2.724e-02 floor 3.088e-01 res 0.000 obj 3.088e-01 best 3.088e-01@1 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.99e-04   172.5s
+epoch    2 train mse 2.221e-02 res 0.000 | val mse 2.655e-02 floor 2.838e-01 res 0.000 obj 2.838e-01 best 2.838e-01@2 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.98e-04   257.4s
+epoch    3 train mse 2.020e-02 res 0.000 | val mse 2.385e-02 floor 2.529e-01 res 0.000 obj 2.529e-01 best 2.529e-01@3 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.96e-04   352.6s
+epoch    4 train mse 1.742e-02 res 0.000 | val mse 2.461e-02 floor 2.309e-01 res 0.000 obj 2.309e-01 best 2.309e-01@4 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.94e-04   440.5s
+epoch    5 train mse 1.654e-02 res 0.000 | val mse 2.007e-02 floor 2.030e-01 res 0.000 obj 2.030e-01 best 2.030e-01@5 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.91e-04   527.5s
+epoch    6 train mse 1.574e-02 res 0.000 | val mse 1.895e-02 floor 1.916e-01 res 0.000 obj 1.916e-01 best 1.916e-01@6 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.88e-04   609.8s
+epoch    7 train mse 1.512e-02 res 0.000 | val mse 1.755e-02 floor 1.682e-01 res 0.000 obj 1.682e-01 best 1.682e-01@7 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.84e-04   700.6s
+epoch    8 train mse 1.450e-02 res 0.000 | val mse 1.737e-02 floor 1.563e-01 res 0.000 obj 1.563e-01 best 1.563e-01@8 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.80e-04   790.3s
+epoch    9 train mse 1.456e-02 res 0.000 | val mse 1.538e-02 floor 1.855e-01 res 0.000 obj 1.855e-01 best 1.563e-01@8 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.76e-04   914.5s
+epoch   10 train mse 1.429e-02 res 0.000 | val mse 2.101e-02 floor 2.121e-01 res 0.000 obj 2.121e-01 best 1.563e-01@8 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.70e-04  1044.8s
+epoch   11 train mse 1.383e-02 res 0.000 | val mse 1.455e-02 floor 1.591e-01 res 0.000 obj 1.591e-01 best 1.563e-01@8 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.65e-04  1143.5s
+epoch   12 train mse 1.363e-02 res 0.000 | val mse 1.480e-02 floor 1.344e-01 res 0.000 obj 1.344e-01 best 1.344e-01@12 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.59e-04  1216.5s
+epoch   13 train mse 1.340e-02 res 0.000 | val mse 1.552e-02 floor 1.618e-01 res 0.000 obj 1.618e-01 best 1.344e-01@12 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.52e-04  1304.4s
+epoch   14 train mse 1.294e-02 res 0.000 | val mse 1.461e-02 floor 1.366e-01 res 0.000 obj 1.366e-01 best 1.344e-01@12 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.46e-04  1387.7s
+epoch   15 train mse 1.302e-02 res 0.000 | val mse 1.691e-02 floor 1.967e-01 res 0.000 obj 1.967e-01 best 1.344e-01@12 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.38e-04  1441.7s
+epoch   16 train mse 1.280e-02 res 0.000 | val mse 1.529e-02 floor 1.857e-01 res 0.000 obj 1.857e-01 best 1.344e-01@12 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.30e-04  1480.9s
+epoch   17 train mse 1.267e-02 res 0.000 | val mse 1.357e-02 floor 1.465e-01 res 0.000 obj 1.465e-01 best 1.344e-01@12 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.22e-04  1534.1s
+epoch   18 train mse 1.274e-02 res 0.000 | val mse 1.318e-02 floor 1.480e-01 res 0.000 obj 1.480e-01 best 1.344e-01@12 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.14e-04  1627.2s
+epoch   19 train mse 1.217e-02 res 0.000 | val mse 1.202e-02 floor 1.375e-01 res 0.000 obj 1.375e-01 best 1.344e-01@12 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 9.05e-04  1724.9s
+epoch   20 train mse 1.179e-02 res 0.000 | val mse 1.236e-02 floor 1.353e-01 res 0.000 obj 1.353e-01 best 1.344e-01@12 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 8.95e-04  1832.2s
+epoch   21 train mse 1.178e-02 res 0.000 | val mse 1.347e-02 floor 1.321e-01 res 0.000 obj 1.321e-01 best 1.321e-01@21 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 8.85e-04  1932.7s
+epoch   22 train mse 1.159e-02 res 0.000 | val mse 1.224e-02 floor 1.359e-01 res 0.000 obj 1.359e-01 best 1.321e-01@21 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 8.75e-04  2023.5s
+epoch   23 train mse 1.140e-02 res 0.000 | val mse 1.150e-02 floor 1.355e-01 res 0.000 obj 1.355e-01 best 1.321e-01@21 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 8.64e-04  2112.1s
+epoch   24 train mse 1.102e-02 res 0.000 | val mse 1.110e-02 floor 1.259e-01 res 0.000 obj 1.259e-01 best 1.259e-01@24 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 8.54e-04  2206.9s
+epoch   25 train mse 1.038e-02 res 0.000 | val mse 1.179e-02 floor 1.194e-01 res 0.000 obj 1.194e-01 best 1.194e-01@25 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 8.42e-04  2286.7s
+epoch   26 train mse 1.060e-02 res 0.000 | val mse 1.165e-02 floor 1.268e-01 res 0.000 obj 1.268e-01 best 1.194e-01@25 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 8.31e-04  2377.7s
+epoch   27 train mse 9.742e-03 res 0.000 | val mse 1.071e-02 floor 1.152e-01 res 0.000 obj 1.152e-01 best 1.152e-01@27 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 8.19e-04  2470.6s
+epoch   28 train mse 9.394e-03 res 0.000 | val mse 9.924e-03 floor 1.190e-01 res 0.000 obj 1.190e-01 best 1.152e-01@27 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 8.06e-04  2559.5s
+epoch   29 train mse 9.239e-03 res 0.000 | val mse 1.061e-02 floor 1.273e-01 res 0.000 obj 1.273e-01 best 1.152e-01@27 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 7.94e-04  2659.0s
+epoch   30 train mse 8.531e-03 res 0.000 | val mse 9.467e-03 floor 1.049e-01 res 0.000 obj 1.049e-01 best 1.049e-01@30 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 7.81e-04  2757.5s
+epoch   31 train mse 8.667e-03 res 0.000 | val mse 9.231e-03 floor 1.084e-01 res 0.000 obj 1.084e-01 best 1.049e-01@30 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 7.68e-04  2845.3s
+epoch   32 train mse 7.839e-03 res 0.000 | val mse 9.347e-03 floor 1.065e-01 res 0.000 obj 1.065e-01 best 1.049e-01@30 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 7.55e-04  2948.7s
+epoch   33 train mse 7.393e-03 res 0.000 | val mse 8.276e-03 floor 1.091e-01 res 0.000 obj 1.091e-01 best 1.049e-01@30 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 7.41e-04  3048.3s
+epoch   34 train mse 6.962e-03 res 0.000 | val mse 8.054e-03 floor 1.155e-01 res 0.000 obj 1.155e-01 best 1.049e-01@30 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 7.27e-04  3132.9s
+epoch   35 train mse 7.072e-03 res 0.000 | val mse 7.651e-03 floor 1.227e-01 res 0.000 obj 1.227e-01 best 1.049e-01@30 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 7.13e-04  3227.7s
+epoch   36 train mse 6.810e-03 res 0.000 | val mse 9.114e-03 floor 1.165e-01 res 0.000 obj 1.165e-01 best 1.049e-01@30 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 6.99e-04  3348.5s
+epoch   37 train mse 6.347e-03 res 0.000 | val mse 7.557e-03 floor 1.057e-01 res 0.000 obj 1.057e-01 best 1.049e-01@30 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 6.84e-04  3477.8s
+epoch   38 train mse 6.269e-03 res 0.000 | val mse 9.700e-03 floor 1.266e-01 res 0.000 obj 1.266e-01 best 1.049e-01@30 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 6.69e-04  3536.6s
+epoch   39 train mse 6.095e-03 res 0.000 | val mse 7.660e-03 floor 1.046e-01 res 0.000 obj 1.046e-01 best 1.046e-01@39 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 6.55e-04  3600.3s
+epoch   40 train mse 5.912e-03 res 0.000 | val mse 6.435e-03 floor 1.098e-01 res 0.000 obj 1.098e-01 best 1.046e-01@39 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 6.39e-04  3725.2s
+epoch   41 train mse 5.685e-03 res 0.000 | val mse 7.262e-03 floor 1.260e-01 res 0.000 obj 1.260e-01 best 1.046e-01@39 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 6.24e-04  3837.7s
+epoch   42 train mse 5.623e-03 res 0.000 | val mse 7.137e-03 floor 1.033e-01 res 0.000 obj 1.033e-01 best 1.033e-01@42 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 6.09e-04  3939.7s
+epoch   43 train mse 5.292e-03 res 0.000 | val mse 6.565e-03 floor 1.007e-01 res 0.000 obj 1.007e-01 best 1.007e-01@43 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 5.94e-04  4017.4s
+epoch   44 train mse 5.308e-03 res 0.000 | val mse 7.192e-03 floor 1.120e-01 res 0.000 obj 1.120e-01 best 1.007e-01@43 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 5.78e-04  4073.2s
+epoch   45 train mse 5.156e-03 res 0.000 | val mse 7.471e-03 floor 1.131e-01 res 0.000 obj 1.131e-01 best 1.007e-01@43 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 5.63e-04  4132.9s
+epoch   46 train mse 4.998e-03 res 0.000 | val mse 6.365e-03 floor 9.529e-02 res 0.000 obj 9.529e-02 best 9.529e-02@46 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 5.47e-04  4190.0s
+epoch   47 train mse 4.868e-03 res 0.000 | val mse 6.496e-03 floor 9.216e-02 res 0.000 obj 9.216e-02 best 9.216e-02@47 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 5.31e-04  4339.0s
+epoch   48 train mse 4.787e-03 res 0.000 | val mse 6.870e-03 floor 9.802e-02 res 0.000 obj 9.802e-02 best 9.216e-02@47 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 5.16e-04  4483.4s
+epoch   49 train mse 4.822e-03 res 0.000 | val mse 6.033e-03 floor 1.004e-01 res 0.000 obj 1.004e-01 best 9.216e-02@47 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 5.00e-04  4629.4s
+epoch   50 train mse 4.535e-03 res 0.000 | val mse 6.688e-03 floor 9.543e-02 res 0.000 obj 9.543e-02 best 9.216e-02@47 | cfl med 0.25 [0.25,0.25] fail 0 | |g|head mse nan res nan lr 4.84e-04  4735.2s
