@@ -121,6 +121,23 @@ class NSBSettings:
         "jfnk_simple"（既定。有限差分 J v を FGMRES、SIMPLE 型ブロック前処理 `nsb.precond`: 運動量 ILU +
         Schur 補元 SA-AMG。大格子で速く pyamg が要る）/ "jfnk"（同 FGMRES、PARDISO 疎 LU(J1) 前処理。
         GMRES 反復は少なく頑健だが三角解が 1 スレッドで大格子では遅い）
+    jacobian : str
+        前処理に組む行列。"fou"（既定。1 次風上・RC 係数凍結の J1）/ "fd"（残差関数を色分け有限差分した
+        厳密ヤコビアン `nsb.fdjac.colored_fd_jacobian`。半径 fd_jacobian_radius のボックスで 3(2r+1)² 回の
+        残差評価。高 Re で J1 の速度ブロックが真の作用素と O(1) ずれて GMRES が壊れる件の対策、status-45）
+    pseudo_compressibility : float
+        圧力の擬似時間項（人工圧縮性）β。0 で無効（既定）。連続式に c_p (p − p_prev)、
+        c_p = τ_cell / (ρ (β u_scale)²) を加える（`pseudo_time_in_residual` に従い残差にも入れる）。
+        τ は速度しか凍らせないので、Stokes 出発点が NS 解から遠い高 Re の蛇行流路では Newton ステップが
+        「速度を凍らせたまま圧力だけで対流の不釣り合いを釣り合わせる」静水圧的な解（レベルシフト 1e4〜1e5 Pa）
+        になり、CFL を下げるほど悪化する。β を入れると圧力レベルも減衰し、閉塞セルの圧力の谷も埋まる（status-45）
+    line_search_halvings : int
+        定常残差のラインサーチ: 修正量 δ を α = 1, 1/2, …, 1/2^k で試し、|R_steady| が減る最初の α を採る。
+        全て失敗なら最小の α を採る（SER が CFL を下げる）。0 で無効（既定）。
+        Stokes 出発点が遠い高 Re 蛇行流路では cfl 0.25 のステップで定常残差が 56 倍になり、擬似時間残差だけを
+        見る SER がそれを受理して偽収束（|R_τ| → 0、|R| は 2000 倍）に入る対策（status-45）
+    fd_jacobian_radius : int
+        "fd" のステンシル半径（2 次風上 + リミター + RC で 2。3 と 4 で非零パターン・値とも同一を確認、status-45）
     precond_lag : int
         前処理（LU(J1) または SIMPLE 型）の遅延更新: 1 回の組立を最大この回数の Newton 反復で
         使い回す。1 で毎反復組立。GMRES が収束しなかったら即組み直して解き直す
@@ -173,6 +190,10 @@ class NSBSettings:
     convection: str = "sou"
     venkat_k: float = 5.0
     linear_solver: str = "jfnk_simple"
+    jacobian: str = "fou"
+    fd_jacobian_radius: int = 2
+    pseudo_compressibility: float = 0.0
+    line_search_halvings: int = 0
     cfl_init: float = 0.25
     cfl_max: float = 1.0e6
     ser_growth: float = 2.0

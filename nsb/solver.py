@@ -26,6 +26,7 @@ from scipy import sparse
 
 from nsb.assembly import BrinkmanDiscretization, StateArrays
 from nsb.core import NSBInput, NSBResult, NSBSettings
+from nsb.fdjac import colored_fd_jacobian
 from nsb.krylov import fgmres
 from nsb.linalg import PardisoLU, pardiso_solve
 from nsb.precond import SimpleBlockPreconditioner
@@ -132,16 +133,33 @@ def solve_linear(
     s: NSBSettings,
     pc: LaggedPreconditioner,
     force_refresh: bool = False,
+    fd_diag: np.ndarray | None = None,
+    steady_resid_fn: Callable[[np.ndarray], np.ndarray] | None = None,
 ) -> tuple[np.ndarray, int, bool, float]:
     """[線形] (J + diag_aug) δ = -R を JFNK（有限差分 matvec + FGMRES）で解く.
 
     戻り値 (δ, GMRES 反復数, 収束フラグ, 最終の真の残差比 |b − A δ|/|b|)。
 
-    前処理は pc が保持する PARDISO 分解または SIMPLE 型前処理。必要なときだけ J1 を組んで組み直す。
+    前処理は pc が保持する PARDISO 分解または SIMPLE 型前処理。必要なときだけ行列（J1 または
+    色分け有限差分の厳密ヤコビアン、`s.jacobian`）を組んで組み直す。
+
+    fd_diag は有限差分 matvec に足す対角。resid_fn が擬似時間項 τ(x − x_prev) を既に含むなら
+    τ を二度足さないよう diag_aug から τ を除いたもの（緩和分だけ）を渡す。None なら diag_aug
+    （status-45 以前の挙動: τ が 2 重に入り、前処理行列 J1+τ と作用素 J+2τ が食い違っていた）。
     """
+    if fd_diag is None:
+        fd_diag = diag_aug
 
     def assemble() -> sparse.csr_matrix:
-        return (disc.jacobian_first_order(st, x=x) + sparse.diags(diag_aug)).tocsr()
+        if s.jacobian == "fd":
+            fn = steady_resid_fn if steady_resid_fn is not None else resid_fn
+            J = colored_fd_jacobian(fn, x, disc.nx, disc.ny, radius=s.fd_jacobian_radius)
+            if steady_resid_fn is None:
+                # resid_fn に τ が入っている場合は差分にも τ が入るので diag_aug の τ を足さない
+                return (J + sparse.diags(fd_diag)).tocsr()
+        else:
+            J = disc.jacobian_first_order(st, x=x)
+        return (J + sparse.diags(diag_aug)).tocsr()
 
     J_cur: sparse.csr_matrix | None = None
     if pc.needs_refresh(force_refresh):
@@ -156,7 +174,7 @@ def solve_linear(
         if v_norm == 0.0:
             return np.zeros_like(vec)
         eps = sqrt_eps * np.sqrt(1.0 + x_norm) / v_norm
-        return (resid_fn(x + eps * vec) - rhs_resid) / eps + diag_aug * vec
+        return (resid_fn(x + eps * vec) - rhs_resid) / eps + fd_diag * vec
 
     def run_gmres() -> tuple[np.ndarray, int, bool]:
         # JFNK の FD matvec は厳密に線形でないので Givens 推定と真の残差が食い違い、再出発が空回りして
@@ -225,6 +243,7 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
     # 擬似時間ステップ内で凍結する量
     rc_diag: np.ndarray | None = None  # [RC] RC 係数に含める ρV/Δτ
     tau_diag = np.zeros(n)  # ρV/Δτ（u, v 各 n 要素分）
+    cp_diag = np.zeros(n)  # [残差] 圧力の擬似時間対角 τ/(ρ (β u_scale)²)（人工圧縮性、β=0 なら 0）
     x_prev = np.zeros(3 * n)  # [残差] 擬似時間項の基準（前ステップの場）
 
     def state(xx: np.ndarray) -> StateArrays:
@@ -239,6 +258,8 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
         if s.pseudo_time_in_residual:
             r = r.copy()
             r[: 2 * n] += np.concatenate([tau_diag, tau_diag]) * (xx[: 2 * n] - x_prev[: 2 * n])
+            if s.pseudo_compressibility > 0.0:
+                r[2 * n :] += cp_diag * (xx[2 * n :] - x_prev[2 * n :])
         return r
 
     # [参照場] Stokes–Brinkman 解: 運動量の対流項（inlet の運動量流束を含む）を落とした線形問題を
@@ -316,6 +337,8 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
         uu, vv, _ = disc.split(x)
         dtau = compute_dtau(uu, vv, disc.dx, disc.dy, cfl, s, u_floor)
         tau_diag = (inp.rho * disc.vol / dtau).ravel()
+        if s.pseudo_compressibility > 0.0:
+            cp_diag = tau_diag / (inp.rho * (s.pseudo_compressibility * disc.u_scale) ** 2)
         rc_diag = tau_diag.reshape(shape) if s.rc_with_pseudo_time else None
         x_prev = x.copy()
         pc.cfl = cfl
@@ -326,10 +349,25 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
             st = state(x)
             r_tau = resid(x)
             relax = (1.0 - s.alpha_u) / s.alpha_u * st.a_p.ravel()
-            diag_aug = np.concatenate([tau_diag + relax, tau_diag + relax, np.zeros(n)])
+            diag_aug = np.concatenate([tau_diag + relax, tau_diag + relax, cp_diag])
+            # resid に τ(x − x_prev) が入っているときは有限差分 matvec にも τ が出るので、足すのは緩和分だけ
+            fd_diag = (
+                np.concatenate([relax, relax, np.zeros(n)])
+                if s.pseudo_time_in_residual
+                else diag_aug
+            )
             try:
                 delta, n_gmres, lin_ok, lin_ratio = solve_linear(
-                    disc, st, x, r_tau, diag_aug, resid, s, pc
+                    disc,
+                    st,
+                    x,
+                    r_tau,
+                    diag_aug,
+                    resid,
+                    s,
+                    pc,
+                    fd_diag=fd_diag,
+                    steady_resid_fn=steady_resid,
                 )
             except (RuntimeError, ValueError) as exc:
                 failure = f"lu_failed: {exc}"
@@ -349,6 +387,30 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
                 )
                 lin_rejected = True
                 break
+            if s.line_search_halvings > 0:
+                # [ラインサーチ] 定常残差が減る最初の α を採る。どの α でも減らなければ修正量を捨てて
+                # CFL を ser_shrink 倍にし、同じ場からやり直す（線形解の棄却と同じ扱い）
+                r_cur = float(np.linalg.norm(steady_resid(x)))
+                alpha = 1.0
+                found = False
+                for _k in range(s.line_search_halvings + 1):
+                    if float(np.linalg.norm(steady_resid(x + alpha * delta))) < r_cur:
+                        found = True
+                        break
+                    alpha *= 0.5
+                if not found:
+                    n_iter += 1
+                    x = x_prev
+                    cfl = float(cfl * s.ser_shrink)
+                    emit(
+                        f"[nsb] it={n_iter} line search failed (alpha down to {alpha * 2:g}), "
+                        f"rejected, cfl -> {cfl:.3g}"
+                    )
+                    lin_rejected = True
+                    break
+                if alpha < 1.0:
+                    emit(f"[nsb] line search: alpha={alpha:g}")
+                delta = alpha * delta
             x = x + delta
             n_iter += 1
             # ステップ終了時の残差（擬似時間項込み: 収束判定・SER に使う）と定常残差

@@ -30,7 +30,16 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from nsb import BC, NSBInput, NSBSettings, disk_mask, solve_steady, west_span  # noqa: E402
+from nsb import (  # noqa: E402
+    BC,
+    NSBInput,
+    NSBResult,
+    NSBSettings,
+    disk_mask,
+    smooth_disk,
+    solve_steady,
+    west_span,
+)
 from nsb.utils import save_fields, summary  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
@@ -161,6 +170,8 @@ def make_trama_input(
     settings: NSBSettings | None = None,
     port_radius: float | None = None,
     port: str = "interior",
+    sink_smooth_cells: float = 0.0,
+    port_radius_factor: float = 1.0,
 ) -> NSBInput:
     """蛇行流路 NSBInput.
 
@@ -173,13 +184,22 @@ def make_trama_input(
     w2 = geo.width / 2
     if port == "interior":
         h = make_trama_h(geo, nx, ny, h_channel, h_blocked)
-        r = w2 if port_radius is None else port_radius
-        bc = BC(
-            patches=(
+        r = (w2 if port_radius is None else port_radius) * port_radius_factor
+        dxm = dx_mm * 1e-3
+        if sink_smooth_cells > 0:
+            eps = sink_smooth_cells * dxm
+            patches = (
+                BC.interior_source(None, mass_flow, weight=smooth_disk(*geo.inlet, r, eps)),
+                BC.interior_pressure_sink(
+                    None, sink_conductance, p=0.0, weight=smooth_disk(*geo.outlet, r, eps)
+                ),
+            )
+        else:
+            patches = (
                 BC.interior_source(disk_mask(*geo.inlet, r), mass_flow),
                 BC.interior_pressure_sink(disk_mask(*geo.outlet, r), sink_conductance, p=0.0),
             )
-        )
+        bc = BC(patches=patches)
     elif port == "wall":
         ya, yb = geo.inlet[1], geo.outlet[1]
         poly = np.vstack([[[-w2, ya]], geo.polyline, [[-w2, yb]]])  # 壁の外まで伸ばして端を平らに
@@ -239,6 +259,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-iter", type=int, default=80)
     ap.add_argument("--convection", default="sou")
     ap.add_argument("--linear-solver", default="jfnk_simple")
+    ap.add_argument("--jacobian", default="fou", choices=["fou", "fd"])
+    ap.add_argument("--h-blocked", type=float, default=1.0e-5)
+    ap.add_argument("--cfl-max", type=float, default=None)
+    ap.add_argument("--beta", type=float, default=0.0, help="圧力の擬似時間項（人工圧縮性）β")
+    ap.add_argument("--steady-ser", action="store_true", help="pseudo_time_in_residual=False")
+    ap.add_argument("--ls", type=int, default=0, help="line_search_halvings")
+    ap.add_argument(
+        "--sink-smooth", type=float, default=0.0, help="ポート窓の遷移幅 [セル]（0 で階段）"
+    )
+    ap.add_argument("--port-radius-factor", type=float, default=1.0)
+    ap.add_argument("--init-from", type=Path, default=None, help="初期場 (u, v, p) を読む npz")
+    ap.add_argument(
+        "--continuation",
+        default="",
+        help="質量流量の継続法: カンマ区切り（例 0.0015,0.005,0.015,0.05,0.15）。前段の解を流量比で拡大して初期場にする",
+    )
     ap.add_argument("--port", default="interior", choices=["interior", "wall"])
     ap.add_argument("--variant", default="orig", choices=["orig", "ortho"])
     ap.add_argument(
@@ -257,10 +293,25 @@ def main(argv: list[str] | None = None) -> int:
         "newton_max_iter": a.max_iter,
         "convection": a.convection,
         "linear_solver": a.linear_solver,
+        "jacobian": a.jacobian,
+        "pseudo_compressibility": a.beta,
+        "pseudo_time_in_residual": not a.steady_ser,
+        "line_search_halvings": a.ls,
     }
+    if a.cfl_max is not None:
+        kw["cfl_max"] = a.cfl_max
     if a.cfl_init is not None:
         kw["cfl_init"] = a.cfl_init
-    inp = make_trama_input(geo, a.mass, dx_mm=a.dx, settings=NSBSettings(**kw), port=a.port)
+    inp = make_trama_input(
+        geo,
+        a.mass,
+        dx_mm=a.dx,
+        settings=NSBSettings(**kw),
+        port=a.port,
+        h_blocked=a.h_blocked,
+        sink_smooth_cells=a.sink_smooth,
+        port_radius_factor=a.port_radius_factor,
+    )
     info = describe(geo, inp, a.mass)
     print(
         "[trama] "
@@ -269,9 +320,77 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"[trama] inlet={geo.inlet} outlet={geo.outlet} settings={kw}", flush=True)
     t0 = time.perf_counter()
-    res = solve_steady(inp, log=lambda m: print(m, flush=True))
+    stages: list[dict[str, Any]] = []
+    if a.continuation:
+        masses = [float(v) for v in a.continuation.split(",")]
+        prev: NSBResult | None = None
+        prev_m = masses[0]
+        for m_k in masses:
+            inp_k = make_trama_input(
+                geo,
+                m_k,
+                dx_mm=a.dx,
+                settings=inp.settings,
+                port=a.port,
+                h_blocked=a.h_blocked,
+                sink_smooth_cells=a.sink_smooth,
+                port_radius_factor=a.port_radius_factor,
+            )
+            if prev is not None:
+                ratio = m_k / prev_m
+                inp_k = NSBInput(
+                    **{k: v for k, v in inp_k.__dict__.items() if k not in ("u0", "v0", "p0")},
+                    u0=prev.u * ratio,
+                    v0=prev.v * ratio,
+                    p0=prev.p * ratio,
+                )
+            print(
+                f"[trama] === continuation stage mass={m_k:g} (init from {prev_m:g}) ===",
+                flush=True,
+            )
+            res = solve_steady(inp_k, log=lambda m: print(m, flush=True))
+            stages.append(
+                {
+                    "mass": m_k,
+                    "converged": bool(res.converged),
+                    "reason": res.failure_reason,
+                    "n_iter": int(res.n_iter),
+                    "rel_steady_final": float(res.rel_steady_residual),
+                    "elapsed": float(res.elapsed),
+                }
+            )
+            print(
+                f"[trama] stage mass={m_k:g}: converged={res.converged} it={res.n_iter} rel={res.rel_steady_residual:.2e}",
+                flush=True,
+            )
+            if not res.converged:
+                break
+            prev, prev_m = res, m_k
+        inp = inp_k
+    else:
+        if a.init_from is not None:
+            z = np.load(a.init_from)
+            inp = NSBInput(
+                **{k: v for k, v in inp.__dict__.items() if k not in ("u0", "v0", "p0")},
+                u0=z["u"],
+                v0=z["v"],
+                p0=z["p"],
+            )
+            print(f"[trama] init from {a.init_from}", flush=True)
+        res = solve_steady(inp, log=lambda m: print(m, flush=True))
     geo_tag = f"straight{a.straight:g}" if a.straight is not None else a.variant
-    tag = a.tag or f"{geo_tag}-{a.port}-m{a.mass:g}-dx{a.dx:g}-{a.convection}-{a.linear_solver}"
+    tag = a.tag or (
+        f"{geo_tag}-{a.port}-m{a.mass:g}-dx{a.dx:g}-{a.convection}-{a.linear_solver}-{a.jacobian}"
+        + (f"-hb{a.h_blocked:g}" if a.h_blocked != 1.0e-5 else "")
+        + (f"-beta{a.beta:g}" if a.beta > 0 else "")
+        + (f"-cfl{a.cfl_init:g}" if a.cfl_init is not None else "")
+        + ("-sser" if a.steady_ser else "")
+        + (f"-ls{a.ls}" if a.ls > 0 else "")
+        + (f"-smooth{a.sink_smooth:g}" if a.sink_smooth > 0 else "")
+        + (f"-prf{a.port_radius_factor:g}" if a.port_radius_factor != 1.0 else "")
+        + ("-cont" if a.continuation else "")
+        + ("-init" if a.init_from is not None else "")
+    )
     out: dict[str, Any] = dict(summary(inp, res))
     out.update(
         {f"case_{k}": (float(v) if isinstance(v, float) else int(v)) for k, v in info.items()}
@@ -280,6 +399,9 @@ def main(argv: list[str] | None = None) -> int:
     out["steady_residual_history"] = [float(v) for v in res.steady_residual_history]
     out["cfl_history"] = [float(v) for v in res.cfl_history]
     out["elapsed_total"] = time.perf_counter() - t0
+    if stages:
+        out["continuation"] = stages
+        out["n_iter_total"] = int(sum(st["n_iter"] for st in stages))
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out / f"trama_{tag}.yaml").write_text(yaml.safe_dump(out, sort_keys=False))
     save_fields(a.out / f"trama_{tag}_fields.npz", inp, res)

@@ -52,8 +52,8 @@ class FirstStep:
         """前処理が組む行列 J1 + diag_aug."""
         return (self.J1 + sparse.diags(self.diag_aug)).tocsr()
 
-    def fd_matvec(self, vec: np.ndarray, extra_tau: bool = True) -> np.ndarray:
-        """solve_linear.matvec と同じ有限差分 J v（extra_tau=False で diag_aug の加算を省く）."""
+    def fd_matvec(self, vec: np.ndarray, extra_tau: bool = False) -> np.ndarray:
+        """有限差分 J v（resid_tau に τ が入るので既定は diag_aug を足さない。extra_tau=True で status-45 以前の 2 重カウントを再現）."""
         v_norm = float(np.linalg.norm(vec))
         if v_norm == 0.0:
             return np.zeros_like(vec)
