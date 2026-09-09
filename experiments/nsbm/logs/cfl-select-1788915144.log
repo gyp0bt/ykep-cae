@@ -1,0 +1,15 @@
+labelled θ: 3582  cfls=[1.0, 2.0, 4.0, 8.0, 16.0]  split sizes: {'train': 2867, 'val': 358, 'test': 357}
+/home/nishioka/work/ykep-cae/experiments/nsbm/cfl_select.py:118: RuntimeWarning: divide by zero encountered in log
+  xt, ct, nt = norm(Xtr), torch.from_numpy(Ctr), torch.from_numpy(np.log(Ntr))
+Traceback (most recent call last):
+  File "/home/nishioka/work/ykep-cae/experiments/nsbm/cfl_select.py", line 247, in <module>
+    main()
+    ~~~~^^
+  File "/home/nishioka/work/ykep-cae/experiments/nsbm/cfl_select.py", line 141, in main
+    net.load_state_dict(best_state)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/home/nishioka/envs/python/base/lib/python3.14/site-packages/torch/nn/modules/module.py", line 2574, in load_state_dict
+    raise TypeError(
+        f"Expected state_dict to be dict-like, got {type(state_dict)}."
+    )
+TypeError: Expected state_dict to be dict-like, got <class 'NoneType'>.

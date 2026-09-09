@@ -104,29 +104,38 @@ def main() -> None:
     Xte, Cte, Nte, N0te = table(sets["test"])
     mu, sd = Xtr.mean(0), Xtr.std(0) + 1e-6
     norm = lambda X: torch.from_numpy((X - mu) / sd)  # noqa: E731
+    n_c = len(cfls)
     net = torch.nn.Sequential(
         torch.nn.Linear(Xtr.shape[1], 64),
         torch.nn.GELU(),
         torch.nn.Linear(64, 64),
         torch.nn.GELU(),
-        torch.nn.Linear(64, len(cfls)),
+        torch.nn.Linear(
+            64, 2 * n_c
+        ),  # [:n_c] 収束 logit、[n_c:] log 反復数（収束したものだけで学習）
     )
     opt = torch.optim.AdamW(net.parameters(), lr=3e-3, weight_decay=1e-3)
-    xt, ct = norm(Xtr), torch.from_numpy(Ctr)
-    xv, cv = norm(Xva), torch.from_numpy(Cva)
+    xt, ct, nt = norm(Xtr), torch.from_numpy(Ctr), torch.from_numpy(np.log(np.maximum(Ntr, 1.0)))
+    xv, cv, nv = norm(Xva), torch.from_numpy(Cva), torch.from_numpy(np.log(np.maximum(Nva, 1.0)))
+
+    def loss_fn(out, c, n):
+        bce = torch.nn.functional.binary_cross_entropy_with_logits(out[:, :n_c], c)
+        reg = (((out[:, n_c:] - n) ** 2) * c).sum() / c.sum().clamp_min(1.0)
+        return bce + reg
+
     best, best_state = 1e9, None
     for _ep in range(args.epochs):
         net.train()
         perm = torch.randperm(len(xt))
         for k in range(0, len(perm), 64):
             b = perm[k : k + 64]
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(net(xt[b]), ct[b])
+            loss = loss_fn(net(xt[b]), ct[b], nt[b])
             opt.zero_grad()
             loss.backward()
             opt.step()
         net.eval()
         with torch.no_grad():
-            vl = torch.nn.functional.binary_cross_entropy_with_logits(net(xv), cv).item()
+            vl = loss_fn(net(xv), cv, nv).item()
         if vl < best:
             best, best_state = vl, {k: v.clone() for k, v in net.state_dict().items()}
     net.load_state_dict(best_state)
@@ -148,8 +157,25 @@ def main() -> None:
         return cost, chosen
 
     with torch.no_grad():
-        Pva = torch.sigmoid(net(xv)).numpy()
-        Pte = torch.sigmoid(net(norm(Xte))).numpy()
+        ov, ot = net(xv), net(norm(Xte))
+        Pva, Pte = torch.sigmoid(ov[:, :n_c]).numpy(), torch.sigmoid(ot[:, :n_c]).numpy()
+        Nhte = torch.exp(ot[:, n_c:]).numpy()
+
+    def policy_expected(P, Nh, conv, nit, n025, n025_hat):
+        """期待費用 P·n̂ + (1−P)·(max_iter + n̂₀.₂₅) が最小の cfl（0.25 を含む）を選ぶ."""
+        cost = np.empty(len(P))
+        chosen = np.empty(len(P))
+        for i in range(len(P)):
+            exp_cost = P[i] * Nh[i] + (1.0 - P[i]) * (args.max_iter + n025_hat[i])
+            j = int(np.argmin(exp_cost))
+            if exp_cost[j] >= n025_hat[i]:
+                cost[i], chosen[i] = n025[i], 0.25
+            else:
+                chosen[i] = cfls[j]
+                cost[i] = nit[i, j] if conv[i, j] else args.max_iter + n025[i]
+        return cost, chosen
+
+    n025_hat_te = np.full(len(Xte), float(np.median(N0tr)))
     taus = np.linspace(0.3, 0.99, 70)
     tau = taus[int(np.argmin([policy_cost(Pva, Cva, Nva, N0va, t)[0].mean() for t in taus]))]
     res = {
@@ -190,6 +216,16 @@ def main() -> None:
         1 for i in range(len(Pte)) if chosen[i] != 0.25 and not Cte[i, cfls.index(chosen[i])]
     )
     summarize("selector", cost, chosen, fails)
+    cost, chosen = policy_expected(Pte, Nhte, Cte, Nte, N0te, n025_hat_te)
+    fails = sum(
+        1 for i in range(len(Pte)) if chosen[i] != 0.25 and not Cte[i, cfls.index(chosen[i])]
+    )
+    summarize("sel_expected", cost, chosen, fails)
+    m = Cte > 0  # 回帰の精度: 収束したケースの log 反復数の R²
+    ln, lh = np.log(np.maximum(Nte, 1.0))[m], np.log(Nhte)[m]
+    r2 = 1.0 - ((ln - lh) ** 2).sum() / ((ln - ln.mean()) ** 2).sum()
+    res["log_niter_r2_test"] = float(r2)
+    print(f"log n_iter regression R² (test, converged) {r2:.3f}", flush=True)
     # 選択器の精度: 各 cfl の収束予測 AUC 相当（正例率と閾値 0.5 の正答率）
     acc = ((Pte > 0.5) == (Cte > 0)).mean(0)
     res["per_cfl_accuracy"] = {str(c): float(a) for c, a in zip(cfls, acc, strict=True)}
