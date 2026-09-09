@@ -172,6 +172,7 @@ def make_trama_input(
     port: str = "interior",
     sink_smooth_cells: float = 0.0,
     port_radius_factor: float = 1.0,
+    friction_re_crit: float = 0.0,
 ) -> NSBInput:
     """蛇行流路 NSBInput.
 
@@ -224,6 +225,7 @@ def make_trama_input(
         mu=mu,
         mu_b=mu,
         settings=settings or NSBSettings(),
+        friction_re_crit=friction_re_crit,
     )
 
 
@@ -246,6 +248,99 @@ def describe(geo: TramaGeometry, inp: NSBInput, mass_flow: float) -> dict[str, f
         "brinkman_drag_per_u": 12 * inp.mu / h**2,
         "inertia_per_u2": inp.rho / geo.width,
     }
+
+
+def make_tag(a: argparse.Namespace) -> str:
+    geo_tag = f"straight{a.straight:g}" if a.straight is not None else a.variant
+    return a.tag or (
+        f"{geo_tag}-{a.port}-m{a.mass:g}-dx{a.dx:g}-{a.convection}-{a.linear_solver}-{a.jacobian}"
+        + (f"-hb{a.h_blocked:g}" if a.h_blocked != 1.0e-5 else "")
+        + (f"-beta{a.beta:g}" if a.beta > 0 else "")
+        + (f"-cfl{a.cfl_init:g}" if a.cfl_init is not None else "")
+        + ("-sser" if a.steady_ser else "")
+        + (f"-ls{a.ls}" if a.ls > 0 else "")
+        + (f"-smooth{a.sink_smooth:g}" if a.sink_smooth > 0 else "")
+        + (f"-prf{a.port_radius_factor:g}" if a.port_radius_factor != 1.0 else "")
+        + ("-cont" if a.continuation else "")
+        + ("-init" if a.init_from is not None else "")
+        + (f"-frz{a.freeze:g}" if a.freeze > 0 else "")
+        + (f"-rf{a.refreeze}" if a.refreeze > 0 else "")
+        + (f"-fric{a.friction:g}" if a.friction > 0 else "")
+        + (f"-dt{a.unsteady:g}" if a.unsteady > 0 else "")
+    )
+
+
+def run_unsteady(
+    a: argparse.Namespace, geo: TramaGeometry, inp: NSBInput, info: dict[str, float]
+) -> int:
+    """物理時間の陰的非定常計算（`nsb.unsteady.solve_unsteady`）を走らせ、時系列とスナップショットを保存する."""
+    from nsb.unsteady import solve_unsteady
+
+    if a.init_from is not None:
+        z = np.load(a.init_from)
+        inp = NSBInput(
+            **{k: v for k, v in inp.__dict__.items() if k not in ("u0", "v0", "p0")},
+            u0=z["u"],
+            v0=z["v"],
+            p0=z["p"],
+        )
+        print(f"[trama] init from {a.init_from}", flush=True)
+    t0 = time.perf_counter()
+    res = solve_unsteady(
+        inp,
+        dt=a.unsteady,
+        n_steps=a.n_steps,
+        log=lambda m: print(m, flush=True),
+        newton_max=a.newton_per_step,
+        step_tol=a.step_tol,
+        save_every=a.save_every,
+    )
+    tag = make_tag(a)
+    out: dict[str, Any] = {
+        "reached_steady": bool(res.reached_steady),
+        "reason": res.failure_reason,
+        "dt": float(res.dt),
+        "n_steps": len(res.times),
+        "t_final": float(res.times[-1]) if res.times else 0.0,
+        "rel_steady_final": float(res.steady_residual[-1]) if res.steady_residual else float("nan"),
+        "rel_steady_min": float(min(res.steady_residual)) if res.steady_residual else float("nan"),
+        "steps_hit_max_newton": int(res.n_steps_hit_max_newton),
+        "dt_backoffs": int(res.n_dt_backoffs),
+        "newton_total": int(sum(res.newton_iters)),
+        "gmres_total": int(sum(res.gmres_iters)),
+        "residual_ref": float(res.residual_ref),
+        "elapsed": float(res.elapsed),
+        "elapsed_total": time.perf_counter() - t0,
+    }
+    out.update(
+        {f"case_{k}": (float(v) if isinstance(v, float) else int(v)) for k, v in info.items()}
+    )
+    out["times"] = [float(v) for v in res.times]
+    out["steady_residual"] = [float(v) for v in res.steady_residual]
+    out["step_residual"] = [float(v) for v in res.step_residual]
+    out["newton_iters"] = [int(v) for v in res.newton_iters]
+    out["gmres_iters"] = [int(v) for v in res.gmres_iters]
+    out["dt_history"] = [float(v) for v in res.dt_history]
+    out["probes"] = {k: [float(x) for x in v] for k, v in res.probes.items()}
+    a.out.mkdir(parents=True, exist_ok=True)
+    (a.out / f"trama_{tag}.yaml").write_text(yaml.safe_dump(out, sort_keys=False))
+    np.savez_compressed(
+        a.out / f"trama_{tag}_fields.npz",
+        u=res.u,
+        v=res.v,
+        p=res.p,
+        h=inp.h,
+        snap_t=np.array([sn[0] for sn in res.snapshots]),
+        snap_u=np.array([sn[1] for sn in res.snapshots]),
+        snap_v=np.array([sn[2] for sn in res.snapshots]),
+        snap_p=np.array([sn[3] for sn in res.snapshots]),
+    )
+    print(
+        f"[trama] saved {a.out / f'trama_{tag}.yaml'} reached_steady={res.reached_steady} "
+        f"steps={len(res.times)} rel_final={out['rel_steady_final']:.2e}",
+        flush=True,
+    )
+    return 0 if res.reached_steady else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -280,6 +375,25 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--straight", type=float, default=None, help="直線流路の角度 [deg]（パターンの代わり）"
     )
+    ap.add_argument(
+        "--freeze", type=float, default=0.0, help="limiter_freeze_rel（0 で無効。nsbp は 1e-3）"
+    )
+    ap.add_argument(
+        "--refreeze", type=int, default=0, help="limiter_refreeze_max（ψ の Picard 反復）"
+    )
+    ap.add_argument(
+        "--friction",
+        type=float,
+        default=0.0,
+        help="隙間の摩擦則 Re_c（Blasius 型なら 2040。0 で層流 12μ/h² のみ）",
+    )
+    ap.add_argument(
+        "--unsteady", type=float, default=0.0, help="物理時間刻み Δt [s]（>0 で非定常計算）"
+    )
+    ap.add_argument("--n-steps", type=int, default=600)
+    ap.add_argument("--newton-per-step", type=int, default=6)
+    ap.add_argument("--save-every", type=int, default=20)
+    ap.add_argument("--step-tol", type=float, default=1e-3)
     ap.add_argument("--tag", default="")
     ap.add_argument("--out", type=Path, default=HERE / "results")
     a = ap.parse_args(argv)
@@ -297,6 +411,8 @@ def main(argv: list[str] | None = None) -> int:
         "pseudo_compressibility": a.beta,
         "pseudo_time_in_residual": not a.steady_ser,
         "line_search_halvings": a.ls,
+        "limiter_freeze_rel": a.freeze,
+        "limiter_refreeze_max": a.refreeze,
     }
     if a.cfl_max is not None:
         kw["cfl_max"] = a.cfl_max
@@ -311,6 +427,7 @@ def main(argv: list[str] | None = None) -> int:
         h_blocked=a.h_blocked,
         sink_smooth_cells=a.sink_smooth,
         port_radius_factor=a.port_radius_factor,
+        friction_re_crit=a.friction,
     )
     info = describe(geo, inp, a.mass)
     print(
@@ -320,6 +437,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"[trama] inlet={geo.inlet} outlet={geo.outlet} settings={kw}", flush=True)
     t0 = time.perf_counter()
+    if a.unsteady > 0:
+        return run_unsteady(a, geo, inp, info)
     stages: list[dict[str, Any]] = []
     if a.continuation:
         masses = [float(v) for v in a.continuation.split(",")]
@@ -335,6 +454,7 @@ def main(argv: list[str] | None = None) -> int:
                 h_blocked=a.h_blocked,
                 sink_smooth_cells=a.sink_smooth,
                 port_radius_factor=a.port_radius_factor,
+                friction_re_crit=a.friction,
             )
             if prev is not None:
                 ratio = m_k / prev_m
@@ -357,6 +477,12 @@ def main(argv: list[str] | None = None) -> int:
                     "n_iter": int(res.n_iter),
                     "rel_steady_final": float(res.rel_steady_residual),
                     "elapsed": float(res.elapsed),
+                    "limiter_frozen_at": int(res.limiter_frozen_at),
+                    "rel_unfrozen": float(res.residual_unfrozen / res.residual_ref),
+                    "steady_residual_history": [
+                        float(v / res.residual_ref) for v in res.steady_residual_history
+                    ],
+                    "cfl_history": [float(v) for v in res.cfl_history],
                 }
             )
             print(
@@ -378,19 +504,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(f"[trama] init from {a.init_from}", flush=True)
         res = solve_steady(inp, log=lambda m: print(m, flush=True))
-    geo_tag = f"straight{a.straight:g}" if a.straight is not None else a.variant
-    tag = a.tag or (
-        f"{geo_tag}-{a.port}-m{a.mass:g}-dx{a.dx:g}-{a.convection}-{a.linear_solver}-{a.jacobian}"
-        + (f"-hb{a.h_blocked:g}" if a.h_blocked != 1.0e-5 else "")
-        + (f"-beta{a.beta:g}" if a.beta > 0 else "")
-        + (f"-cfl{a.cfl_init:g}" if a.cfl_init is not None else "")
-        + ("-sser" if a.steady_ser else "")
-        + (f"-ls{a.ls}" if a.ls > 0 else "")
-        + (f"-smooth{a.sink_smooth:g}" if a.sink_smooth > 0 else "")
-        + (f"-prf{a.port_radius_factor:g}" if a.port_radius_factor != 1.0 else "")
-        + ("-cont" if a.continuation else "")
-        + ("-init" if a.init_from is not None else "")
-    )
+    tag = make_tag(a)
     out: dict[str, Any] = dict(summary(inp, res))
     out.update(
         {f"case_{k}": (float(v) if isinstance(v, float) else int(v)) for k, v in info.items()}

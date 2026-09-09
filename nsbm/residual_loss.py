@@ -305,7 +305,9 @@ def _solve_job(args: tuple) -> dict[str, Any]:
     from nsbm.families import Theta
 
     theta_d, x0, cfl_init, max_iter, settings = args
-    st = dataclasses.replace(settings or NSBSettings(), cfl_init=cfl_init, newton_max_iter=max_iter)
+    # nsb の既定は status-46 で定常残差 SER（pseudo_time_in_residual=False）になった。ここは擬似時間残差形を前提にする
+    base = settings or NSBSettings(pseudo_time_in_residual=True)
+    st = dataclasses.replace(base, cfl_init=cfl_init, newton_max_iter=max_iter)
     x0 = np.asarray(x0, dtype=float)
     try:
         return run_with_init(Theta.from_dict(theta_d), (x0[0], x0[1], x0[2]), st)

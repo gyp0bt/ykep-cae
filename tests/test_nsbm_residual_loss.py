@@ -16,7 +16,7 @@ from nsbm.residual_loss import _w, residual_loss, unroll
 def case():
     """uniform ファミリの小さな θ: Stokes 場を少し崩したものを初期場にする."""
     theta = sample_theta(11, ("uniform",))
-    st = NSBSettings(newton_max_iter=3)
+    st = NSBSettings(newton_max_iter=3, pseudo_time_in_residual=True)
     res0 = solve_steady(build_input(theta, st), log=None)
     rng = np.random.default_rng(0)
     u = res0.u * (1.0 + 0.3 * rng.standard_normal(res0.u.shape))

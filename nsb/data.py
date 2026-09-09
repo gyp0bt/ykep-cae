@@ -301,6 +301,10 @@ class BrinkmanFlowInput:
         Brinkman 粘度 [Pa·s]
     brinkman_factor : float
         貫通係数 = brinkman_factor · mu_brinkman / h²（Hele-Shaw なら 12）
+    friction_re_crit, friction_exponent, friction_blend : float
+        [摩擦則] Re 依存の抗力倍率 (1 + (Re_Dh/Re_c)^(e·m))^(1/m)、Re_Dh = ρ|U|·2h/μ。
+        re_crit <= 0（既定）で層流 Hele-Shaw のみ。Blasius なら Re_c ≈ 2040、e = 0.75
+        （`BrinkmanDiscretization.drag_factor`）
     u_inlet : float
         inlet 流速 [m/s]（boundaries=None のとき geometry の inlet に使う）
     boundaries : tuple[BoundaryPatch, ...] | None
@@ -320,6 +324,9 @@ class BrinkmanFlowInput:
     mu: float = 1.0e-3
     mu_brinkman: float = 1.0e-3
     brinkman_factor: float = 12.0
+    friction_re_crit: float = 0.0
+    friction_exponent: float = 0.75
+    friction_blend: float = 4.0
     u_inlet: float = 0.1
     boundaries: tuple[BoundaryPatch, ...] | None = None
     settings: BrinkmanSolverSettings = field(default_factory=BrinkmanSolverSettings)

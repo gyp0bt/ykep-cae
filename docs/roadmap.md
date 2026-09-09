@@ -193,8 +193,11 @@ Phase 1.5 の等間隔直交格子を一般化し、不等間隔格子および�
 - [ ] nsbm: 細格子 288×192 での評価（Stokes 発進 43 Newton。unet-s（Stokes 床 + 補正、R² 0.965）の初期場を双一次補間して入れ子の粗格子解と比べる） — status-43/44 TODO
 - [x] nsb: 蛇行流路（messi trama、0.15 kg/s、Re_h 1450）の収束不良を 3 観点で可視化。条件数は閉塞領域が決めて Re で不変、主因は「RC 結合 d ∝ 1/Re で J1 の圧力方向が平らになり Newton ステップが飛ぶ」×「SIMPLE + JFNK がその方向を増幅」。階段は無関係 — status-45
 - [x] nsb: 色分け有限差分の厳密ヤコビアン（`nsb/fdjac.py`、`jacobian="fd"`）と τ 2 重カウント修正。厳密ステップの真の残差比 92 → 0.11、0.0015 kg/s が 22 反復で収束 — status-45
-- [ ] nsb: リミター凍結（nsbp 方式）を `compute_state`/`residual_fast` に入れ、継続法（`trama_case.py --continuation`）で Re_h 50〜150 の停滞（rel 1e-3〜1e-5）を抜けるか確認 — status-45 TODO
-- [ ] nsb: 停滞する Re からは物理時間の陰的非定常計算（各時間ステップを Newton、前ステップ出発）。Re_h 1450 の蛇行で定常解が存在するかの診断を兼ねる — status-45 TODO
+- [x] nsb: リミター凍結（`limiter_freeze_rel`、ψ 安定条件 + 解凍 patience 3）。継続法が 1 段先まで登る（内部 0.005、壁 0.015）が次の段は凍結閾値より上で停滞。隙間の摩擦則（`friction_re_crit`）は収束性を悪化 — status-46
+- [x] nsb: 物理時間の陰的非定常 `nsb/unsteady.py`（後退 Euler、Δt 後退、プローブ）。細格子で過渡追跡（走行中） — status-46
+- [ ] nsb: 非定常 G4 を最後まで走らせて定常化/振動を判定。定常化するなら「非定常で吸引域まで運んでから定常 Newton + 凍結」 — status-46 TODO
+- [ ] nsb: 停滞段（内部 0.015、壁 0.05）の跳ねの正体（風上切替 / sink の clip）をステップ分解で同定 — status-46 TODO
+- [ ] nsb: τ 修正後の SER 制御則の再掃引（status-41 の掃引は J+2τ の作用素）。既定は定常残差 SER に切替済 — status-46 TODO
 - [ ] nsb: 閉塞セル圧力の谷底を埋める（h_blocked 1e-5 → 1e-4 で κ 2e12 → 1e10、または閉塞セルの圧力緩和項）— status-45 TODO
 - [ ] nsb: 高 Re 用の Schur 近似（SIMPLEC / PCD / LSC）。0.05 kg/s で SIMPLE の組立が壊れる（Ritz 3e17）件も含む — status-45 TODO
 - [ ] nsb: 圧力ステップのガード（|δp| が場の |p| の数倍を超えたらラインサーチで縮小）— status-45 TODO

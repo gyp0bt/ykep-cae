@@ -15,7 +15,7 @@ class TestLinearFailureRejectionAPI:
         real = solver_mod.solve_linear
         calls = {"n": 0}
 
-        def fake(disc, st, x, r_tau, diag_aug, resid_fn, s, pc, force_refresh=False):
+        def fake(disc, st, x, r_tau, diag_aug, resid_fn, s, pc, force_refresh=False, **kw):
             calls["n"] += 1
             if calls["n"] == 1:
                 return np.full(x.size, 1e6), 200, False, 1.0  # ごみ修正量
@@ -37,9 +37,9 @@ class TestLinearFailureRejectionAPI:
         real = solver_mod.solve_linear
         calls = {"n": 0}
 
-        def fake(disc, st, x, r_tau, diag_aug, resid_fn, s, pc, force_refresh=False):
+        def fake(disc, st, x, r_tau, diag_aug, resid_fn, s, pc, force_refresh=False, **kw):
             calls["n"] += 1
-            d, n, ok, ratio = real(disc, st, x, r_tau, diag_aug, resid_fn, s, pc, force_refresh)
+            d, n, ok, ratio = real(disc, st, x, r_tau, diag_aug, resid_fn, s, pc, force_refresh, **kw)
             return d, n, ok, (1.0 if calls["n"] == 1 else ratio)
 
         monkeypatch.setattr(solver_mod, "solve_linear", fake)

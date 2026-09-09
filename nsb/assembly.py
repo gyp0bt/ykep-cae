@@ -71,6 +71,7 @@ class StateArrays:
     conv_vfx: np.ndarray
     conv_ufy: np.ndarray
     conv_vfy: np.ndarray
+    drag_fac: np.ndarray  # (nx, ny) 摩擦則の抗力倍率（層流 Hele-Shaw なら 1）
 
 
 class BrinkmanDiscretization:
@@ -84,6 +85,11 @@ class BrinkmanDiscretization:
         self.vol = self.dx * self.dy
         self.rho, self.mu = inp.rho, inp.mu
         self.drag = inp.brinkman_factor * inp.mu_brinkman / inp.thickness**2  # (nx, ny) [kg/(m³s)]
+        self.thickness = np.ascontiguousarray(inp.thickness, dtype=np.float64)
+        # [摩擦則] Re 依存の抗力倍率（`drag_factor`）。re_crit <= 0 で層流 12μ/h² のみ
+        self.friction_re_crit = float(inp.friction_re_crit)
+        self.friction_exponent = float(inp.friction_exponent)
+        self.friction_blend = float(inp.friction_blend)
 
         patches = inp.effective_boundaries()
         self.sides = self._resolve_boundaries(tuple(b for b in patches if not b.is_interior))
@@ -439,21 +445,51 @@ class BrinkmanDiscretization:
         pfy[:, -1] = np.where(N.is_outlet, N.p, p[:, -1])
         return ufx, vfx, ufy, vfy, pfx, pfy
 
+    def drag_factor(self, u: np.ndarray, v: np.ndarray) -> np.ndarray:
+        """[摩擦則] 抗力倍率 f(Re_h) (nx, ny)。層流 Hele-Shaw（12μ/h²）に対する倍率.
+
+        平行平板の Darcy 摩擦係数は層流で 96/Re_Dh（Re_Dh = ρ|U|·2h/μ）、乱流で Blasius 型
+        0.316 Re_Dh^-1/4。体積力に直すと層流が 12μ|U|/h²（= Brinkman 抗力）、乱流との比が
+        (Re_Dh/Re_c)^0.75（Re_c ≈ 2040 で両者が一致）。倍率を
+        (1 + (Re_Dh/Re_c)^(0.75·m))^(1/m)（m = friction_blend）で滑らかに繋ぐ。
+        friction_re_crit <= 0 なら常に 1。
+        """
+        if self.friction_re_crit <= 0.0:
+            return np.ones_like(u)
+        speed = np.hypot(u, v)
+        re_h = self.rho * speed * 2.0 * self.thickness / self.mu
+        m = self.friction_blend
+        return (1.0 + (re_h / self.friction_re_crit) ** (self.friction_exponent * m)) ** (1.0 / m)
+
+    def limiter(self, x: np.ndarray, venkat_k: float) -> tuple[np.ndarray, np.ndarray]:
+        """[リミター凍結] 現在の場での Venkatakrishnan ψ (nx, ny) を u, v 成分ごとに返す."""
+        u, v, p = self.split(x)
+        ufx, vfx, ufy, vfy, _, _ = self._linear_face_values(u, v, p)
+        out = []
+        for phi, phifx, phify in ((u, ufx, ufy), (v, vfx, vfy)):
+            gx = (phifx[1:] - phifx[:-1]) / self.dx
+            gy = (phify[:, 1:] - phify[:, :-1]) / self.dy
+            out.append(self._venkatakrishnan(phi, phifx, phify, gx, gy, venkat_k))
+        return out[0], out[1]
+
     def compute_state(
         self,
         x: np.ndarray,
         scheme: ConvectionSchemeType,
         venkat_k: float,
         pseudo_diag: np.ndarray | None = None,
+        psi: tuple[np.ndarray, np.ndarray] | None = None,
     ) -> StateArrays:
         """面速度・RC 質量流束・対流面値を計算する.
 
         pseudo_diag に (nx, ny) の擬似時間対角 ρV/Δτ を渡すと、RC 係数を
         d_f = V/(a_P + ρV/Δτ) として組む（既定 None: d_f = V/a_P）。
+        psi に (ψ_u, ψ_v) を渡すとリミターを再計算せずその値で外挿する（リミター凍結）。
         """
         u, v, p = self.split(x)
         ufx, vfx, ufy, vfy, pfx, pfy = self._linear_face_values(u, v, p)
         rho, dx, dy, vol = self.rho, self.dx, self.dy, self.vol
+        drag_fac = self.drag_factor(u, v)
 
         # RC 用 a_P（線形補間流束に基づく、緩和なし）
         fx_lin = rho * dy * ufx
@@ -464,7 +500,7 @@ class BrinkmanDiscretization:
             + np.maximum(fy_lin[:, 1:], 0.0)
             + np.maximum(-fy_lin[:, :-1], 0.0)
             + self.diff_diag
-            + self.drag * vol
+            + self.drag * vol * drag_fac
         )
         d_cell = vol / a_p if pseudo_diag is None else vol / (a_p + pseudo_diag)
         dfx = np.zeros((self.nx + 1, self.ny))
@@ -483,8 +519,10 @@ class BrinkmanDiscretization:
         fx = rho * dy * ufx_rc
         fy = rho * dx * vfy_rc
 
-        conv_ufx, conv_ufy = self._convected_values(u, ufx, ufy, fx, fy, scheme, venkat_k)
-        conv_vfx, conv_vfy = self._convected_values(v, vfx, vfy, fx, fy, scheme, venkat_k)
+        psi_u = None if psi is None else psi[0]
+        psi_v = None if psi is None else psi[1]
+        conv_ufx, conv_ufy = self._convected_values(u, ufx, ufy, fx, fy, scheme, venkat_k, psi_u)
+        conv_vfx, conv_vfy = self._convected_values(v, vfx, vfy, fx, fy, scheme, venkat_k, psi_v)
         return StateArrays(
             fx=fx,
             fy=fy,
@@ -501,6 +539,7 @@ class BrinkmanDiscretization:
             conv_vfx=conv_vfx,
             conv_ufy=conv_ufy,
             conv_vfy=conv_vfy,
+            drag_fac=drag_fac,
         )
 
     def _convected_values(
@@ -512,8 +551,9 @@ class BrinkmanDiscretization:
         fy: np.ndarray,
         scheme: ConvectionSchemeType,
         venkat_k: float,
+        psi_frozen: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """対流面値（境界面は線形面値 = 境界値、内部面は風上）."""
+        """対流面値（境界面は線形面値 = 境界値、内部面は風上）。psi_frozen があれば ψ を再計算しない."""
         cfx = phifx.copy()
         cfy = phify.copy()
         up_x = fx[1:-1] >= 0.0  # True: 風上 = 左セル
@@ -525,7 +565,11 @@ class BrinkmanDiscretization:
 
         gx = (phifx[1:] - phifx[:-1]) / self.dx
         gy = (phify[:, 1:] - phify[:, :-1]) / self.dy
-        psi = self._venkatakrishnan(phi, phifx, phify, gx, gy, venkat_k)
+        psi = (
+            self._venkatakrishnan(phi, phifx, phify, gx, gy, venkat_k)
+            if psi_frozen is None
+            else psi_frozen
+        )
         ex = 0.5 * self.dx * psi * gx  # セル中心→東西面への外挿量
         ey = 0.5 * self.dy * psi * gy
         cfx[1:-1] = np.where(up_x, phi[:-1] + ex[:-1], phi[1:] - ex[1:])
@@ -573,8 +617,14 @@ class BrinkmanDiscretization:
     # ------------------------------------------------------------------
     # 残差
     # ------------------------------------------------------------------
-    def residual(self, x: np.ndarray, scheme: ConvectionSchemeType, venkat_k: float) -> np.ndarray:
-        st = self.compute_state(x, scheme, venkat_k)
+    def residual(
+        self,
+        x: np.ndarray,
+        scheme: ConvectionSchemeType,
+        venkat_k: float,
+        psi: tuple[np.ndarray, np.ndarray] | None = None,
+    ) -> np.ndarray:
+        st = self.compute_state(x, scheme, venkat_k, psi=psi)
         return self.residual_from_state(x, st)
 
     def residual_from_state(
@@ -610,14 +660,14 @@ class BrinkmanDiscretization:
             cs * div(st.fx * st.conv_ufx, st.fy * st.conv_ufy)
             - diffusion(u, self.u_w, self.u_e, self.u_s, self.u_n)
             + (st.pfx[1:] - st.pfx[:-1]) * dy
-            + self.drag * vol * u
+            + self.drag * vol * st.drag_fac * u
             + q_out * u
         )
         r_v = (
             cs * div(st.fx * st.conv_vfx, st.fy * st.conv_vfy)
             - diffusion(v, self.v_w, self.v_e, self.v_s, self.v_n)
             + (st.pfy[:, 1:] - st.pfy[:, :-1]) * dx
-            + self.drag * vol * v
+            + self.drag * vol * st.drag_fac * v
             + q_out * v
         )
         r_p = div(st.fx, st.fy) - q_in + q_out
@@ -630,18 +680,23 @@ class BrinkmanDiscretization:
         venkat_k: float,
         pseudo_diag: np.ndarray | None = None,
         convection: bool = True,
+        psi: tuple[np.ndarray, np.ndarray] | None = None,
     ) -> np.ndarray:
         """`residual_from_state(x, compute_state(x, …))` と同じ残差を numba カーネル（`nsb.fastres`）で返す.
 
         JFNK の matvec で毎回呼ばれる経路。numba が無ければ numpy 経路に落ちる（値は同じ）。
+        psi=(ψ_u, ψ_v) を渡すとリミターを凍結する（`compute_state` と同じ）。
         """
         if not fastres.HAVE_NUMBA:
-            st = self.compute_state(x, scheme, venkat_k, pseudo_diag)
+            st = self.compute_state(x, scheme, venkat_k, pseudo_diag, psi=psi)
             return self.residual_from_state(x, st, convection=convection)
         u, v, p = self.split(x)
         W, E, S, N = self.sides["W"], self.sides["E"], self.sides["S"], self.sides["N"]
         use_pseudo = pseudo_diag is not None
         pd = pseudo_diag if use_pseudo else self._zeros_cell
+        use_psi = psi is not None
+        psi_u = np.ascontiguousarray(psi[0], dtype=np.float64) if use_psi else self._zeros_cell
+        psi_v = np.ascontiguousarray(psi[1], dtype=np.float64) if use_psi else self._zeros_cell
         r_u, r_v, r_p = fastres.residual_kernel(
             np.ascontiguousarray(u),
             np.ascontiguousarray(v),
@@ -677,6 +732,13 @@ class BrinkmanDiscretization:
             scheme is ConvectionSchemeType.FIRST_ORDER_UPWIND,
             float(venkat_k),
             1.0 if convection else 0.0,
+            psi_u,
+            psi_v,
+            bool(use_psi),
+            self.thickness,
+            self.friction_re_crit,
+            self.friction_exponent,
+            self.friction_blend,
         )
         return np.concatenate([r_u.ravel(), r_v.ravel(), r_p.ravel()])
 
@@ -744,7 +806,8 @@ class BrinkmanDiscretization:
         dFx_du = rho * dy * self.Ux
         dFy_dv = rho * dx * self.Uy
 
-        base = (conv if convection else sparse.csr_matrix((n, n))) - self.Ldiff + self.drag_v
+        drag_v = sparse.diags((self.drag * self.vol * st.drag_fac).ravel())
+        base = (conv if convection else sparse.csr_matrix((n, n))) - self.Ldiff + drag_v
         J_up = dy * (self.Dx @ self.Px)
         J_vp = dx * (self.Dy @ self.Py)
         J_uu = base

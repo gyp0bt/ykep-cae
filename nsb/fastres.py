@@ -63,9 +63,27 @@ def residual_kernel(  # noqa: PLR0913
     first_order,
     venkat_k,
     cs,
+    psi_u_f,
+    psi_v_f,
+    use_psi,
+    thickness,
+    fr_re_crit,
+    fr_exp,
+    fr_blend,
 ):
     nx, ny = u.shape
     vol = dx * dy
+    # ---- [摩擦則] 抗力倍率（BrinkmanDiscretization.drag_factor と同じ式）----
+    drag_eff = np.empty((nx, ny))
+    for i in prange(nx):
+        for j in range(ny):
+            if fr_re_crit > 0.0:
+                sp = np.sqrt(u[i, j] * u[i, j] + v[i, j] * v[i, j])
+                re_h = rho * sp * 2.0 * thickness[i, j] / mu
+                fac = (1.0 + (re_h / fr_re_crit) ** (fr_exp * fr_blend)) ** (1.0 / fr_blend)
+            else:
+                fac = 1.0
+            drag_eff[i, j] = drag_vol[i, j] * fac
     # ---- 線形補間の面値 ----
     ufx = np.empty((nx + 1, ny))
     vfx = np.empty((nx + 1, ny))
@@ -137,7 +155,7 @@ def residual_kernel(  # noqa: PLR0913
                 + max(fn, 0.0)
                 + max(-fs, 0.0)
                 + diff_diag[i, j]
-                + drag_vol[i, j]
+                + drag_eff[i, j]
             )
             if use_pseudo:
                 d_cell[i, j] = vol / (a_p + pseudo_diag[i, j])
@@ -194,7 +212,10 @@ def residual_kernel(  # noqa: PLR0913
                     d_max = max(nb_max - phi_p, 0.0)
                     d_min = min(nb_min - phi_p, 0.0)
                     psi = 1.0
-                    for q in range(4):
+                    nq = 0 if use_psi else 4  # [リミター凍結] 凍結時は ψ を再計算しない
+                    if use_psi:
+                        psi = psi_u_f[i, j] if comp == 0 else psi_v_f[i, j]
+                    for q in range(nq):
                         if q == 0:
                             d_f = 0.5 * dx * gx
                         elif q == 1:
@@ -289,14 +310,14 @@ def residual_kernel(  # noqa: PLR0913
                 cs * conv_u
                 - diff_u
                 + (pfx[i + 1, j] - pfx[i, j]) * dy
-                + drag_vol[i, j] * u[i, j]
+                + drag_eff[i, j] * u[i, j]
                 + q_out * u[i, j]
             )
             r_v[i, j] = (
                 cs * conv_v
                 - diff_v
                 + (pfy[i, j + 1] - pfy[i, j]) * dx
-                + drag_vol[i, j] * v[i, j]
+                + drag_eff[i, j] * v[i, j]
                 + q_out * v[i, j]
             )
             r_p[i, j] = fx[i + 1, j] - fx[i, j] + fy[i, j + 1] - fy[i, j] - q_in + q_out

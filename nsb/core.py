@@ -124,7 +124,10 @@ class NSBSettings:
     jacobian : str
         前処理に組む行列。"fou"（既定。1 次風上・RC 係数凍結の J1）/ "fd"（残差関数を色分け有限差分した
         厳密ヤコビアン `nsb.fdjac.colored_fd_jacobian`。半径 fd_jacobian_radius のボックスで 3(2r+1)² 回の
-        残差評価。高 Re で J1 の速度ブロックが真の作用素と O(1) ずれて GMRES が壊れる件の対策、status-45）
+        残差評価。高 Re で J1 の速度ブロックが真の作用素と O(1) ずれて GMRES が壊れる件の対策、status-45）。
+        **"fd" は "jfnk"（PARDISO LU）と組むこと**: SIMPLE 型前処理（"jfnk_simple"）は J1 の構造（M 行列の運動量
+        ブロック + 凍結 RC の Schur 補元）を前提にしており、厳密ヤコビアンから組むと蛇行流路 0.0015 kg/s の初手で
+        GMRES 200 反復・真の残差比 5〜170 で棄却され、J1 + SIMPLE の 22 反復が 58 反復以上に悪化した（status-46）
     pseudo_compressibility : float
         圧力の擬似時間項（人工圧縮性）β。0 で無効（既定）。連続式に c_p (p − p_prev)、
         c_p = τ_cell / (ρ (β u_scale)²) を加える（`pseudo_time_in_residual` に従い残差にも入れる）。
@@ -133,9 +136,30 @@ class NSBSettings:
         になり、CFL を下げるほど悪化する。β を入れると圧力レベルも減衰し、閉塞セルの圧力の谷も埋まる（status-45）
     line_search_halvings : int
         定常残差のラインサーチ: 修正量 δ を α = 1, 1/2, …, 1/2^k で試し、|R_steady| が減る最初の α を採る。
-        全て失敗なら最小の α を採る（SER が CFL を下げる）。0 で無効（既定）。
+        全て失敗なら修正量を捨てて CFL を ser_shrink 倍にする。0 で無効（既定）。蛇行流路では残差が折れ点
+        （風上切替・sink の clip）で Newton 方向に沿って単調でなく、棄却が連鎖して CFL が 1e-30 まで潰れる
+        （status-46: 内部ポート継続法 0.005 段、ラインサーチ有 120 反復未達 / 無 69 反復収束）ので参照ケース以外では非推奨。
         Stokes 出発点が遠い高 Re 蛇行流路では cfl 0.25 のステップで定常残差が 56 倍になり、擬似時間残差だけを
         見る SER がそれを受理して偽収束（|R_τ| → 0、|R| は 2000 倍）に入る対策（status-45）
+    limiter_freeze_rel : float
+        [リミター凍結] 定常残差比 |R|/|R_ref| がこれを下回り、かつ Venkatakrishnan ψ が動いていない
+        （|Δψ| > limiter_freeze_delta のセルが limiter_freeze_stable_frac 未満）ときに ψ を凍結する。
+        凍結後は対流項が φ に線形になり Newton が折れ点（面ごとの min・クリップ・d_max/d_min の分岐）に
+        引っかからなくなる。0 で無効（既定）。序盤（ψ ≈ 1 の Stokes 場）で凍結すると柵の無い外挿になって
+        発散するので残差条件と ψ 安定条件の両方を要求する（nsbp status-42、gyp さんの手元の知見）。
+        収束後は凍結を解いた真の残差も報告する（`NSBResult.residual_unfrozen`）
+    limiter_freeze_delta, limiter_freeze_stable_frac : float
+        上記の「動いていない」判定（既定 0.1 / 0.01）
+    limiter_unfreeze_ratio, limiter_unfreeze_patience : float, int
+        凍結後に定常残差が凍結以降の最小値の ratio 倍を超える状態が patience 反復続いたら解凍する
+        （既定 3 / 3。1 反復で解凍すると跳ねのたびに前処理と CFL がリセットされ、蛇行流路の内部ポートで
+        凍結↔解凍を 5 往復して 0.005 kg/s が 120 反復でも未収束だった）
+    limiter_refreeze_max : int
+        凍結問題が収束したあと解凍した真の残差が判定を満たさないとき、現在の ψ で凍結し直す回数の上限
+        （ψ の Picard 反復）。0（既定）なら凍結問題の収束をそのまま収束とし、解凍した真の残差は
+        `NSBResult.residual_unfrozen` に報告するだけ。凍結時点の ψ は解の ψ と違うので凍結問題の解の
+        真の残差は 1e-4〜1e-3 に留まり、Picard 反復は 1 回あたり 0.78 倍（uturn r1 U=1）しか縮まない
+        （ψ の場依存が O(1) で、それを Newton に入れるかどうかの差がそのまま出る）ので既定では回さない
     fd_jacobian_radius : int
         "fd" のステンシル半径（2 次風上 + リミター + RC で 2。3 と 4 で非零パターン・値とも同一を確認、status-45）
     precond_lag : int
@@ -171,7 +195,11 @@ class NSBSettings:
         下限なし（0）だと静止・低速セルで Δτ→∞ となり Newton が素になって停滞する（status-30）
     pseudo_time_in_residual : bool
         True: 残差にも ρV(u - u_prev)/Δτ を加える（dual-time 型）。収束判定・SER も
-        その残差で行う。False: 対角補強のみ（残差は Δτ 非依存）
+        その残差で行う。False（既定、status-46 で切替）: 対角補強のみ（残差は Δτ 非依存）で、
+        収束判定・SER は定常残差で行う。τ の 2 重カウントを直して作用素 J+τ と前処理 J1+τ を揃えた（status-45）
+        結果、擬似時間残差は各 Newton ステップでほぼゼロになり、それを見る SER は「進んだ」と誤認して CFL を
+        育てず定常残差が這う（flat r1 U=1: 80 反復で定常 rel 9e-3 のまま |R_τ| 3e-6。定常残差 SER なら 15 反復）。
+        True は非定常（`nsb.unsteady`）向けの残差形で、定常解法では偽収束の元
     sub_iters : int
         1 擬似時間ステップあたりの Newton 反復数（u_prev を凍結）。1 で通常の擬似時間 Newton
     rc_with_pseudo_time : bool
@@ -194,6 +222,12 @@ class NSBSettings:
     fd_jacobian_radius: int = 2
     pseudo_compressibility: float = 0.0
     line_search_halvings: int = 0
+    limiter_freeze_rel: float = 0.0
+    limiter_freeze_delta: float = 0.1
+    limiter_freeze_stable_frac: float = 0.01
+    limiter_unfreeze_ratio: float = 3.0
+    limiter_unfreeze_patience: int = 3
+    limiter_refreeze_max: int = 0
     cfl_init: float = 0.25
     cfl_max: float = 1.0e6
     ser_growth: float = 2.0
@@ -201,7 +235,7 @@ class NSBSettings:
     reject_lin_ratio: float = 0.3
     local_dtau: bool = True
     velocity_floor_ratio: float = 0.1
-    pseudo_time_in_residual: bool = True
+    pseudo_time_in_residual: bool = False
     sub_iters: int = 1
     rc_with_pseudo_time: bool = False
     alpha_u: float = 1.0
@@ -246,6 +280,8 @@ class NSBInput:
         ソルバー設定
     u0, v0, p0 : np.ndarray | None
         初期場（None ならゼロ）
+    friction_re_crit, friction_exponent, friction_blend : float
+        [摩擦則] 隙間流れの Re 依存抗力（`BrinkmanFlowInput` と同じ。re_crit <= 0 で層流のみ）
     """
 
     nx: int
@@ -261,6 +297,9 @@ class NSBInput:
     u0: np.ndarray | None = None
     v0: np.ndarray | None = None
     p0: np.ndarray | None = None
+    friction_re_crit: float = 0.0
+    friction_exponent: float = 0.75
+    friction_blend: float = 4.0
 
     @property
     def dx(self) -> float:
@@ -281,6 +320,9 @@ class NSBInput:
             mu=self.mu,
             mu_brinkman=self.mu_b,
             brinkman_factor=12.0,
+            friction_re_crit=self.friction_re_crit,
+            friction_exponent=self.friction_exponent,
+            friction_blend=self.friction_blend,
             u_inlet=self.bc.u_inlet,
             boundaries=self.bc.patches,
         )
@@ -333,6 +375,8 @@ class NSBResult:
     residual_ref: float = 1.0
     n_factorizations: int = 0
     n_gmres_total: int = 0
+    limiter_frozen_at: int = -1  # [リミター凍結] 凍結した Newton 反復（-1 なら凍結せず）
+    residual_unfrozen: float = -1.0  # 凍結を解いた真の定常残差 |R|（凍結していなければ -1）
 
     @property
     def rel_residual(self) -> float:
