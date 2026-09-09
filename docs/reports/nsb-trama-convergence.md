@@ -761,6 +761,9 @@ python experiments/nsb/run_trama_of.py --variant walls --out /tmp/of-trama/walls
 python experiments/nsb/trama_of_sweep.py --work /tmp/of-trama
 python experiments/nsb/trama_of_compare.py --work /tmp/of-trama --variants porous walls
 python experiments/nsb/trama_of_transient.py --case /tmp/of-trama/walls-t
+# 場の突き合わせ（--exclude-cells はポート半径からの除外距離をセル数で。表の 30 mm は 10.5）
+python experiments/nsb/trama_of_verify.py --exclude-cells 10.5 \
+    --nsb experiments/nsb/results/trama_V-int-cont-m0005_fields.npz --of /tmp/of-trama/porous-m0005
 
 # nsb 側の同じ境目（壁ポート、リミター凍結、定常残差 SER）
 NUMBA_NUM_THREADS=4 OMP_NUM_THREADS=2 ~/.claude/hooks/memcap -m 8G -- \
