@@ -97,6 +97,15 @@ class PatchCoefficients:
             c(disc.c_sink[gx, gy]),
             c(disc.cp_sink[gx, gy]),
         )
+        # [壁セル] パッチ上の面マスクと流体マスク（ゴースト込み）
+        self.wall_x = np.ascontiguousarray(
+            disc.wall_x[patch.gxs : patch.gxe + 1, gy], dtype=np.int8
+        )
+        self.wall_y = np.ascontiguousarray(
+            disc.wall_y[gx, patch.gys : patch.gye + 1], dtype=np.int8
+        )
+        self.active = np.ascontiguousarray(disc.active[gx, gy], dtype=np.float64)
+        self.has_solid = bool(disc.has_solid)
         self.rho = float(disc.rho)
         self.mu = float(disc.mu)
         self.dx = float(disc.dx)

@@ -6,6 +6,10 @@ Dirichlet 面の拡散 2μA/d、outlet 面の零勾配）を、DMDA が配る **
 パッチの 4 辺は「物理境界」か「分割の切れ目」のどちらか。切れ目側の面は outlet と同じ零勾配コピーで
 埋めるが、その影響が届くのはパッチ端 2 セル（ゴースト）だけで、所有セルの残差には入らない
 （残差 (i) の依存範囲は u(i−2 … i+2)。理由は nsbp/README.md「ステンシル幅」参照）。
+
+[壁セル] `wall_x` / `wall_y`（0: 内部面 / 1: 右・上セルが流体 / 2: 左・下セルが流体 / 3: 両側固体）で
+領域内部の no-slip 壁面を表す（`nsb.assembly` と同じ）。パッチの 4 辺の面は従来どおり
+物理境界／切れ目として扱い、壁マスクは内部面にだけ効かせる。
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ from numba import njit, prange
 
 
 @njit(cache=True, parallel=True, fastmath=False)
-def venkat_psi(u, v, ufx, vfx, ufy, vfy, dx, dy, venkat_k):
+def venkat_psi(u, v, ufx, vfx, ufy, vfy, dx, dy, venkat_k, wall_x, wall_y):
     """セルごとの Venkatakrishnan リミター ψ（u, v 成分）。nsb.fastres と同じ式."""
     nx, ny = u.shape
     eps2 = (venkat_k * min(dx, dy)) ** 3
@@ -35,10 +39,23 @@ def venkat_psi(u, v, ufx, vfx, ufy, vfy, dx, dy, venkat_k):
                 phi_p = phi[i, j]
                 gx = (phifx[i + 1, j] - phifx[i, j]) / dx
                 gy = (phify[i, j + 1] - phify[i, j]) / dy
-                nb_e = phi[i + 1, j] if i < nx - 1 else phifx[nx, j]
-                nb_w = phi[i - 1, j] if i > 0 else phifx[0, j]
-                nb_n = phi[i, j + 1] if j < ny - 1 else phify[i, ny]
-                nb_s = phi[i, j - 1] if j > 0 else phify[i, 0]
+                # [壁セル] 固体側の隣は壁面値 0 を見る
+                if i == nx - 1:
+                    nb_e = phifx[nx, j]
+                else:
+                    nb_e = phi[i + 1, j] if wall_x[i + 1, j] == 0 else 0.0
+                if i == 0:
+                    nb_w = phifx[0, j]
+                else:
+                    nb_w = phi[i - 1, j] if wall_x[i, j] == 0 else 0.0
+                if j == ny - 1:
+                    nb_n = phify[i, ny]
+                else:
+                    nb_n = phi[i, j + 1] if wall_y[i, j + 1] == 0 else 0.0
+                if j == 0:
+                    nb_s = phify[i, 0]
+                else:
+                    nb_s = phi[i, j - 1] if wall_y[i, j] == 0 else 0.0
                 nb_max = max(max(nb_e, nb_w), max(nb_n, nb_s))
                 nb_min = min(min(nb_e, nb_w), min(nb_n, nb_s))
                 d_max = max(nb_max - phi_p, 0.0)
@@ -94,6 +111,8 @@ def face_values(
     v_s,
     u_n,
     v_n,
+    wall_x,
+    wall_y,
 ):
     """線形補間の面値（x 面: (nx+1, ny)、y 面: (nx, ny+1)）。境界面は境界値、切れ目は零勾配コピー."""
     nx, ny = u.shape
@@ -120,10 +139,19 @@ def face_values(
                     ufx[nx, j] = u_e[j]
                     vfx[nx, j] = v_e[j]
                     pfx[nx, j] = p[nx - 1, j]
-            else:
+            elif wall_x[i, j] == 0:
                 ufx[i, j] = 0.5 * (u[i - 1, j] + u[i, j])
                 vfx[i, j] = 0.5 * (v[i - 1, j] + v[i, j])
                 pfx[i, j] = 0.5 * (p[i - 1, j] + p[i, j])
+            else:  # [壁セル] 速度 0、圧力は流体側セル値
+                ufx[i, j] = 0.0
+                vfx[i, j] = 0.0
+                if wall_x[i, j] == 1:
+                    pfx[i, j] = p[i, j]
+                elif wall_x[i, j] == 2:
+                    pfx[i, j] = p[i - 1, j]
+                else:
+                    pfx[i, j] = 0.0
     ufy = np.empty((nx, ny + 1))
     vfy = np.empty((nx, ny + 1))
     pfy = np.empty((nx, ny + 1))
@@ -147,10 +175,19 @@ def face_values(
                     ufy[i, ny] = u_n[i]
                     vfy[i, ny] = v_n[i]
                     pfy[i, ny] = p[i, ny - 1]
-            else:
+            elif wall_y[i, j] == 0:
                 ufy[i, j] = 0.5 * (u[i, j - 1] + u[i, j])
                 vfy[i, j] = 0.5 * (v[i, j - 1] + v[i, j])
                 pfy[i, j] = 0.5 * (p[i, j - 1] + p[i, j])
+            else:
+                ufy[i, j] = 0.0
+                vfy[i, j] = 0.0
+                if wall_y[i, j] == 1:
+                    pfy[i, j] = p[i, j]
+                elif wall_y[i, j] == 2:
+                    pfy[i, j] = p[i, j - 1]
+                else:
+                    pfy[i, j] = 0.0
     return ufx, vfx, pfx, ufy, vfy, pfy
 
 
@@ -195,6 +232,8 @@ def residual_patch(  # noqa: PLR0913
     psi_u,
     psi_v,
     use_frozen,
+    wall_x,
+    wall_y,
 ):
     nx, ny = u.shape
     vol = dx * dy
@@ -222,6 +261,8 @@ def residual_patch(  # noqa: PLR0913
         v_s,
         u_n,
         v_n,
+        wall_x,
+        wall_y,
     )
     # ---- RC 用 a_P → d_cell、圧力セル勾配 ----
     d_cell = np.empty((nx, ny))
@@ -251,6 +292,8 @@ def residual_patch(  # noqa: PLR0913
         for j in range(ny):
             if i == 0 or i == nx:
                 fx[i, j] = rho * dy * ufx[i, j]
+            elif wall_x[i, j] != 0:
+                fx[i, j] = 0.0  # [壁セル] 壁面は質量を通さない
             else:
                 dfx = 0.5 * (d_cell[i - 1, j] + d_cell[i, j])
                 corr = dfx * ((p[i, j] - p[i - 1, j]) / dx - 0.5 * (gpx[i - 1, j] + gpx[i, j]))
@@ -259,6 +302,8 @@ def residual_patch(  # noqa: PLR0913
         for j in range(ny + 1):
             if j == 0 or j == ny:
                 fy[i, j] = rho * dx * vfy[i, j]
+            elif wall_y[i, j] != 0:
+                fy[i, j] = 0.0
             else:
                 dfy = 0.5 * (d_cell[i, j - 1] + d_cell[i, j])
                 corr = dfy * ((p[i, j] - p[i, j - 1]) / dy - 0.5 * (gpy[i, j - 1] + gpy[i, j]))
@@ -273,7 +318,7 @@ def residual_patch(  # noqa: PLR0913
             pu = psi_u
             pv = psi_v
         else:
-            pu, pv = venkat_psi(u, v, ufx, vfx, ufy, vfy, dx, dy, venkat_k)
+            pu, pv = venkat_psi(u, v, ufx, vfx, ufy, vfy, dx, dy, venkat_k, wall_x, wall_y)
         for i in prange(nx):
             for j in range(ny):
                 gx = (ufx[i + 1, j] - ufx[i, j]) / dx
@@ -326,9 +371,18 @@ def residual_patch(  # noqa: PLR0913
                 else:
                     gw_u = (u[0, j] - u_w[j]) / hx
                     gw_v = (v[0, j] - v_w[j]) / hx
-            else:
+            elif wall_x[i, j] == 0:
                 gw_u = (u[i, j] - u[i - 1, j]) / dx
                 gw_v = (v[i, j] - v[i - 1, j]) / dx
+            elif wall_x[i, j] == 1:  # [壁セル] このセルが流体側
+                gw_u = u[i, j] / hx
+                gw_v = v[i, j] / hx
+            elif wall_x[i, j] == 2:
+                gw_u = -u[i - 1, j] / hx
+                gw_v = -v[i - 1, j] / hx
+            else:
+                gw_u = 0.0
+                gw_v = 0.0
             if i == nx - 1:
                 if (not e_phys) or e_outlet[j]:
                     ge_u = 0.0
@@ -336,9 +390,18 @@ def residual_patch(  # noqa: PLR0913
                 else:
                     ge_u = (u_e[j] - u[nx - 1, j]) / hx
                     ge_v = (v_e[j] - v[nx - 1, j]) / hx
-            else:
+            elif wall_x[i + 1, j] == 0:
                 ge_u = (u[i + 1, j] - u[i, j]) / dx
                 ge_v = (v[i + 1, j] - v[i, j]) / dx
+            elif wall_x[i + 1, j] == 1:
+                ge_u = u[i + 1, j] / hx
+                ge_v = v[i + 1, j] / hx
+            elif wall_x[i + 1, j] == 2:  # このセルが流体側
+                ge_u = -u[i, j] / hx
+                ge_v = -v[i, j] / hx
+            else:
+                ge_u = 0.0
+                ge_v = 0.0
             if j == 0:
                 if (not s_phys) or s_outlet[i]:
                     gs_u = 0.0
@@ -346,9 +409,18 @@ def residual_patch(  # noqa: PLR0913
                 else:
                     gs_u = (u[i, 0] - u_s[i]) / hy
                     gs_v = (v[i, 0] - v_s[i]) / hy
-            else:
+            elif wall_y[i, j] == 0:
                 gs_u = (u[i, j] - u[i, j - 1]) / dy
                 gs_v = (v[i, j] - v[i, j - 1]) / dy
+            elif wall_y[i, j] == 1:
+                gs_u = u[i, j] / hy
+                gs_v = v[i, j] / hy
+            elif wall_y[i, j] == 2:
+                gs_u = -u[i, j - 1] / hy
+                gs_v = -v[i, j - 1] / hy
+            else:
+                gs_u = 0.0
+                gs_v = 0.0
             if j == ny - 1:
                 if (not n_phys) or n_outlet[i]:
                     gn_u = 0.0
@@ -356,9 +428,18 @@ def residual_patch(  # noqa: PLR0913
                 else:
                     gn_u = (u_n[i] - u[i, ny - 1]) / hy
                     gn_v = (v_n[i] - v[i, ny - 1]) / hy
-            else:
+            elif wall_y[i, j + 1] == 0:
                 gn_u = (u[i, j + 1] - u[i, j]) / dy
                 gn_v = (v[i, j + 1] - v[i, j]) / dy
+            elif wall_y[i, j + 1] == 1:
+                gn_u = u[i, j + 1] / hy
+                gn_v = v[i, j + 1] / hy
+            elif wall_y[i, j + 1] == 2:
+                gn_u = -u[i, j] / hy
+                gn_v = -v[i, j] / hy
+            else:
+                gn_u = 0.0
+                gn_v = 0.0
             diff_u = mu * (dy * ge_u - dy * gw_u + dx * gn_u - dx * gs_u)
             diff_v = mu * (dy * ge_v - dy * gw_v + dx * gn_v - dx * gs_v)
             q_c = c_sink[i, j] * p[i, j] - cp_sink[i, j]
@@ -402,7 +483,7 @@ def dtau_patch(u, v, dx, dy, cfl, u_floor):
     return out
 
 
-def limiter_psi(u, v, p, args_bc, dx, dy, venkat_k):
+def limiter_psi(u, v, p, args_bc, dx, dy, venkat_k, wall_x, wall_y):
     """凍結用: パッチ上の Venkatakrishnan ψ（u, v 成分）を現在の場から計算する."""
-    ufx, vfx, _pfx, ufy, vfy, _pfy = face_values(u, v, p, *args_bc[:20])
-    return venkat_psi(u, v, ufx, vfx, ufy, vfy, dx, dy, venkat_k)
+    ufx, vfx, _pfx, ufy, vfy, _pfy = face_values(u, v, p, *args_bc[:20], wall_x, wall_y)
+    return venkat_psi(u, v, ufx, vfx, ufy, vfy, dx, dy, venkat_k, wall_x, wall_y)

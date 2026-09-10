@@ -295,6 +295,10 @@ class BrinkmanFlowInput:
         領域と inlet/outlet 位置
     thickness : np.ndarray
         厚さ場 h(x,y) (nx, ny) [m]
+    h_solid : float
+        [壁セル] この厚さ**以下**のセルを固体（壁）として扱い、未知数から外す [m]。
+        0（既定）で無効＝全セルを流体として解く。隣接する流体セルとの面は no-slip 壁面
+        （面速度 0・面勾配は 2 倍の片側差分・面圧力は流体側セル値）になる
     rho, mu : float
         密度 [kg/m³]・粘度 [Pa·s]
     mu_brinkman : float
@@ -319,6 +323,7 @@ class BrinkmanFlowInput:
     nx: int
     ny: int
     thickness: np.ndarray
+    h_solid: float = 0.0
     geometry: BrinkmanGeometry = field(default_factory=BrinkmanGeometry)
     rho: float = 1000.0
     mu: float = 1.0e-3

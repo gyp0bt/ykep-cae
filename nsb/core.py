@@ -272,6 +272,11 @@ class NSBInput:
         領域サイズ [m]
     h : np.ndarray
         厚さ場 (nx, ny) [m]
+    h_solid : float
+        [壁セル] この厚さ**以下**のセルを固体（壁）として扱い、未知数から外す [m]。0（既定）で無効。
+        閉塞域を Brinkman 抗力 12μ/h² で「解いて止める」代わりに、面を no-slip 壁にして
+        方程式ごと落とす。系が小さくなるだけでなく、流路 2493 : 閉塞 3.6e8 という 1.4e5 倍の
+        抗力コントラストが消えるので ILU / AMG が効くようになる（status-47）
     bc : BC
         境界条件
     rho, mu, mu_b : float
@@ -290,6 +295,7 @@ class NSBInput:
     ly: float
     h: np.ndarray
     bc: BC
+    h_solid: float = 0.0
     rho: float = 1000.0
     mu: float = 1.0e-3
     mu_b: float = 1.0e-3
@@ -315,6 +321,7 @@ class NSBInput:
             nx=self.nx,
             ny=self.ny,
             thickness=self.h,
+            h_solid=self.h_solid,
             geometry=BrinkmanGeometry(lx=self.lx, ly=self.ly),
             rho=self.rho,
             mu=self.mu,

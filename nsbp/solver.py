@@ -210,6 +210,13 @@ class NSBPSolver:
         self._psi_v = np.ones((self.patch.gnx, self.patch.gny))
         self.tau_T = np.zeros((self.nyl, self.nxl))
         self.xprev = self.X.duplicate()
+        # [壁セル] 固体セルの自由度に 1 を立てたベクトル（ヤコビアンの単位行用）
+        self.dead_diag: PETSc.Vec | None = None
+        if self.coef.has_solid:
+            self.dead_diag = self.X.duplicate()
+            dd = self.dead_diag.getArray().reshape(self.nyl, self.nxl, 3)
+            ox, oy = self.patch.own
+            dd[:, :, :] = (1.0 - self.coef.active[ox, oy]).T[:, :, None]
 
         self.snes = PETSc.SNES().create(comm=self.comm)
         self.snes.setOptionsPrefix(prefix)
@@ -411,8 +418,14 @@ class NSBPSolver:
             self._psi_u,
             self._psi_v,
             self._frozen,
+            c.wall_x,
+            c.wall_y,
         )
         ox, oy = self.patch.own
+        if c.has_solid:
+            # [壁セル] 固体セルの行は捨てる（ヤコビアンの単位行と対で δ = 0 に固定される）
+            a = c.active[ox, oy]
+            return r_u[ox, oy] * a, r_v[ox, oy] * a, r_p[ox, oy] * a
         return r_u[ox, oy], r_v[ox, oy], r_p[ox, oy]
 
     def _form_function(self, snes: PETSc.SNES, X: PETSc.Vec, F: PETSc.Vec) -> None:
@@ -434,7 +447,9 @@ class NSBPSolver:
         """現在の場で Venkatakrishnan ψ を計算してパッチに凍結する（以後の残差・ヤコビアンは固定 ψ）."""
         c = self.coef
         u, v, p = self._patch_fields(X)
-        pu, pv = limiter_psi(u, v, p, c.args_bc, c.dx, c.dy, float(self.s.venkat_k))
+        pu, pv = limiter_psi(
+            u, v, p, c.args_bc, c.dx, c.dy, float(self.s.venkat_k), c.wall_x, c.wall_y
+        )
         self._psi_u, self._psi_v = pu, pv
         self._frozen = True
 
@@ -454,6 +469,9 @@ class NSBPSolver:
         self.snes.setSolution(X)
         self.snes.computeFunction(X, self.F)
         self.snes.computeJacobian(X, self.J)
+        if self.dead_diag is not None:
+            # [壁セル] 固体セルの残差は恒等的に 0 → FD の行も全ゼロ。対角に 1 を足して単位行にする
+            self.J.setDiagonal(self.dead_diag, PETSc.InsertMode.ADD_VALUES)
         self._cs = 1.0
         self.counts["jac"] += 1
         self.timings["jac"] += time.perf_counter() - t0
@@ -464,9 +482,11 @@ class NSBPSolver:
     def set_fields(self, X: PETSc.Vec, u: np.ndarray, v: np.ndarray, p: np.ndarray) -> None:
         pt = self.patch
         a = X.getArray().reshape(self.nyl, self.nxl, 3)
-        a[:, :, 0] = u[pt.xs : pt.xe, pt.ys : pt.ye].T
-        a[:, :, 1] = v[pt.xs : pt.xe, pt.ys : pt.ye].T
-        a[:, :, 2] = p[pt.xs : pt.xe, pt.ys : pt.ye].T
+        sl = (slice(pt.xs, pt.xe), slice(pt.ys, pt.ye))
+        m = self.disc.active[sl].T if self.coef.has_solid else 1.0  # [壁セル] 固体セルは 0
+        a[:, :, 0] = u[sl].T * m
+        a[:, :, 1] = v[sl].T * m
+        a[:, :, 2] = p[sl].T * m
 
     def gather_fields(self, X: PETSc.Vec) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """全ランクに (nx, ny) の u, v, p を集める."""
@@ -583,6 +603,12 @@ class NSBPSolver:
             f"[nsbp] ranks={self.size} numba_threads={self.numba_threads} grid={inp.nx}x{inp.ny} "
             f"pc={s.pc}/{s.schur_fact}/{s.schur_amg}"
         )
+        if disc.has_solid:
+            emit(
+                f"[nsbp] solid cells: {disc.n - disc.n_active}/{disc.n} (h <= {disc.h_solid:g} m, "
+                f"isolated pruned {disc.n_isolated_deactivated}); "
+                f"unknowns {3 * disc.n_active}/{3 * disc.n}"
+            )
         emit(
             f"[nsbp] stokes ref (newton={stokes_its} ksp={n_g0}{'' if ok0 else ' not converged'} "
             f"ratio={ratio0:.1e} |R_stokes|/|R_stokes(0)|={r_st / r_init_norm:.1e}): "

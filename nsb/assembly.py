@@ -8,6 +8,15 @@
 
 未知数ベクトルは x = [u.ravel(), v.ravel(), p.ravel()]（各 nx*ny、C 順）。
 セル id は k = i*ny + j、x 面 id は i*ny + j (i=0..nx)、y 面 id は i*(ny+1) + j (j=0..ny)。
+
+[壁セル] `h_solid` を与えると h <= h_solid のセルを固体として未知数から外す。幾何としては
+「境界を領域の 4 辺だけでなく内部の面にも置く」ことで、面ごとの種別 `wall_x` / `wall_y`
+（0: 内部面、1: 右/上セルが流体、2: 左/下セルが流体、3: 両側とも固体）で表す。壁面 1 枚の役割は
+  - 面速度 0        → 質量流束も対流流束も死ぬ
+  - 面勾配は片側 2 倍 (φ_f=0 を距離 d/2 に置く) → no-slip
+  - 面圧力 = 流体側セル値 → 圧力ゼロ勾配
+で、4 辺の WALL 面の扱いとまったく同じ。固体セルの行は残差 0・ヤコビアン単位行に置き換えるので
+δ = 0 に固定され、実質的に解かれない。
 """
 
 from __future__ import annotations
@@ -86,6 +95,14 @@ class BrinkmanDiscretization:
         self.rho, self.mu = inp.rho, inp.mu
         self.drag = inp.brinkman_factor * inp.mu_brinkman / inp.thickness**2  # (nx, ny) [kg/(m³s)]
         self.thickness = np.ascontiguousarray(inp.thickness, dtype=np.float64)
+        # [壁セル] h <= h_solid のセルは固体。面マスクと孤立塊の刈り込みは境界解決の後
+        self.h_solid = float(getattr(inp, "h_solid", 0.0) or 0.0)
+        self.active = (
+            np.ones((self.nx, self.ny), dtype=bool)
+            if self.h_solid <= 0.0
+            else np.asarray(inp.thickness > self.h_solid)
+        )
+        self.n_isolated_deactivated = 0
         # [摩擦則] Re 依存の抗力倍率（`drag_factor`）。re_crit <= 0 で層流 12μ/h² のみ
         self.friction_re_crit = float(inp.friction_re_crit)
         self.friction_exponent = float(inp.friction_exponent)
@@ -94,6 +111,7 @@ class BrinkmanDiscretization:
         patches = inp.effective_boundaries()
         self.sides = self._resolve_boundaries(tuple(b for b in patches if not b.is_interior))
         self._resolve_interior(tuple(b for b in patches if b.is_interior))
+        self._resolve_solid()  # [壁セル] 孤立塊の刈り込み + 面マスク（wall_x / wall_y）
         W, E, S, N = self.sides["W"], self.sides["E"], self.sides["S"], self.sides["N"]
         n_in = sum(int(sd.is_inlet.sum()) for sd in self.sides.values()) + int(
             (self.q_src > 0.0).sum()
@@ -130,6 +148,13 @@ class BrinkmanDiscretization:
         diff_diag[-1, :] += np.where(E.is_dirichlet, dxx, -dxx)
         diff_diag[:, 0] += np.where(S.is_dirichlet, dyy, -dyy)
         diff_diag[:, -1] += np.where(N.is_dirichlet, dyy, -dyy)
+        if self.has_solid:
+            # [壁セル] 内部壁面に接する流体セルは、その面の拡散が μA/d から 2μA/d になる
+            wx, wy = self.wall_x[1:-1], self.wall_y[:, 1:-1]
+            diff_diag[1:, :] += np.where(wx == 1, dxx, 0.0)
+            diff_diag[:-1, :] += np.where(wx == 2, dxx, 0.0)
+            diff_diag[:, 1:] += np.where(wy == 1, dyy, 0.0)
+            diff_diag[:, :-1] += np.where(wy == 2, dyy, 0.0)
         self.diff_diag = diff_diag
         self._dxx, self._dyy = dxx, dyy
 
@@ -209,7 +234,7 @@ class BrinkmanDiscretization:
         self.cp_sink = np.zeros((nx, ny))  # Σ_k c_k p_k（複数の圧力指定パッチが重なっても可）
         self.interior_mask = np.zeros((nx, ny), dtype=bool)
         for patch in patches:
-            w = patch.weights(X, Y)
+            w = patch.weights(X, Y) * self.active  # [壁セル] 固体セルには注入/吸出を配らない
             hv = float((w * h * self.vol).sum())
             if hv <= 0.0:
                 raise ValueError(
@@ -227,6 +252,103 @@ class BrinkmanDiscretization:
             self.interior_mask |= w > 1e-3
         with np.errstate(invalid="ignore", divide="ignore"):
             self.p_sink = np.where(self.c_sink > 0.0, self.cp_sink / self.c_sink, 0.0)
+
+    # ------------------------------------------------------------------
+    # [壁セル] 固体セルの確定と面マスク
+    # ------------------------------------------------------------------
+    def _resolve_solid(self) -> None:
+        """固体セル（h <= h_solid）を確定し、面の壁マスク wall_x / wall_y を組む.
+
+        圧力基準（PRESSURE_OUTLET / INTERIOR_PRESSURE_SINK）に繋がらない流体の孤立塊は
+        流れを担えず、その塊の圧力が純 Neumann になって行列が特異になるので固体に落とす。
+        流入だけあって圧力基準の無い塊は入力の誤りなので例外にする。
+        """
+        self.has_solid = not bool(self.active.all())
+        if self.has_solid:
+            self._check_solid_boundaries()
+            self._prune_isolated()
+            if not self.active.any():
+                raise ValueError("h_solid が大きすぎて流体セルが 1 つも残りません")
+        self._build_face_masks()
+        self.live = self.active.ravel().copy()
+        self.live3 = np.concatenate([self.live, self.live, self.live])
+        self.dead3 = ~self.live3
+        self.active_f = self.active.astype(np.float64)
+        self.n_active = int(self.active.sum())
+
+    def _boundary_cells(self) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+        """辺ごとの (i, j) セル添字（境界面と 1 対 1）."""
+        i_all, j_all = np.arange(self.nx), np.arange(self.ny)
+        z_y, z_x = np.zeros(self.ny, dtype=int), np.zeros(self.nx, dtype=int)
+        return {
+            "W": (z_y, j_all),
+            "E": (np.full(self.ny, self.nx - 1), j_all),
+            "S": (i_all, z_x),
+            "N": (i_all, np.full(self.nx, self.ny - 1)),
+        }
+
+    def _check_solid_boundaries(self) -> None:
+        """inlet / outlet 境界面が固体セルに接していないことを確認する."""
+        for key, (ii, jj) in self._boundary_cells().items():
+            sd = self.sides[key]
+            bad = (sd.is_inlet | sd.is_outlet) & ~self.active[ii, jj]
+            if bad.any():
+                raise ValueError(
+                    f"{key} 辺の inlet/outlet 面 {int(bad.sum())} 枚が固体セル"
+                    f"（h <= h_solid={self.h_solid:g}）に接しています"
+                )
+
+    def _prune_isolated(self) -> None:
+        """圧力基準に繋がらない流体の孤立塊を固体に落とす."""
+        from scipy import ndimage
+
+        labels, n_lab = ndimage.label(self.active)  # 4 近傍
+        if n_lab <= 1:
+            return
+        has_ref = np.zeros(n_lab + 1, dtype=bool)
+        has_in = np.zeros(n_lab + 1, dtype=bool)
+        for key, (ii, jj) in self._boundary_cells().items():
+            sd = self.sides[key]
+            has_ref[labels[ii[sd.is_outlet], jj[sd.is_outlet]]] = True
+            has_in[labels[ii[sd.is_inlet], jj[sd.is_inlet]]] = True
+        has_ref[labels[self.c_sink > 0.0]] = True
+        has_in[labels[(self.q_src > 0.0) | (self.q_sink > 0.0)]] = True
+        has_ref[0] = has_in[0] = True  # 背景ラベル
+        orphan_in = np.flatnonzero(has_in & ~has_ref)
+        if orphan_in.size:
+            sizes = [int((labels == k).sum()) for k in orphan_in]
+            raise ValueError(
+                f"流入はあるが圧力基準の無い流体塊があります（ラベル {orphan_in.tolist()}、"
+                f"セル数 {sizes}）: outlet / 圧力マニホールドに繋がっていません"
+            )
+        drop = ~(has_ref | has_in)
+        if drop.any():
+            dead = drop[labels] & self.active
+            self.n_isolated_deactivated = int(dead.sum())
+            self.active = self.active & ~dead
+
+    def _build_face_masks(self) -> None:
+        """面の壁マスク（0: 内部面 / 1: 右・上セルが流体 / 2: 左・下セルが流体 / 3: 両側固体）.
+
+        4 辺の境界面（i=0, i=nx, j=0, j=ny）は従来どおり `sides` で扱うので常に 0 を入れる。
+        """
+        nx, ny = self.nx, self.ny
+        a = self.active
+        wx = np.zeros((nx + 1, ny), dtype=np.int8)
+        wy = np.zeros((nx, ny + 1), dtype=np.int8)
+        al, ar = a[:-1], a[1:]
+        wx[1:-1] = np.where(al & ar, 0, np.where(ar, 1, np.where(al, 2, 3)))
+        ab, at = a[:, :-1], a[:, 1:]
+        wy[:, 1:-1] = np.where(ab & at, 0, np.where(at, 1, np.where(ab, 2, 3)))
+        self.wall_x, self.wall_y = wx, wy
+        self.wx_in = wx[1:-1]  # (nx-1, ny) 内部 x 面
+        self.wy_in = wy[:, 1:-1]  # (nx, ny-1) 内部 y 面
+        self.wx_open = self.wx_in == 0
+        self.wy_open = self.wy_in == 0
+
+    def mask_state(self, x: np.ndarray) -> np.ndarray:
+        """[壁セル] 固体セルの u, v, p を 0 にした状態ベクトル（初期場の持ち込み用）."""
+        return x * self.live3 if self.has_solid else x
 
     def _interior_velocity_scale(self) -> float:
         """領域内ソースの速度スケール: 総流量 / (ρ · 周長 4√A)。ソースが無ければ 0."""
@@ -312,17 +434,28 @@ class BrinkmanDiscretization:
         def mat(rows, cols, vals, shape):
             return sparse.csr_matrix((vals, (rows, cols)), shape=shape)
 
-        # 面平均（内部）
+        # [壁セル] 内部面のうち「両側が流体」の面だけが線形補間を持つ。壁面（片側が固体）は
+        # 面速度 0・面圧力は流体側セル値・面勾配は片側 2 倍で、下の Px / Fg*_vel に別途足す
+        kx = self.wx_open.ravel() if self.has_solid else np.ones(fx_int.size, dtype=bool)
+        ky = self.wy_open.ravel() if self.has_solid else np.ones(fy_int.size, dtype=bool)
+        fxo, clo, cro = fx_int[kx], cl[kx], cr[kx]
+        fyo, cso, cno = fy_int[ky], cs[ky], cn[ky]
+        wx_f = self.wx_in.ravel() if self.has_solid else np.zeros(fx_int.size, dtype=np.int8)
+        wy_f = self.wy_in.ravel() if self.has_solid else np.zeros(fy_int.size, dtype=np.int8)
+        wx1, wx2 = wx_f == 1, wx_f == 2  # 1: 右セルが流体 / 2: 左セルが流体
+        wy1, wy2 = wy_f == 1, wy_f == 2
+
+        # 面平均（両側が流体の内部面のみ）
         self.Ax = mat(
-            np.r_[fx_int, fx_int],
-            np.r_[cl, cr],
-            np.r_[np.full(n - ny, 0.5), np.full(n - ny, 0.5)],
+            np.r_[fxo, fxo],
+            np.r_[clo, cro],
+            np.full(2 * fxo.size, 0.5),
             (nfx, n),
         )
         self.Ay = mat(
-            np.r_[fy_int, fy_int],
-            np.r_[cs, cn],
-            np.r_[np.full(n - nx, 0.5), np.full(n - nx, 0.5)],
+            np.r_[fyo, fyo],
+            np.r_[cso, cno],
+            np.full(2 * fyo.size, 0.5),
             (nfy, n),
         )
 
@@ -347,18 +480,32 @@ class BrinkmanDiscretization:
             mat(f[m], c[m], np.ones(int(m.sum())), (nfy, n))
             for f, c, m in ((fy_bot, c_bot, S.is_dirichlet), (fy_top, c_top, N.is_dirichlet))
         )
+        if self.has_solid:
+            # [壁セル] 内部壁面の圧力はゼロ勾配 = 流体側セル値
+            self.Px = self.Px + mat(
+                np.r_[fx_int[wx1], fx_int[wx2]],
+                np.r_[cr[wx1], cl[wx2]],
+                np.ones(int(wx1.sum() + wx2.sum())),
+                (nfx, n),
+            )
+            self.Py = self.Py + mat(
+                np.r_[fy_int[wy1], fy_int[wy2]],
+                np.r_[cn[wy1], cs[wy2]],
+                np.ones(int(wy1.sum() + wy2.sum())),
+                (nfy, n),
+            )
 
         # 面勾配（内部のみ、RC 用）
         self.Fgx_int = mat(
-            np.r_[fx_int, fx_int],
-            np.r_[cr, cl],
-            np.r_[np.full(n - ny, 1.0 / self.dx), np.full(n - ny, -1.0 / self.dx)],
+            np.r_[fxo, fxo],
+            np.r_[cro, clo],
+            np.r_[np.full(fxo.size, 1.0 / self.dx), np.full(fxo.size, -1.0 / self.dx)],
             (nfx, n),
         )
         self.Fgy_int = mat(
-            np.r_[fy_int, fy_int],
-            np.r_[cn, cs],
-            np.r_[np.full(n - nx, 1.0 / self.dy), np.full(n - nx, -1.0 / self.dy)],
+            np.r_[fyo, fyo],
+            np.r_[cno, cso],
+            np.r_[np.full(fyo.size, 1.0 / self.dy), np.full(fyo.size, -1.0 / self.dy)],
             (nfy, n),
         )
 
@@ -393,6 +540,27 @@ class BrinkmanDiscretization:
                 (nfy, n),
             )
         )
+
+        if self.has_solid:
+            # [壁セル] 内部壁面の速度勾配（+x 方向）: 流体が右なら (φ_R − 0)/(dx/2)、左なら (0 − φ_L)/(dx/2)
+            self.Fgx_vel = self.Fgx_vel + mat(
+                np.r_[fx_int[wx1], fx_int[wx2]],
+                np.r_[cr[wx1], cl[wx2]],
+                np.r_[
+                    np.full(int(wx1.sum()), 2.0 / self.dx),
+                    np.full(int(wx2.sum()), -2.0 / self.dx),
+                ],
+                (nfx, n),
+            )
+            self.Fgy_vel = self.Fgy_vel + mat(
+                np.r_[fy_int[wy1], fy_int[wy2]],
+                np.r_[cn[wy1], cs[wy2]],
+                np.r_[
+                    np.full(int(wy1.sum()), 2.0 / self.dy),
+                    np.full(int(wy2.sum()), -2.0 / self.dy),
+                ],
+                (nfy, n),
+            )
 
         # セル勾配（圧力）
         self.Gx = (self.Dx @ self.Px) / self.dx
@@ -443,6 +611,22 @@ class BrinkmanDiscretization:
         pfy[:, 1:-1] = 0.5 * (p[:, :-1] + p[:, 1:])
         pfy[:, 0] = np.where(S.is_outlet, S.p, p[:, 0])
         pfy[:, -1] = np.where(N.is_outlet, N.p, p[:, -1])
+        if self.has_solid:
+            # [壁セル] 内部壁面: 速度 0（no-slip）、圧力は流体側セル値（ゼロ勾配）
+            wx, wy = self.wx_in, self.wy_in
+            mx, my = ~self.wx_open, ~self.wy_open
+            ufx[1:-1][mx] = 0.0
+            vfx[1:-1][mx] = 0.0
+            ufy[:, 1:-1][my] = 0.0
+            vfy[:, 1:-1][my] = 0.0
+            pfx[1:-1] = np.where(
+                mx, np.where(wx == 1, p[1:], np.where(wx == 2, p[:-1], 0.0)), pfx[1:-1]
+            )
+            pfy[:, 1:-1] = np.where(
+                my,
+                np.where(wy == 1, p[:, 1:], np.where(wy == 2, p[:, :-1], 0.0)),
+                pfy[:, 1:-1],
+            )
         return ufx, vfx, ufy, vfy, pfx, pfy
 
     def drag_factor(self, u: np.ndarray, v: np.ndarray) -> np.ndarray:
@@ -507,6 +691,10 @@ class BrinkmanDiscretization:
         dfy = np.zeros((self.nx, self.ny + 1))
         dfx[1:-1] = 0.5 * (d_cell[:-1] + d_cell[1:])
         dfy[:, 1:-1] = 0.5 * (d_cell[:, :-1] + d_cell[:, 1:])
+        if self.has_solid:
+            # [壁セル] 壁面は質量を通さない: Rhie–Chow 係数を 0 にして流束を落とす
+            dfx[1:-1] *= self.wx_open
+            dfy[:, 1:-1] *= self.wy_open
 
         gpx = (pfx[1:] - pfx[:-1]) / dx
         gpy = (pfy[:, 1:] - pfy[:, :-1]) / dy
@@ -588,13 +776,16 @@ class BrinkmanDiscretization:
         """Venkatakrishnan リミター ψ (nx, ny)。境界では境界面値を隣接値として扱う."""
         nx, ny = self.nx, self.ny
         nb = np.empty((4, nx, ny))
-        nb[0, :-1] = phi[1:]
+        # [壁セル] 固体側の隣は壁面値 0 を見る（4 辺の境界で境界面値を見るのと同じ扱い）
+        ox = self.wx_open if self.has_solid else True
+        oy = self.wy_open if self.has_solid else True
+        nb[0, :-1] = np.where(ox, phi[1:], 0.0)
         nb[0, -1] = phifx[-1]
-        nb[1, 1:] = phi[:-1]
+        nb[1, 1:] = np.where(ox, phi[:-1], 0.0)
         nb[1, 0] = phifx[0]
-        nb[2, :, :-1] = phi[:, 1:]
+        nb[2, :, :-1] = np.where(oy, phi[:, 1:], 0.0)
         nb[2, :, -1] = phify[:, -1]
-        nb[3, :, 1:] = phi[:, :-1]
+        nb[3, :, 1:] = np.where(oy, phi[:, :-1], 0.0)
         nb[3, :, 0] = phify[:, 0]
         d_max = np.maximum(nb.max(axis=0) - phi, 0.0)
         d_min = np.minimum(nb.min(axis=0) - phi, 0.0)
@@ -652,6 +843,21 @@ class BrinkmanDiscretization:
             gyf[:, 1:-1] = (phi[:, 1:] - phi[:, :-1]) / dy
             gyf[:, 0] = np.where(S.is_dirichlet, (phi[:, 0] - bs) / (0.5 * dy), 0.0)
             gyf[:, -1] = np.where(N.is_dirichlet, (bn - phi[:, -1]) / (0.5 * dy), 0.0)
+            if self.has_solid:
+                # [壁セル] 内部壁面は φ_f = 0 を距離 d/2 に置いた片側差分
+                wx, wy = self.wx_in, self.wy_in
+                gxf[1:-1] = np.where(
+                    wx == 0,
+                    gxf[1:-1],
+                    np.where(wx == 1, phi[1:] / (0.5 * dx), 0.0)
+                    + np.where(wx == 2, -phi[:-1] / (0.5 * dx), 0.0),
+                )
+                gyf[:, 1:-1] = np.where(
+                    wy == 0,
+                    gyf[:, 1:-1],
+                    np.where(wy == 1, phi[:, 1:] / (0.5 * dy), 0.0)
+                    + np.where(wy == 2, -phi[:, :-1] / (0.5 * dy), 0.0),
+                )
             return mu * div(dy * gxf, dx * gyf)  # 流入側が正
 
         # 領域内マニホールド: 連続式に -q_in + q_out、吸出は局所運動量 q_out u_i を持ち出す
@@ -671,6 +877,11 @@ class BrinkmanDiscretization:
             + q_out * v
         )
         r_p = div(st.fx, st.fy) - q_in + q_out
+        if self.has_solid:
+            # [壁セル] 固体セルの行は捨てる（ヤコビアンの単位行と対で δ = 0 に固定される）
+            r_u = r_u * self.active_f
+            r_v = r_v * self.active_f
+            r_p = r_p * self.active_f
         return np.concatenate([r_u.ravel(), r_v.ravel(), r_p.ravel()])
 
     def residual_fast(
@@ -739,7 +950,13 @@ class BrinkmanDiscretization:
             self.friction_re_crit,
             self.friction_exponent,
             self.friction_blend,
+            self.wall_x,
+            self.wall_y,
         )
+        if self.has_solid:
+            r_u = r_u * self.active_f
+            r_v = r_v * self.active_f
+            r_p = r_p * self.active_f
         return np.concatenate([r_u.ravel(), r_v.ravel(), r_p.ravel()])
 
     # ------------------------------------------------------------------
@@ -848,7 +1065,22 @@ class BrinkmanDiscretization:
             J_pp = J_pp + sparse.diags(c)
 
         J = sparse.bmat([[J_uu, J_uv, J_up], [J_vu, J_vv, J_vp], [J_pu, J_pv, J_pp]], format="csr")
-        return J
+        return self.apply_solid_rows(J)
+
+    def apply_solid_rows(self, J: sparse.csr_matrix) -> sparse.csr_matrix:
+        """[壁セル] 固体セルの行を単位行に置き換える.
+
+        流体セルの行が固体セルの列を参照しないこと（壁面の面値が固体側セルを含まないこと）は
+        オペレータ側で保証しているので、行だけ落とせば系は流体セルの部分系に一致する。
+        残差も固体行が 0 なので δ = 0 に固定され、実質的に解かれない。
+        """
+        if not self.has_solid:
+            return J
+        J = J.tocsr()
+        rows = np.repeat(np.arange(J.shape[0]), np.diff(J.indptr))
+        J.data[self.dead3[rows]] = 0.0
+        J.eliminate_zeros()
+        return (J + sparse.diags(self.dead3.astype(np.float64))).tocsr()
 
     def mass_flow(self, st: StateArrays, x: np.ndarray | None = None) -> tuple[float, float]:
         """inlet / outlet 質量流量 [kg/s]（単位深さ、正 = 流入 / 流出）。領域内マニホールド分を含む.

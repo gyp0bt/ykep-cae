@@ -5,6 +5,10 @@
 状態配列（面流束・a_P 等）は作らない。ヤコビアン組立には従来の `compute_state` を使う。
 
 numba が無ければ `HAVE_NUMBA=False` で、呼び出し側は numpy 経路に落ちる。
+
+[壁セル] `wall_x` / `wall_y`（0: 内部面 / 1: 右・上セルが流体 / 2: 左・下セルが流体 / 3: 両側固体）で
+内部の no-slip 壁面を表す。壁面では面速度 0・質量流束 0・面圧力は流体側セル値・面勾配は片側 2 倍。
+固体セル自身の残差は呼び出し側（`residual_fast`）で 0 に落とす。
 """
 
 from __future__ import annotations
@@ -70,6 +74,8 @@ def residual_kernel(  # noqa: PLR0913
     fr_re_crit,
     fr_exp,
     fr_blend,
+    wall_x,
+    wall_y,
 ):
     nx, ny = u.shape
     vol = dx * dy
@@ -108,10 +114,20 @@ def residual_kernel(  # noqa: PLR0913
                     ufx[nx, j] = u_e[j]
                     vfx[nx, j] = v_e[j]
                     pfx[nx, j] = p[nx - 1, j]
-            else:
+            elif wall_x[i, j] == 0:
                 ufx[i, j] = 0.5 * (u[i - 1, j] + u[i, j])
                 vfx[i, j] = 0.5 * (v[i - 1, j] + v[i, j])
                 pfx[i, j] = 0.5 * (p[i - 1, j] + p[i, j])
+            else:
+                # [壁セル] 内部壁面: 速度 0、圧力は流体側セル値
+                ufx[i, j] = 0.0
+                vfx[i, j] = 0.0
+                if wall_x[i, j] == 1:
+                    pfx[i, j] = p[i, j]
+                elif wall_x[i, j] == 2:
+                    pfx[i, j] = p[i - 1, j]
+                else:
+                    pfx[i, j] = 0.0
     ufy = np.empty((nx, ny + 1))
     vfy = np.empty((nx, ny + 1))
     pfy = np.empty((nx, ny + 1))
@@ -135,10 +151,19 @@ def residual_kernel(  # noqa: PLR0913
                     ufy[i, ny] = u_n[i]
                     vfy[i, ny] = v_n[i]
                     pfy[i, ny] = p[i, ny - 1]
-            else:
+            elif wall_y[i, j] == 0:
                 ufy[i, j] = 0.5 * (u[i, j - 1] + u[i, j])
                 vfy[i, j] = 0.5 * (v[i, j - 1] + v[i, j])
                 pfy[i, j] = 0.5 * (p[i, j - 1] + p[i, j])
+            else:
+                ufy[i, j] = 0.0
+                vfy[i, j] = 0.0
+                if wall_y[i, j] == 1:
+                    pfy[i, j] = p[i, j]
+                elif wall_y[i, j] == 2:
+                    pfy[i, j] = p[i, j - 1]
+                else:
+                    pfy[i, j] = 0.0
     # ---- RC 用 a_P、d_cell、圧力セル勾配 ----
     d_cell = np.empty((nx, ny))
     gpx = np.empty((nx, ny))
@@ -170,6 +195,8 @@ def residual_kernel(  # noqa: PLR0913
         for j in range(ny):
             if i == 0 or i == nx:
                 fx[i, j] = rho * dy * ufx[i, j]
+            elif wall_x[i, j] != 0:
+                fx[i, j] = 0.0  # [壁セル] 壁面は質量を通さない
             else:
                 dfx = 0.5 * (d_cell[i - 1, j] + d_cell[i, j])
                 corr = dfx * ((p[i, j] - p[i - 1, j]) / dx - 0.5 * (gpx[i - 1, j] + gpx[i, j]))
@@ -178,6 +205,8 @@ def residual_kernel(  # noqa: PLR0913
         for j in range(ny + 1):
             if j == 0 or j == ny:
                 fy[i, j] = rho * dx * vfy[i, j]
+            elif wall_y[i, j] != 0:
+                fy[i, j] = 0.0
             else:
                 dfy = 0.5 * (d_cell[i, j - 1] + d_cell[i, j])
                 corr = dfy * ((p[i, j] - p[i, j - 1]) / dy - 0.5 * (gpy[i, j - 1] + gpy[i, j]))
@@ -203,10 +232,23 @@ def residual_kernel(  # noqa: PLR0913
                     phi_p = phi[i, j]
                     gx = (phifx[i + 1, j] - phifx[i, j]) / dx
                     gy = (phify[i, j + 1] - phify[i, j]) / dy
-                    nb_e = phi[i + 1, j] if i < nx - 1 else phifx[nx, j]
-                    nb_w = phi[i - 1, j] if i > 0 else phifx[0, j]
-                    nb_n = phi[i, j + 1] if j < ny - 1 else phify[i, ny]
-                    nb_s = phi[i, j - 1] if j > 0 else phify[i, 0]
+                    # [壁セル] 固体側の隣は壁面値 0（4 辺で境界面値を見るのと同じ扱い）
+                    if i == nx - 1:
+                        nb_e = phifx[nx, j]
+                    else:
+                        nb_e = phi[i + 1, j] if wall_x[i + 1, j] == 0 else 0.0
+                    if i == 0:
+                        nb_w = phifx[0, j]
+                    else:
+                        nb_w = phi[i - 1, j] if wall_x[i, j] == 0 else 0.0
+                    if j == ny - 1:
+                        nb_n = phify[i, ny]
+                    else:
+                        nb_n = phi[i, j + 1] if wall_y[i, j + 1] == 0 else 0.0
+                    if j == 0:
+                        nb_s = phify[i, 0]
+                    else:
+                        nb_s = phi[i, j - 1] if wall_y[i, j] == 0 else 0.0
                     nb_max = max(max(nb_e, nb_w), max(nb_n, nb_s))
                     nb_min = min(min(nb_e, nb_w), min(nb_n, nb_s))
                     d_max = max(nb_max - phi_p, 0.0)
@@ -278,27 +320,63 @@ def residual_kernel(  # noqa: PLR0913
             if i == 0:
                 gw_u = 0.0 if w_outlet[j] else (u[0, j] - u_w[j]) / hx
                 gw_v = 0.0 if w_outlet[j] else (v[0, j] - v_w[j]) / hx
-            else:
+            elif wall_x[i, j] == 0:
                 gw_u = (u[i, j] - u[i - 1, j]) / dx
                 gw_v = (v[i, j] - v[i - 1, j]) / dx
+            elif wall_x[i, j] == 1:  # [壁セル] このセルが流体側
+                gw_u = u[i, j] / hx
+                gw_v = v[i, j] / hx
+            elif wall_x[i, j] == 2:  # 隣（左）が流体側
+                gw_u = -u[i - 1, j] / hx
+                gw_v = -v[i - 1, j] / hx
+            else:
+                gw_u = 0.0
+                gw_v = 0.0
             if i == nx - 1:
                 ge_u = 0.0 if e_outlet[j] else (u_e[j] - u[nx - 1, j]) / hx
                 ge_v = 0.0 if e_outlet[j] else (v_e[j] - v[nx - 1, j]) / hx
-            else:
+            elif wall_x[i + 1, j] == 0:
                 ge_u = (u[i + 1, j] - u[i, j]) / dx
                 ge_v = (v[i + 1, j] - v[i, j]) / dx
+            elif wall_x[i + 1, j] == 1:  # 隣（右）が流体側
+                ge_u = u[i + 1, j] / hx
+                ge_v = v[i + 1, j] / hx
+            elif wall_x[i + 1, j] == 2:  # このセルが流体側
+                ge_u = -u[i, j] / hx
+                ge_v = -v[i, j] / hx
+            else:
+                ge_u = 0.0
+                ge_v = 0.0
             if j == 0:
                 gs_u = 0.0 if s_outlet[i] else (u[i, 0] - u_s[i]) / hy
                 gs_v = 0.0 if s_outlet[i] else (v[i, 0] - v_s[i]) / hy
-            else:
+            elif wall_y[i, j] == 0:
                 gs_u = (u[i, j] - u[i, j - 1]) / dy
                 gs_v = (v[i, j] - v[i, j - 1]) / dy
+            elif wall_y[i, j] == 1:
+                gs_u = u[i, j] / hy
+                gs_v = v[i, j] / hy
+            elif wall_y[i, j] == 2:
+                gs_u = -u[i, j - 1] / hy
+                gs_v = -v[i, j - 1] / hy
+            else:
+                gs_u = 0.0
+                gs_v = 0.0
             if j == ny - 1:
                 gn_u = 0.0 if n_outlet[i] else (u_n[i] - u[i, ny - 1]) / hy
                 gn_v = 0.0 if n_outlet[i] else (v_n[i] - v[i, ny - 1]) / hy
-            else:
+            elif wall_y[i, j + 1] == 0:
                 gn_u = (u[i, j + 1] - u[i, j]) / dy
                 gn_v = (v[i, j + 1] - v[i, j]) / dy
+            elif wall_y[i, j + 1] == 1:
+                gn_u = u[i, j + 1] / hy
+                gn_v = v[i, j + 1] / hy
+            elif wall_y[i, j + 1] == 2:
+                gn_u = -u[i, j] / hy
+                gn_v = -v[i, j] / hy
+            else:
+                gn_u = 0.0
+                gn_v = 0.0
             diff_u = mu * (dy * ge_u - dy * gw_u + dx * gn_u - dx * gs_u)
             diff_v = mu * (dy * ge_v - dy * gw_v + dx * gn_v - dx * gs_v)
             q_c = c_sink[i, j] * p[i, j] - cp_sink[i, j]

@@ -155,6 +155,7 @@ def solve_linear(
         if s.jacobian == "fd":
             fn = steady_resid_fn if steady_resid_fn is not None else resid_fn
             J = colored_fd_jacobian(fn, x, disc.nx, disc.ny, radius=s.fd_jacobian_radius)
+            J = disc.apply_solid_rows(J)  # [壁セル] 固体行は残差が 0 なので差分でも全ゼロ行になる
             if steady_resid_fn is None:
                 # resid_fn に τ が入っている場合は差分にも τ が入るので diag_aug の τ を足さない
                 return (J + sparse.diags(fd_diag)).tocsr()
@@ -318,7 +319,7 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
         u = np.zeros(shape) if inp.u0 is None else inp.u0.astype(float)
         v = np.zeros(shape) if inp.v0 is None else inp.v0.astype(float)
         p = np.zeros(shape) if inp.p0 is None else inp.p0.astype(float)
-        x = np.concatenate([u.ravel(), v.ravel(), p.ravel()])
+        x = disc.mask_state(np.concatenate([u.ravel(), v.ravel(), p.ravel()]))
         init_how = "u0/v0/p0"
     else:
         x = x_stokes.copy()
@@ -341,6 +342,12 @@ def solve_steady(inp: NSBInput, log: LogFn | None = print) -> NSBResult:
         f"[nsb] stokes ref ({how}): |R_stokes(0)|={r_init_norm:.4e} "
         f"|R_ref|={r_ref:.4e} speed_max={np.hypot(u0_, v0_).max():.3g} m/s"
     )
+    if disc.has_solid:
+        emit(
+            f"[nsb] solid cells: {disc.n - disc.n_active}/{disc.n} "
+            f"(h <= {disc.h_solid:g} m, isolated pruned {disc.n_isolated_deactivated}); "
+            f"unknowns {3 * disc.n_active}/{3 * disc.n}"
+        )
     emit(f"[nsb] it=0 init={init_how} |R|={r_norm:.4e} rel={r_norm / r0:.3e} cfl={cfl:.3g}")
 
     # [リミター凍結] 判定用の状態

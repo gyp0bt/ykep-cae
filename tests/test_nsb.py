@@ -155,3 +155,92 @@ class TestNSBInputValidation:
             NSBInput(
                 nx=4, ny=4, lx=LX, ly=LY, h=np.ones((3, 4)) * 1e-3, bc=uturn_bc_preset(4, 1.0)
             ).to_flow_input()
+
+
+class TestNSBSolidCellsAPI:
+    """[壁セル] h <= h_solid のセルを未知数から外す機能の構造検査."""
+
+    @staticmethod
+    def _case(h_solid: float, u_in: float = 0.1, nx: int = 36, ny: int = 24) -> NSBInput:
+        from nsb.geo import make_uturn_h
+
+        return NSBInput(
+            nx=nx,
+            ny=ny,
+            lx=LX,
+            ly=LY,
+            h=make_uturn_h(nx, ny, h_channel=1e-3, h_blocked=1e-5),
+            bc=uturn_bc_preset(ny, u_in=u_in),
+            h_solid=h_solid,
+            settings=NSBSettings(linear_solver="jfnk", newton_max_iter=40),
+        )
+
+    def test_solid_rows_are_decoupled(self):
+        """固体セルの残差は 0、流体セルの残差は固体セルの値に依存しない、J は固体行が単位行."""
+        import scipy.sparse as sp
+
+        disc = BrinkmanDiscretization(self._case(1e-4).to_flow_input())
+        assert disc.has_solid and 0 < disc.n_active < disc.n
+        rng = np.random.default_rng(0)
+        x = disc.mask_state(rng.normal(size=3 * disc.n) * 0.1)
+        s = NSBSettings()
+        r = disc.residual_fast(x, s.scheme, s.venkat_k)
+        assert np.abs(r[disc.dead3]).max() == 0.0
+        # numpy 経路と numba 経路が一致する
+        assert np.abs(r - disc.residual(x, s.scheme, s.venkat_k)).max() < 1e-12 * max(
+            np.abs(r).max(), 1e-300
+        )
+        # 固体セルの値を汚しても流体セルの残差は動かない
+        x2 = x.copy()
+        x2[disc.dead3] = rng.normal(size=int(disc.dead3.sum()))
+        r2 = disc.residual_fast(x2, s.scheme, s.venkat_k)
+        assert np.abs(r - r2)[disc.live3].max() < 1e-12
+        # ヤコビアン: 流体行は固体列を参照せず、固体行は単位行
+        j = disc.jacobian_first_order(disc.compute_state(x, s.scheme, s.venkat_k), x=x).tocsr()
+        j_ld = j[:, disc.dead3][disc.live3, :]
+        assert j_ld.nnz == 0 or np.abs(j_ld.data).max() == 0.0
+        j_d = j[disc.dead3, :]
+        assert j_d[:, disc.live3].nnz == 0
+        assert (j_d[:, disc.dead3] - sp.identity(int(disc.dead3.sum()), format="csr")).nnz == 0
+
+    def test_disabled_by_default(self):
+        disc = BrinkmanDiscretization(self._case(0.0).to_flow_input())
+        assert not disc.has_solid
+        assert disc.n_active == disc.n
+
+    def test_isolated_pocket_is_pruned(self):
+        """圧力基準に繋がらない流体の孤立塊は固体に落ちる（純 Neumann の特異行列を避ける）."""
+        inp = self._case(1e-4)
+        h = inp.h.copy()
+        h[10:13, 10:13] = 1e-3  # 往路と復路の間（流路から離れた場所）に孤立した「流路」を置く
+        disc = BrinkmanDiscretization(
+            NSBInput(
+                nx=inp.nx, ny=inp.ny, lx=LX, ly=LY, h=h, bc=inp.bc, h_solid=1e-4
+            ).to_flow_input()
+        )
+        assert disc.n_isolated_deactivated == 9
+        assert not disc.active[10:13, 10:13].any()
+
+    def test_solid_matches_porous_and_converges(self):
+        """閉塞域を壁にしても圧力差・最大流速は Brinkman 版と数 % で一致し、反復数は減る."""
+        porous = solve_steady(self._case(0.0, u_in=1.0), log=None)
+        solid = solve_steady(self._case(1e-4, u_in=1.0), log=None)
+        assert porous.converged and solid.converged
+        ch = self._case(0.0).h > 1e-4
+        assert np.ptp(solid.p[ch]) == pytest.approx(np.ptp(porous.p[ch]), rel=0.05)
+        speed = lambda r: float(np.hypot(r.u, r.v)[ch].max())  # noqa: E731
+        assert speed(solid) == pytest.approx(speed(porous), rel=0.02)
+        assert mass_balance(solid) == pytest.approx(1.0, rel=1e-6)
+        assert np.abs(solid.u[~ch]).max() == 0.0
+        assert solid.n_iter <= porous.n_iter
+
+    def test_inlet_on_solid_cell_raises(self):
+        inp = self._case(1e-4)
+        h = inp.h.copy()
+        h[0, :] = 1e-5  # 左壁を全部塞ぐ → inlet/outlet が固体セルに乗る
+        with pytest.raises(ValueError, match="固体セル"):
+            BrinkmanDiscretization(
+                NSBInput(
+                    nx=inp.nx, ny=inp.ny, lx=LX, ly=LY, h=h, bc=inp.bc, h_solid=1e-4
+                ).to_flow_input()
+            )
