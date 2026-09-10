@@ -126,6 +126,10 @@ class ImplicitSolve:
         inp = self.build_input(np.asarray(theta, dtype=float))
         return inp, BrinkmanDiscretization(inp.to_flow_input())
 
+    def mask_state(self, theta: np.ndarray, x: np.ndarray) -> np.ndarray:
+        """[壁セル] 固体セルの自由度を 0 にした状態ベクトル（外から場を持ち込むとき用）."""
+        return self._disc(theta)[1].mask_state(np.asarray(x, dtype=float))
+
     def residual(self, theta: np.ndarray, x: np.ndarray) -> np.ndarray:
         inp, disc = self._disc(theta)
         s = inp.settings
@@ -146,9 +150,11 @@ class ImplicitSolve:
     def jacobian(self, theta: np.ndarray, x: np.ndarray) -> sparse.csr_matrix:
         inp, disc = self._disc(theta)
         s = inp.settings
-        return colored_fd_jacobian(
+        j = colored_fd_jacobian(
             disc, lambda xx: disc.residual(xx, s.scheme, s.venkat_k), x, self.jac_radius
         )
+        # [壁セル] 固体セルの残差は恒等的に 0 → 差分でも全ゼロ行になり、そのままでは特異
+        return disc.apply_solid_rows(j)
 
     def dR_dtheta(self, theta: np.ndarray, x: np.ndarray) -> np.ndarray:
         """∂R/∂θ (3n × nθ)。θ は少数なので中心差分."""

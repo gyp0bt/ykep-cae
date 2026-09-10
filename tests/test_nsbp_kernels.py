@@ -39,6 +39,8 @@ def _kernel_on_patch(disc, patch: Patch, x: np.ndarray, scheme, venkat_k: float,
         np.ones((patch.gnx, patch.gny)),
         np.ones((patch.gnx, patch.gny)),
         False,
+        coef.wall_x,
+        coef.wall_y,
     )
     ox, oy = patch.own
     return r_u[ox, oy], r_v[ox, oy], r_p[ox, oy]
@@ -126,7 +128,7 @@ class TestLimiterFreezeAPI:
         patch = Patch(nx, ny, 0, nx, 0, ny, 0, nx, 0, ny)
         coef = PatchCoefficients(disc, patch)
         u, v, p = (np.ascontiguousarray(a) for a in disc.split(x))
-        pu, pv = limiter_psi(u, v, p, coef.args_bc, coef.dx, coef.dy, 5.0)
+        pu, pv = limiter_psi(u, v, p, coef.args_bc, coef.dx, coef.dy, 5.0, coef.wall_x, coef.wall_y)
         assert (
             pu.min() >= 0.0 and pu.max() <= 1.0 and pu.min() < 1.0
         )  # 乱数場なので一部は制限される
@@ -147,6 +149,82 @@ class TestLimiterFreezeAPI:
             pu,
             pv,
             True,
+            coef.wall_x,
+            coef.wall_y,
         )
         got = np.concatenate([a.ravel() for a in r])
         assert np.allclose(got, ref, rtol=1e-12, atol=1e-12 * np.abs(ref).max())
+
+
+class TestSolidCellsPatchAPI:
+    """[壁セル] h <= h_solid を固体にした場合もパッチカーネルが nsb の残差と一致する."""
+
+    @staticmethod
+    def _case():
+        from nsb.core import NSBInput
+        from nsb.geo import LX, LY, make_uturn_h, uturn_bc_preset
+
+        nx, ny = 72, 48
+        return NSBInput(
+            nx=nx,
+            ny=ny,
+            lx=LX,
+            ly=LY,
+            h=make_uturn_h(nx, ny, h_channel=1e-3, h_blocked=1e-5),
+            bc=uturn_bc_preset(ny, u_in=1.0),
+            h_solid=1e-4,
+        )
+
+    @pytest.mark.parametrize(
+        "scheme",
+        [ConvectionSchemeType.SECOND_ORDER_UPWIND, ConvectionSchemeType.FIRST_ORDER_UPWIND],
+    )
+    def test_full_grid_matches_nsb_residual(self, scheme):
+        inp = self._case()
+        disc = make_discretization(inp)
+        assert disc.has_solid
+        x = disc.mask_state(_random_state(disc))
+        ref = disc.residual_fast(x, scheme, 5.0)
+        nx, ny = inp.nx, inp.ny
+        patch = Patch(nx, ny, 0, nx, 0, ny, 0, nx, 0, ny)
+        r_u, r_v, r_p = _kernel_on_patch(disc, patch, x, scheme, 5.0)
+        # パッチカーネルは固体セルを落とさない（落とすのは nsbp.solver 側）ので流体セルだけ比べる
+        got = np.concatenate([r_u.ravel(), r_v.ravel(), r_p.ravel()])
+        live = disc.live3
+        assert np.allclose(
+            got[live], ref[live], rtol=1e-12, atol=1e-12 * max(np.abs(ref).max(), 1e-300)
+        )
+
+    def test_split_patches_reproduce_full_residual(self):
+        inp = self._case()
+        disc = make_discretization(inp)
+        x = disc.mask_state(_random_state(disc, seed=3))
+        scheme = ConvectionSchemeType.SECOND_ORDER_UPWIND
+        ref = disc.residual_fast(x, scheme, 5.0)
+        nx, ny = inp.nx, inp.ny
+        r_u = np.zeros((nx, ny))
+        r_v = np.zeros((nx, ny))
+        r_p = np.zeros((nx, ny))
+        for xs, xe in ((0, nx // 2), (nx // 2, nx)):
+            for ys, ye in ((0, ny // 2), (ny // 2, ny)):
+                patch = Patch(
+                    nx,
+                    ny,
+                    xs,
+                    xe,
+                    ys,
+                    ye,
+                    max(0, xs - 2),
+                    min(nx, xe + 2),
+                    max(0, ys - 2),
+                    min(ny, ye + 2),
+                )
+                a, b, c = _kernel_on_patch(disc, patch, x, scheme, 5.0)
+                r_u[xs:xe, ys:ye] = a
+                r_v[xs:xe, ys:ye] = b
+                r_p[xs:xe, ys:ye] = c
+        got = np.concatenate([r_u.ravel(), r_v.ravel(), r_p.ravel()])
+        live = disc.live3
+        assert np.allclose(
+            got[live], ref[live], rtol=1e-10, atol=1e-10 * max(np.abs(ref).max(), 1e-300)
+        )

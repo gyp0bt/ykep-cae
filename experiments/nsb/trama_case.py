@@ -339,6 +339,7 @@ def run_unsteady(
             "mean_p": res.mean_p,
             "rms_u": res.rms_u,
             "rms_v": res.rms_v,
+            "avg_window": np.array(res.avg_window),
         }
     )
     np.savez_compressed(
