@@ -1285,3 +1285,189 @@ for EX in 3 6 10 15 25; do
     --nsb experiments/nsb/results/trama_CARVE-oracle-m0005_fields.npz --of <of>/walls-m0005
 done
 ```
+
+---
+
+## 14. 入口に助走脚と曲がりを足して 0.1 kg/s の時間平均を突き合わせる（2026-09-11、gyp さん「inlet をさらに左に伸ばして曲がりを作って、かつ質量流速 0.1 で非定常時間平均で openfoam と比べてください」）
+
+### 14.1 なぜこの形にしたか
+
+§13 で刳り抜きポートを入れたが、検算は 0.005 kg/s（N = 0.44、定常解がある領域）だった。
+**ポート境界条件が効く領域と、時間平均でしか答えが定義されない領域は別**なので、両方を 1 つの
+ケースで測れる形にする。
+
+入口ノードから助走脚と 90 度の曲がりを継ぎ足した（`trama_case.py` の `prepend_lead`、`--variant lead`）。
+規則はパターンに依らない: 中心線の第 1 区間の向きを d、その右手法線を n = (d_y, −d_x) として、
+入口から d の逆向きに 3w 戻った点を曲がり角、そこから n 方向に 5w 伸ばした先を新しい入口にする。
+
+<p align="center"><img src="../../experiments/nsb/results/trama_figs/f19_lead_geometry.png" width="100%"></p>
+
+自動スケールは y 方向が律速なので、左に伸ばしても**流路幅 34.5 mm は変わらない**。
+中心線長だけが 1615 → 1891 mm に伸びる（純粋に「曲がりを 1 つ足しただけ」の対照になる）。
+
+| 量 | 値 |
+|---|---|
+| ṁ | 0.1 kg/s |
+| u_mean | 0.763 m/s |
+| Re_w | 8772 |
+| **N = L_drag/w** | **8.86**（境目 2.2 の 4 倍 → 定常解なし） |
+| L_drag | 306 mm（助走脚 173 mm より長い） |
+| 格子 | 400×233、dx 1.5 mm、**流体セル 28485 個で両者一致** |
+
+### 14.2 何を測ると「落ち着いた」と言えるか
+
+gyp さんの指定は「流速最大・平均・圧力最大が落ち着いたら止める」。判定は閾値で規格化した比で置いた
+（後半窓を 2 分割して平均差 / (2% × 全窓平均)。比 < 1.00 で合格）。
+
+| | nsb | OpenFOAM |
+|---|---|---|
+| 最大流速 | 3.8400（t = 0.2 s 以降 5 桁不動）比 0.00 | 3.9393（t = 0.25 s 以降不動）比 0.00 |
+| 平均（nsb は KE、OF は入口ヘッド） | 34.6〜35.1 J、比 0.34 | 11.5 ± 0.8 kPa、比 0.53 |
+| 圧力 span | 21.33〜21.55 kPa、比 0.17 | — |
+
+3 つとも合格したところで打ち切り、そこから改めて時間平均を取り直した
+（nsb は t = 0.50〜2.99 s の 2.49 秒窓、OF は 2.9 秒窓）。
+
+**時間離散化は偶然ではなく一致している**: OF は maxCo 5 だが `maxDeltaT 1e-3` に張り付いて Δt = 1 ms、
+nsb も Δt = 1 ms（平均 0.9973 ms、後退 16 回）。どちらも 1 次陰的 Euler。
+**つまり両者の差は空間スキームの差に絞られる。**
+
+### 14.3 助走脚 — ポート境界条件だけを取り出す
+
+この区間は変動 RMS がほぼ 0 なので、時間平均場の比較が統計ではなく**決定論的な場の比較**になる。
+
+<p align="center"><img src="../../experiments/nsb/results/trama_figs/f18_lead_profile.png" width="100%"></p>
+
+| ポートからの距離 | ピーク nsb / OF | 比 | 淀み核 nsb / OF | 断面の L2 相対差 |
+|---|---|---|---|---|
+| 25 mm | 3.800 / 3.894 | 0.976 | 0.158 / 0.128 | **2.65%** |
+| 60 mm | 3.608 / 3.701 | 0.975 | 0.196 / 0.192 | **2.21%** |
+| 100 mm | 3.387 / 3.478 | 0.974 | 0.218 / 0.213 | **2.10%** |
+| 150 mm | 3.120 / 3.210 | 0.972 | 0.232 / 0.229 | **2.14%** |
+
+噴流の高さ・淀み核の深さ・左右非対称の向きまで一致し、**差は距離によらず 2% 台で一定**。
+§12.6 の内部ポートが「距離とともに減衰する 12%」だったのと対照的で、
+**ポートはもう誤差源ではない**（§13 の 0.005 kg/s の結論が、定常解の無い流量でもそのまま成り立つ）。
+
+### 14.4 なぜ 2 本の噴流が立つのか — また N
+
+ポート円板の直径 28.5 mm（r = w/2 − 2dx）が流路幅 34.5 mm をほぼ塞ぎ、**両脇に 3.0 mm（2 セル）の
+隙間**しか残らない。そこを全流量が通ると 4.39 m/s で、実測ピーク 3.9 m/s と辻褄が合う。
+ホースの口を潰した絵ではなく、**管の真ん中に親指を突っ込んだ**絵になる（速いのは両脇、真ん中は淀む）。
+
+問題は「その噴流がどこまで生き残るか」で、これを決めるのがまた N である。
+
+- 粘性極限では、横方向の速度ムラは**遮蔽長 ℓ = h/√12 = 1.10 mm** で均される
+  （横方向の粘性拡散 μ∂²u/∂y² と隙間抗力 12μ/h² の釣り合い）。
+- 慣性があると、ムラは対流で運ばれて**抗力長 L_drag = ρuh²/(12μ)** まで生き延びる。
+
+| ṁ | u_mean | L_drag | **N = L_drag/w** | 助走脚での見え方 |
+|---|---|---|---|---|
+| 0.001 kg/s | 0.0076 m/s | 3.1 mm | **0.089** | 3 mm で消える → **完全に平坦・左右対称** |
+| 0.1 kg/s | 0.763 m/s | 306 mm | **8.86** | 173 mm 走っても残る → 2 本の噴流 |
+
+低流量側は実際に解いて確かめた（`trama_LEAD-carve-m0001-stokeslike`、9 反復収束）。
+流路平均で規格化した横断面は s = 60 mm で `0.60 0.93 1.02 1.05 … 1.05 1.02 0.93 0.60` と平坦で、
+ピーク／平均は 1.05 しかない。**噴流も左右非対称も、まるごと慣性の産物**である
+（円板中心が離散化された流路中心から 0.383 セルずれているのは、非対称を作る原因ではなく、
+慣性が選ぶ側を決める種にしかなれない。両者が同じ側を選ぶのは `disk_mask` と `cylinderToCell` が
+同じセル判定をしているから）。
+
+status-47 が「定常解があるか」を決めるのに使った N が、ここでは「入口のムラが流路幅を横切って
+生き残るか」を決めている。同じ数が 2 つの現象を支配するのは偶然ではなく、どちらも
+**慣性で運ばれる距離 ÷ 流路幅**という 1 つの比だからである。
+
+### 14.5 時間平均場の突き合わせ
+
+<p align="center"><img src="../../experiments/nsb/results/trama_figs/f16_lead_transient.png" width="100%"></p>
+
+| 量 | nsb | OpenFOAM | 比 |
+|---|---|---|---|
+| 時間平均速度の **L2 相対差** | — | — | **12.8%** |
+| 時間平均圧力の L2 相対差 | — | — | **4.7%** |
+| 流路平均の速度 | 0.8231 m/s | 0.8132 m/s | 1.012 |
+| 速度の p90 | 1.545 | 1.529 | 1.011 |
+| 最大速度 | 3.843 | 3.939 | 0.976 |
+| 圧力 span | 9151 Pa | 9117 Pa | 1.004 |
+| リング間ヘッド | 6340 Pa | 6205 Pa | 1.022 |
+| 変動 RMS の流路平均 | 0.2279 m/s | 0.2688 m/s | 0.848 |
+| 乱れ強さ RMS/⟨u⟩ | 0.277 | 0.331 | 0.838 |
+
+**積分量は 1〜2% で合う。場の L2 差 12.8% はどこから来るのか。**
+
+### 14.6 残差の所在は「遷移が始まる位置」
+
+<p align="center"><img src="../../experiments/nsb/results/trama_figs/f17_lead_arc.png" width="100%"></p>
+
+流路に沿って区間ごとに分解すると、差は**ポートからの距離では減衰しない**
+（当てはめた減衰長 3.51 m は流路長 1.89 m より長い ＝ 減衰していない）。
+代わりに、特定の区間に集中している。
+
+| s [mm] | 速度の L2 差 | 変動 RMS nsb | 変動 RMS OF |
+|---|---|---|---|
+| 59（助走脚） | **2.6%** | 0.000 | 0.000 |
+| 177（曲がり） | 5.6% | 0.001 | 0.010 |
+| **295** | **19.5%** | **0.026** | **0.253** |
+| **414** | **32.1%** | **0.083** | **0.210** |
+| 532 | 12.0% | 0.063 | 0.171 |
+| 650 | 5.2% | 0.150 | 0.209 |
+| 768 | 6.2% | 0.158 | 0.174 |
+| 886〜1832 | 3.4〜16.9%（平均 8%） | OF と同水準 | — |
+
+s = 295〜414 mm で **OF の変動が nsb の 3〜10 倍**。ここは 90 度の曲がりを抜けた直後の
+上側水平区間で、OF は曲がりを出てすぐ剪断層が崩れるのに対し、**nsb は 120 mm ほど層流のまま走る**。
+s ≳ 650 mm で両者の RMS は揃い、以後は差が 5〜8% に落ち着く。
+
+つまり **12.8% の正体は「遷移の開始位置のずれ」**であって、ポートでも壁でも境界条件でもない。
+§12.7 で「変動が立ち上がる位置が違う（総量は同じ）」と書いた現象が、ポート差を取り除いたことで
+**唯一の残差として単離された**。
+
+Δt は両者 1 ms で揃っているので、疑うべきは空間スキームである（nsb: SOU + Venkatakrishnan
+リミター、OF: `Gauss linearUpwind cellLimited Gauss linear 1`）。リミターの効き方の差が
+剪断層の初期擾乱の減衰率を変えている、というのが最も素直な読みだが、**本節では未検証**。
+切り分けには (a) OF を `upwind` / `linear` に振る、(b) nsb のリミターを緩める / 凍結する、
+(c) 格子細分（遷移位置が格子に依存するなら数値、依存しないなら物理）が要る。
+
+### 14.7 まとめ
+
+- **刳り抜きポートは、定常解の無い流量でも誤差源ではない**。変動 RMS が 0 の助走脚で
+  決定論的に比べて **2.1〜2.7%**、しかも距離によらず一定（§12.6 の内部ポートは 12% から減衰する形だった）。
+- 時間平均の**積分量は 1〜2%** で一致する（平均流速 1.2%、圧力 span 0.4%、リング間ヘッド 2.2%）。
+- **場の L2 差 12.8% は遷移開始位置のずれに局在**する。s = 295〜414 mm で OF の変動が 3〜10 倍、
+  s ≳ 650 mm で揃う。§12.7 の 58% から大きく下がり、残ったものの正体が特定できた。
+- **N = L_drag/w は入口のムラの寿命も決める**。0.089 なら 3 mm で消え、8.86 なら 173 mm 走っても残る。
+- 費用: nsb 4500 ステップ 2.1 時間（1 ステップ 1.68 s）、OpenFOAM 6 秒ぶん 20 分。
+
+### 付録: 再現コマンド
+
+```bash
+# 幾何: --variant lead（OF 側は --geo-variant lead。case.json の geo_variant で突き合わせ側に伝わる）
+# nsb 助走（平均化なし）
+~/.claude/hooks/memcap -m 12G -- python experiments/nsb/trama_case.py ../tmp/pattern.json \
+    --variant lead --mass 0.1 --dx 1.5 --port carve --h-solid 1e-4 \
+    --unsteady 0.001 --n-steps 1500 --newton-per-step 6 --save-every 100 \
+    --linear-solver jfnk --ls 4 --no-stop-at-steady --tag LEAD-carve-m01-A
+# nsb 本番（前段の最終場から、t = 0.5 s 以降を時間平均）
+~/.claude/hooks/memcap -m 12G -- python experiments/nsb/trama_case.py ../tmp/pattern.json \
+    --variant lead --mass 0.1 --dx 1.5 --port carve --h-solid 1e-4 \
+    --unsteady 0.001 --n-steps 3000 --newton-per-step 6 --save-every 100 \
+    --linear-solver jfnk --ls 4 --no-stop-at-steady --avg-start 0.5 \
+    --init-from experiments/nsb/results/trama_LEAD-carve-m01-A_fields.npz --tag LEAD-carve-m01-B
+# 低流量の対照（N = 0.089、線形域）
+python experiments/nsb/trama_case.py ../tmp/pattern.json --variant lead --mass 0.001 --dx 1.5 \
+    --port carve --h-solid 1e-4 --max-iter 40 --linear-solver jfnk --steady-ser \
+    --tag LEAD-carve-m0001-stokeslike
+# OpenFOAM 助走 → 本番
+python experiments/nsb/run_trama_of.py ../tmp/pattern.json --geo-variant lead --variant walls \
+    --out <of>/walls-lead  --dx 1.5 --mass 0.1 --transient --end-time-s 3.0 --avg-start 3.0 --max-co 5
+python experiments/nsb/run_trama_of.py ../tmp/pattern.json --geo-variant lead --variant walls \
+    --out <of>/walls-lead2 --dx 1.5 --mass 0.1 --transient --end-time-s 3.0 --avg-start 0.1 --max-co 5 \
+    --init-from <of>/walls-lead
+# 突き合わせ
+python experiments/nsb/trama_solid_compare.py \
+    --nsb experiments/nsb/results/trama_LEAD-carve-m01-B_fields.npz --of <of>/walls-lead2 \
+    --out-json experiments/nsb/results/trama_lead_compare.json \
+    --fig-prefix lead --nsb-label "nsb 刳り抜きポート"
+python experiments/nsb/trama_lead_profile.py \
+    --nsb experiments/nsb/results/trama_LEAD-carve-m01-B_fields.npz --of <of>/walls-lead2
+```
