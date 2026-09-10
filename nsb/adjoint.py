@@ -98,6 +98,12 @@ def source_mean_pressure_objective() -> Objective:
 
     def weights(inp: NSBInput) -> np.ndarray:
         disc = BrinkmanDiscretization(inp.to_flow_input())
+        if getattr(disc, "has_port_face", False):
+            raise NotImplementedError(
+                "[刳り抜きポート] 目的関数が q_src 重みなので PORT_MASS_FLOW_INLET には使えません"
+                "（刳り抜きは離散的で設計変数に対して滑らかでもない）。"
+                "設計感度には INTERIOR_MASS_SOURCE + smooth_disk を使ってください"
+            )
         w = disc.q_src.ravel()
         return w / w.sum()
 

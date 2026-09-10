@@ -54,6 +54,9 @@ class BoundaryKind(Enum):
     INTERIOR_MASS_SOURCE = "interior_mass_source"  # 質量流量指定の流入（面内運動量ゼロで注入）
     INTERIOR_MASS_SINK = "interior_mass_sink"  # 質量流量指定の流出（局所運動量を持ち出す）
     INTERIOR_PRESSURE_SINK = "interior_pressure_sink"  # 圧力指定マニホールド: q = C (p - p_out)
+    # --- 刳り抜きポート: マスクに当たったセルを未知数から外し、露出したリング面に BC を置く ---
+    PORT_MASS_FLOW_INLET = "port_mass_flow_inlet"  # リング面に一様法線流入速度（運動量つき）
+    PORT_PRESSURE_OUTLET = "port_pressure_outlet"  # リング面に圧力 Dirichlet・速度ゼロ勾配
 
 
 INTERIOR_KINDS = frozenset(
@@ -61,6 +64,13 @@ INTERIOR_KINDS = frozenset(
         BoundaryKind.INTERIOR_MASS_SOURCE,
         BoundaryKind.INTERIOR_MASS_SINK,
         BoundaryKind.INTERIOR_PRESSURE_SINK,
+    }
+)
+
+PORT_KINDS = frozenset(
+    {
+        BoundaryKind.PORT_MASS_FLOW_INLET,
+        BoundaryKind.PORT_PRESSURE_OUTLET,
     }
 )
 
@@ -73,6 +83,9 @@ class BoundaryPatch:
     境界面中心に mask(x, y) を評価し、True の面に kind を割り当てる。
     領域内種別（INTERIOR_*）は**セル中心**に mask を評価し、True のセルに紙面垂直方向の
     マニホールド（面内速度ゼロで注入 / 局所速度で吸出）を割り当てる。
+    刳り抜きポート（PORT_*）も**セル中心**に mask を評価するが、True のセルは未知数から外され、
+    そのセルと流体セルの間に生えた面（リング面）が inlet / outlet の実パッチになる。
+    OpenFOAM で `cylinderToCell` + `subsetMesh` でセルを削り、露出面をパッチにするのと同じ。
     境界パッチが重なった場合は後のものが優先、領域内パッチは重ね合わせ（加算）。どのパッチにも属さない面は WALL。
 
     Parameters
@@ -89,11 +102,13 @@ class BoundaryPatch:
         INTERIOR_MASS_SOURCE / SINK では、セルの h_c V_c で按分した単位深さソース
         q_c = mass_flow · V_c / Σ_c h_c V_c [kg/s] になる（正で注入 / 吸出）
     pressure : float
-        PRESSURE_OUTLET / INTERIOR_PRESSURE_SINK の圧力 [Pa]
+        PRESSURE_OUTLET / INTERIOR_PRESSURE_SINK / PORT_PRESSURE_OUTLET の圧力 [Pa]
     conductance : float
         INTERIOR_PRESSURE_SINK のマニホールドコンダクタンス [kg/(s·Pa)]（3 次元値）。
         単位深さでは q_c = conductance · V_c / Σ_c h_c V_c · (p_c - pressure)。
         p_c < pressure なら逆流（面内運動量ゼロで注入）
+        PORT_MASS_FLOW_INLET では u_n = mass_flow / (ρ Σ_f h_f A_f) の一様法線流入速度に換算する
+        （4 辺の MASS_FLOW_INLET と同じ式。Σ は実際に生えたリング面）
     weight : WeightFn | None
         領域内パッチ用の滑らかな重み w(x, y) ∈ [0, 1]。与えると mask の代わりに使い、
         ソースを w_c V_c / Σ_c w_c h_c V_c で按分する。位置・径を連続設計変数にするために
@@ -112,12 +127,21 @@ class BoundaryPatch:
     name: str = ""
 
     def __post_init__(self) -> None:
+        if self.is_port and self.weight is not None:
+            raise ValueError(
+                "刳り抜きポート（PORT_*）は滑らかな weight を受け付けません: mask を使ってください"
+                "（連続な設計変数が要る用途は INTERIOR_* のまま）"
+            )
         if self.mask is None and (not self.is_interior or self.weight is None):
             raise ValueError("mask が必要です（領域内パッチは weight でも可）")
 
     @property
     def is_interior(self) -> bool:
         return self.kind in INTERIOR_KINDS
+
+    @property
+    def is_port(self) -> bool:
+        return self.kind in PORT_KINDS
 
     def weights(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         """セル中心での重み配列（weight があればそれ、無ければ mask を 0/1 に）."""

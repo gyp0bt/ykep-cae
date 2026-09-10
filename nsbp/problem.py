@@ -97,6 +97,12 @@ class PatchCoefficients:
             c(disc.c_sink[gx, gy]),
             c(disc.cp_sink[gx, gy]),
         )
+        if getattr(disc, "has_port_face", False):
+            raise NotImplementedError(
+                "[刳り抜きポート] PORT_MASS_FLOW_INLET / PORT_PRESSURE_OUTLET は nsbp 未対応です"
+                "（面種別 pkind_x / pkind_y を kernels.py に通していない）。"
+                "nsb 側で解くか、INTERIOR_* のポートを使ってください"
+            )
         # [壁セル] パッチ上の面マスクと流体マスク（ゴースト込み）
         self.wall_x = np.ascontiguousarray(
             disc.wall_x[patch.gxs : patch.gxe + 1, gy], dtype=np.int8
@@ -114,4 +120,11 @@ class PatchCoefficients:
 
 
 def make_discretization(inp: NSBInput) -> BrinkmanDiscretization:
-    return BrinkmanDiscretization(inp.to_flow_input())
+    disc = BrinkmanDiscretization(inp.to_flow_input())
+    if disc.has_port_face:
+        raise NotImplementedError(
+            "[刳り抜きポート] PORT_MASS_FLOW_INLET / PORT_PRESSURE_OUTLET は nsbp 未対応です"
+            "（面種別 pkind_x / pkind_y を kernels.py に通していない）。"
+            "nsb 側で解くか、INTERIOR_* のポートを使ってください"
+        )
+    return disc

@@ -92,6 +92,28 @@ class BC:
             name=name,
         )
 
+    # --- 刳り抜きポート（領域内）: マスクはセル中心で評価。当たったセルは未知数から外す ---
+    @staticmethod
+    def port_inlet(mask: MaskFn, mass_flow: float, name: str = "port_in") -> BoundaryPatch:
+        """[刳り抜きポート] 円板セルを刳り抜き、露出したリング面に一様法線流入速度を与える.
+
+        mass_flow [kg/s] は厚さ込みの 3 次元値で、u_n = mass_flow / (ρ Σ_f h_f A_f)（Σ は
+        実際に生えたリング面）に換算する。4 辺の `mass_flow_inlet` と同じ式で、OpenFOAM の
+        `flowRateInletVelocity`（u_n = Q / (L_perim · tz)、tz = h）と 1 対 1 に対応する。
+        """
+        return BoundaryPatch(
+            BoundaryKind.PORT_MASS_FLOW_INLET, mask, mass_flow=mass_flow, name=name
+        )
+
+    @staticmethod
+    def port_outlet(mask: MaskFn, p: float = 0.0, name: str = "port_out") -> BoundaryPatch:
+        """[刳り抜きポート] 円板セルを刳り抜き、リング面を圧力 Dirichlet・速度ゼロ勾配にする.
+
+        圧力の基準を与える（OpenFOAM の `p fixedValue` + `U inletOutlet` に対応。ただし nsb は
+        4 辺の outlet と揃えて逆流時もゼロ勾配で、`inletValue` は使わない）。
+        """
+        return BoundaryPatch(BoundaryKind.PORT_PRESSURE_OUTLET, mask, pressure=p, name=name)
+
     @property
     def u_inlet(self) -> float:
         """VELOCITY_INLET の最大流速（MASS_FLOW_INLET のみの場合は 0。速度スケールは離散化側で決まる）."""

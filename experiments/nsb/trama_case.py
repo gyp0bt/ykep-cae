@@ -178,6 +178,10 @@ def make_trama_input(
     """蛇行流路 NSBInput.
 
     port="interior": inlet = interior_source（円板）、outlet = interior_pressure_sink（円板、圧力基準）。
+    port="carve": 円板セルを刳り抜き、露出したリング面を inlet（法線流入速度）/ outlet（p 固定）に
+    する。OpenFOAM の `cylinderToCell` + `subsetMesh` と 1 対 1（`trama_of_case.py` 参照）。
+    OF 側は円周が閉塞域に接すると圧力が跳ねるので `port_shrink_cells=2` で 2 セル縮めている。
+    ここでも `port_radius_factor` ではなく **2 セルぶん縮めた半径**を既定にして揃える。
     port="wall": 両端ノードから左壁 x=0 まで流路を延長し、左壁の mass_flow_inlet / pressure_outlet
     （高さ = 流路幅）にする。
     """
@@ -202,6 +206,19 @@ def make_trama_input(
                 BC.interior_pressure_sink(disk_mask(*geo.outlet, r), sink_conductance, p=0.0),
             )
         bc = BC(patches=patches)
+    elif port == "carve":
+        h = make_trama_h(geo, nx, ny, h_channel, h_blocked)
+        dxm = dx_mm * 1e-3
+        # OpenFOAM の port_shrink_cells=2 と同じ縮め方（円周を流路の内側に置く）
+        r = (w2 - 2.0 * dxm if port_radius is None else port_radius) * port_radius_factor
+        if r <= 2.0 * dxm:
+            raise ValueError(f"ポート半径が小さすぎる: {r:g} m（dx={dxm:g} m）")
+        bc = BC(
+            patches=(
+                BC.port_inlet(disk_mask(*geo.inlet, r), mass_flow),
+                BC.port_outlet(disk_mask(*geo.outlet, r), p=0.0),
+            )
+        )
     elif port == "wall":
         ya, yb = geo.inlet[1], geo.outlet[1]
         poly = np.vstack([[[-w2, ya]], geo.polyline, [[-w2, yb]]])  # 壁の外まで伸ばして端を平らに
@@ -214,7 +231,7 @@ def make_trama_input(
             )
         )
     else:
-        raise ValueError(f"port は interior / wall: {port!r}")
+        raise ValueError(f"port は interior / carve / wall: {port!r}")
     return NSBInput(
         nx=nx,
         ny=ny,
@@ -395,7 +412,7 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="質量流量の継続法: カンマ区切り（例 0.0015,0.005,0.015,0.05,0.15）。前段の解を流量比で拡大して初期場にする",
     )
-    ap.add_argument("--port", default="interior", choices=["interior", "wall"])
+    ap.add_argument("--port", default="interior", choices=["interior", "carve", "wall"])
     ap.add_argument("--variant", default="orig", choices=["orig", "ortho"])
     ap.add_argument(
         "--straight", type=float, default=None, help="直線流路の角度 [deg]（パターンの代わり）"

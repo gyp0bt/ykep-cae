@@ -1069,3 +1069,219 @@ python experiments/nsb/trama_of_verify.py --exclude-cells 25     --nsb experimen
 python experiments/nsb/run_trama_of.py ../tmp/pattern.json --variant walls --out <of>/walls-t2     --dx 1.5 --mass 0.15 --transient --end-time-s 1.5 --avg-start 0.3 --max-co 5     --init-from <of>/walls-t --of-cpus 4
 python experiments/nsb/trama_solid_compare.py     --nsb experiments/nsb/results/trama_SOLID-unsteady-dx1.5-dt1ms_fields.npz --of <of>/walls-t2
 ```
+
+---
+
+## 13. ポートを実パッチにする — 刳り抜きポート（2026-09-10 夜、gyp さん「nsb の inner cell 境界条件を openfoam と合わせたい。outlet はセル内圧力固定境界を実装したい」）
+
+§12.5 と §12.6 が残した宿題はひとつだけだった: **ポートの与え方**。壁の扱いを揃えたら、
+食い違いはポート周りにしか残らず（速度 L2 が除外距離とともに 11.9% → 1.8% と単調に落ちる）、
+0.15 kg/s の非定常ではその痕跡が抗力長のスケールで下流に運ばれて場全体の L2 58% になっていた。
+ここではその宿題を潰す。
+
+### 13.1 舞台: 「面に種別を貼る」
+
+nsb の面は 2 つの世界に分かれていた。
+
+<svg viewBox="0 0 760 220" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;height:auto">
+  <style>
+    .bx{fill:#f7f7fa;stroke:#888;stroke-width:1}
+    .t{font:13px sans-serif;fill:#222}
+    .ts{font:11px sans-serif;fill:#555}
+    .th{font:13px sans-serif;fill:#222;font-weight:bold}
+    .ar{stroke:#c33;stroke-width:2;fill:none;marker-end:url(#a13)}
+  </style>
+  <defs><marker id="a13" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L7,3 L0,6 z" fill="#c33"/></marker></defs>
+  <rect class="bx" x="20" y="20" width="220" height="170"/>
+  <text class="th" x="30" y="42">領域の 4 辺</text>
+  <text class="ts" x="30" y="64">sides["W"/"E"/"S"/"N"]</text>
+  <text class="ts" x="30" y="84">kind, un, p, is_outlet</text>
+  <text class="t"  x="30" y="112">種別 3 つ:</text>
+  <text class="ts" x="42" y="132">wall / inlet / outlet</text>
+  <text class="ts" x="30" y="166">4 辺にしか置けない</text>
+  <rect class="bx" x="270" y="20" width="220" height="170"/>
+  <text class="th" x="280" y="42">内部面（status-48）</text>
+  <text class="ts" x="280" y="64">wall_x / wall_y</text>
+  <text class="ts" x="280" y="84">0 開 / 1 右上流体 / 2 左下流体 / 3 両側固体</text>
+  <text class="t"  x="280" y="112">種別 1 つ:</text>
+  <text class="ts" x="292" y="132">wall だけ</text>
+  <text class="ts" x="280" y="166">向きは表せるが種別が無い</text>
+  <rect class="bx" x="520" y="20" width="220" height="170" style="fill:#eef6ee;stroke:#4a4"/>
+  <text class="th" x="530" y="42">内部面（今回）</text>
+  <text class="ts" x="530" y="64">wall_x / wall_y  = 向き</text>
+  <text class="ts" x="530" y="84">pkind_x / pkind_y = 種別</text>
+  <text class="t"  x="530" y="112">種別 3 つ:</text>
+  <text class="ts" x="542" y="132">0 wall / 1 inlet / 2 outlet</text>
+  <text class="ts" x="530" y="166">4 辺と同じ扱いを内部面に</text>
+  <path class="ar" d="M492,105 L516,105"/>
+</svg>
+
+status-48 で内部面に no-slip 壁を持ち込んだとき、**向き**（どちら側が流体か）は表現できるように
+なったが、**種別は壁に固定**だった。今回やったのは、内部面にも 4 辺と同じ 3 種別を持たせること。
+エンコードは 1 つの int8 に混ぜず 2 枚に分ける（向きだけ見たい箇所と種別も見たい箇所が混ざると読めなくなる）。
+
+| 配列 | 形 | 意味 |
+|---|---|---|
+| `wall_x` / `wall_y` | (nx+1, ny) / (nx, ny+1) | **向き**。0 開 / 1 右・上が流体 / 2 左・下が流体 / 3 両側固体（既存のまま） |
+| `pkind_x` / `pkind_y` | 同 | **種別**。0 = 壁、1 = inlet、2 = outlet |
+| `pun_x` / `pun_y` | 同 | inlet 面の法線流入速度 [m/s]（+x / +y を正とする符号つき） |
+| `pp_x` / `pp_y` | 同 | outlet 面の指定圧力 [Pa] |
+
+面 1 枚の役割は **4 辺で既に書いてあった式をそのまま内部面に持ってくるだけ**である。
+
+| | 面速度 | 面圧力 | 速度の面勾配（拡散） | RC 係数 d_f | 対流面値 |
+|---|---|---|---|---|---|
+| 壁（status-48） | 0 | 流体側セル値 | ±2/d（片側） | 0 | （流束 0 なので不問） |
+| **inlet（今回）** | 法線に u_n | 流体側セル値 | ±2/d（片側） | 0 | 面値 |
+| **outlet（今回）** | 流体側セル値 | 指定 p | 0 | 0 | 面値（＝流体側セル値） |
+
+`u_n = ṁ / (ρ Σ_f h_f A_f)` は 4 辺の `MASS_FLOW_INLET` と**同一の式**で、OpenFOAM の
+`flowRateInletVelocity`（`u_n = Q/(L_perim·tz)`、`tz = h_channel`）と単位まで 1 対 1。
+円板セルの選び方も、OpenFOAM の `cylinderToCell`（セル中心が中）と nsb の `disk_mask` で一致する。
+
+<svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;height:auto">
+  <style>
+    .c{fill:#dfe8f5;stroke:#9ab;stroke-width:0.7}
+    .cp{fill:#f3d9d9;stroke:#c99;stroke-width:0.7}
+    .cd{fill:#ffffff;stroke:#ccc;stroke-width:0.7}
+    .ri{stroke:#c33;stroke-width:3}
+    .ro{stroke:#36c;stroke-width:3}
+    .t{font:12px sans-serif;fill:#222}
+    .ts{font:11px sans-serif;fill:#555}
+    .v{stroke:#c33;stroke-width:1.5;fill:none;marker-end:url(#a13b)}
+  </style>
+  <defs><marker id="a13b" markerWidth="7" markerHeight="7" refX="6" refY="2.5" orient="auto">
+    <path d="M0,0 L6,2.5 L0,5 z" fill="#c33"/></marker></defs>
+  <g transform="translate(40,25)">
+    <text class="t" x="0" y="-6">体積ソース（従来の内部ポート）</text>
+    <g>
+      <rect class="c" x="0" y="0" width="24" height="24"/><rect class="c" x="24" y="0" width="24" height="24"/>
+      <rect class="c" x="48" y="0" width="24" height="24"/><rect class="c" x="72" y="0" width="24" height="24"/>
+      <rect class="c" x="96" y="0" width="24" height="24"/><rect class="c" x="120" y="0" width="24" height="24"/>
+      <rect class="c" x="0" y="24" width="24" height="24"/><rect class="cp" x="24" y="24" width="24" height="24"/>
+      <rect class="cp" x="48" y="24" width="24" height="24"/><rect class="cp" x="72" y="24" width="24" height="24"/>
+      <rect class="c" x="96" y="24" width="24" height="24"/><rect class="c" x="120" y="24" width="24" height="24"/>
+      <rect class="c" x="0" y="48" width="24" height="24"/><rect class="cp" x="24" y="48" width="24" height="24"/>
+      <rect class="cp" x="48" y="48" width="24" height="24"/><rect class="cp" x="72" y="48" width="24" height="24"/>
+      <rect class="c" x="96" y="48" width="24" height="24"/><rect class="c" x="120" y="48" width="24" height="24"/>
+      <rect class="c" x="0" y="72" width="24" height="24"/><rect class="c" x="24" y="72" width="24" height="24"/>
+      <rect class="c" x="48" y="72" width="24" height="24"/><rect class="c" x="72" y="72" width="24" height="24"/>
+      <rect class="c" x="96" y="72" width="24" height="24"/><rect class="c" x="120" y="72" width="24" height="24"/>
+    </g>
+    <text class="ts" x="0" y="118">ピンクのセルの連続式に q を足す</text>
+    <text class="ts" x="0" y="134">面内運動量ゼロ・セルは流体のまま</text>
+    <text class="ts" x="0" y="150">→ 流れは滑らかに対称に立ち上がる</text>
+  </g>
+  <g transform="translate(400,25)">
+    <text class="t" x="0" y="-6">刳り抜き（今回・OpenFOAM と同じ）</text>
+    <g>
+      <rect class="c" x="0" y="0" width="24" height="24"/><rect class="c" x="24" y="0" width="24" height="24"/>
+      <rect class="c" x="48" y="0" width="24" height="24"/><rect class="c" x="72" y="0" width="24" height="24"/>
+      <rect class="c" x="96" y="0" width="24" height="24"/><rect class="c" x="120" y="0" width="24" height="24"/>
+      <rect class="c" x="0" y="24" width="24" height="24"/><rect class="cd" x="24" y="24" width="24" height="24"/>
+      <rect class="cd" x="48" y="24" width="24" height="24"/><rect class="cd" x="72" y="24" width="24" height="24"/>
+      <rect class="c" x="96" y="24" width="24" height="24"/><rect class="c" x="120" y="24" width="24" height="24"/>
+      <rect class="c" x="0" y="48" width="24" height="24"/><rect class="cd" x="24" y="48" width="24" height="24"/>
+      <rect class="cd" x="48" y="48" width="24" height="24"/><rect class="cd" x="72" y="48" width="24" height="24"/>
+      <rect class="c" x="96" y="48" width="24" height="24"/><rect class="c" x="120" y="48" width="24" height="24"/>
+      <rect class="c" x="0" y="72" width="24" height="24"/><rect class="c" x="24" y="72" width="24" height="24"/>
+      <rect class="c" x="48" y="72" width="24" height="24"/><rect class="c" x="72" y="72" width="24" height="24"/>
+      <rect class="c" x="96" y="72" width="24" height="24"/><rect class="c" x="120" y="72" width="24" height="24"/>
+      <line class="ri" x1="24" y1="24" x2="96" y2="24"/><line class="ri" x1="24" y1="72" x2="96" y2="72"/>
+      <line class="ri" x1="24" y1="24" x2="24" y2="72"/><line class="ri" x1="96" y1="24" x2="96" y2="72"/>
+    </g>
+    <path class="v" d="M60,20 L60,4"/><path class="v" d="M60,76 L60,92"/>
+    <path class="v" d="M20,48 L4,48"/><path class="v" d="M100,48 L116,48"/>
+    <text class="ts" x="0" y="118">白いセルは未知数から外す（dead）</text>
+    <text class="ts" x="0" y="134">赤いリング面が inlet パッチ</text>
+    <text class="ts" x="0" y="150">→ 法線方向に運動量つきで噴き出す</text>
+  </g>
+</svg>
+
+### 13.2 outlet が「セル内圧力固定」になる意味
+
+従来の outlet は `INTERIOR_PRESSURE_SINK`、すなわち **Robin 条件** `q = C (p − p_out)` だった。
+今回の outlet はリング面の**圧力 Dirichlet**（`p_f = p_out`、速度ゼロ勾配）で、これは
+`C → ∞` の極限にあたる。§6 が「内部ポートは出口 sink セルの非線形性が加わるぶん、
+同じ N でも折れ点が増える」と書いた非線形性（`max(q_c, 0)` の折れ）が、これで消える。
+
+逆流の扱いだけは OpenFOAM と揃えていない。OF の outlet は `U inletOutlet`（逆流時は
+`inletValue (0 0 0)`）だが、nsb は 4 辺の outlet と揃えて**逆流時もゼロ勾配**にした。
+折れを 1 つ消したのに別の折れを入れ直すのは筋が悪いという判断で、リング面で逆流が起きる場合には
+差になりうる（0.005 kg/s の検算では逆流は起きていない）。
+
+### 13.3 検算: 距離依存が消える
+
+§12.5 とまったく同じ条件（0.005 kg/s、N = 0.44、dx 1.5 mm、壁セル `h_solid=1e-4`、
+リミター凍結 1e-3、定常残差 SER、継続法 0.0015 → 0.005）で、ポートの与え方だけを差し替えた。
+OpenFOAM 側は `walls` 変種（`subsetMesh` で流路だけ切り出し、円板 2 枚を刳り抜いた実パッチ）。
+ポート半径も OF に合わせて **w/2 − 2Δx = 14.25 mm**（`port_shrink_cells=2` と同じ縮め方）にした。
+
+| ポートからの除外 | セル数 | 速度 L2（内部ポート） | 速度 L2（**刳り抜き**） | 圧力 L2（内部） | 圧力 L2（**刳り抜き**） |
+|---|---|---|---|---|---|
+| 3 セル（4.5 mm） | 23992 | 11.93% | **0.98%** | 0.241% | **0.075%** |
+| 6 セル | 23832 | 9.21% | **0.97%** | 0.179% | **0.074%** |
+| 10 セル | 23628 | 6.52% | **0.95%** | 0.122% | **0.073%** |
+| 15 セル | 23384 | 4.21% | **0.94%** | 0.089% | **0.072%** |
+| 25 セル（≈ 流路幅 1 つ） | 22910 | 1.76% | **0.90%** | 0.071% | **0.070%** |
+
+読み方は「値が小さくなった」ではなく **「距離依存が消えた」** である。内部ポート版の 11.9 → 1.8% という
+単調減衰は、差の源がポートにあることの証拠だった（§12.5）。刳り抜き版は 0.98 → 0.90% とほぼ平らで、
+**ポートがもう誤差源ではない**。残る 0.9% は離散化の地の差（nsb の Newton + Venkatakrishnan SOU 対
+OpenFOAM の SIMPLE + cellLimited SOU）で、ポートをどうしても下がらない。
+
+噴流の再現でも同じことが言える。比較領域の最大流速は:
+
+| 除外 | 内部ポート | **刳り抜き** | OpenFOAM |
+|---|---|---|---|
+| 3 セル | 0.0789 | **0.1491** | 0.1516 |
+| 6 セル | 0.0789 | **0.1169** | 0.1191 |
+| 10 セル | 0.0789 | **0.0927** | 0.0945 |
+| 15 セル 以遠 | 0.0789 | 0.0789 | 0.0801 |
+
+内部ポート版はポート直近でも 0.0789（＝流路本体の最大流速）しか出ておらず、**噴流がそもそも無い**。
+OF は 0.1516 で、§12.5 が「nsb 0.027 に対して OpenFOAM 0.14 と 5 倍違う」と書いた壁際の帯がこれ。
+刳り抜き版は 0.1491 で、**1.6% まで詰まる**。圧力 span も 145.1 vs 145.0 Pa。
+
+### 13.4 費用: 反復数はやや増える
+
+| 構成 | 段 0.0015 | 段 0.005 | 合計反復 | 合計時間 |
+|---|---|---|---|---|
+| 内部ポート（体積ソース + コンダクタンス sink） | 11 | 19 | 30 | 44.6 s |
+| **刳り抜きポート** | 10 | 24 | **34** | **49.1 s** |
+
+出口 sink の非線形性が消えるぶん楽になるかと思ったが、実際には 0.005 段が 19 → 24 反復に増えた。
+機構は噴流そのもので、リング面から法線方向に u_n で吹き出す流れは体積ソースより**局所 Re が高く**、
+その分だけ Newton が歩きにくい（最大流速 0.079 → 0.170 m/s、2.2 倍）。物理を正しく入れた代償で、
+1 割の時間増なら安い。
+
+### 13.5 まだやっていないこと
+
+- **nsbp（PETSc）未対応。** 面種別を `nsbp/kernels.py` に通していないので、
+  `make_discretization` が `NotImplementedError` を投げる（黙って違う問題を解かせない）。
+- **随伴の圧損目的関数は使えない。** `source_mean_pressure_objective` は `q_src` 重みで、
+  刳り抜きは離散的（設計変数に対して滑らかでない）。設計感度には `INTERIOR_MASS_SOURCE` +
+  `smooth_disk` を残してある。
+- **0.15 kg/s の非定常での再検算。** §12.6 の場の L2 58% がどこまで落ちるかは未測定。
+  1 走行 2.5 時間なので次段に回す。§12.6 の機構（差が L_drag のスケールで減衰する）が正しければ、
+  入口側の差が消えるぶん大きく落ちるはず。
+- **逆流時の outlet。** OF の `inletOutlet` ではなくゼロ勾配（§13.2）。
+
+### 付録 §13: 再現コマンド
+
+```bash
+# OpenFOAM 参照（walls 変種、0.005 kg/s 定常）
+python experiments/nsb/run_trama_of.py --variant walls --mass 0.005 --out <of>/walls-m0005 --end-time 8000
+
+# nsb 刳り抜きポート
+~/.claude/hooks/memcap -m 24G -- python experiments/nsb/trama_case.py --mass 0.005 --dx 1.5 \
+    --port carve --continuation 0.0015,0.005 --freeze 1e-3 --steady-ser --max-iter 120 \
+    --linear-solver jfnk --h-solid 1e-4 --tag CARVE-oracle-m0005
+
+# 突き合わせ（除外距離を振る）
+for EX in 3 6 10 15 25; do
+  python experiments/nsb/trama_of_verify.py --exclude-cells $EX \
+    --nsb experiments/nsb/results/trama_CARVE-oracle-m0005_fields.npz --of <of>/walls-m0005
+done
+```

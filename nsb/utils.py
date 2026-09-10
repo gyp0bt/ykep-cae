@@ -52,16 +52,29 @@ def mass_balance(res: NSBResult) -> float:
 
 
 def inlet_cells(inp: NSBInput) -> np.ndarray:
-    """inlet 面に接するセルの bool マスク (nx, ny)."""
-    from nsb.assembly import BrinkmanDiscretization
+    """inlet に接するセルの bool マスク (nx, ny).
 
-    sides = BrinkmanDiscretization(inp.to_flow_input()).sides
+    4 辺の inlet 面に接するセル、領域内マニホールドの注入セル（`q_src > 0`）、
+    [刳り抜きポート] inlet リング面に接する流体セルの和。どれも「流入が起きている場所」で、
+    outlet を p=0 にしてあれば `inlet_mean_pressure` が必要圧力ヘッドになる。
+    """
+    from nsb.assembly import PORT_INLET, BrinkmanDiscretization
+
+    disc = BrinkmanDiscretization(inp.to_flow_input())
+    sides = disc.sides
     m = np.zeros((inp.nx, inp.ny), dtype=bool)
     m[0, :] |= sides["W"].is_inlet
     m[-1, :] |= sides["E"].is_inlet
     m[:, 0] |= sides["S"].is_inlet
     m[:, -1] |= sides["N"].is_inlet
-    return m
+    m |= disc.q_src > 0.0
+    if disc.has_port_face:
+        px, py = disc.pkind_x == PORT_INLET, disc.pkind_y == PORT_INLET
+        m[1:] |= px[1:-1] & (disc.wall_x[1:-1] == 1)  # 流体が右
+        m[:-1] |= px[1:-1] & (disc.wall_x[1:-1] == 2)  # 流体が左
+        m[:, 1:] |= py[:, 1:-1] & (disc.wall_y[:, 1:-1] == 1)
+        m[:, :-1] |= py[:, 1:-1] & (disc.wall_y[:, 1:-1] == 2)
+    return m & disc.active
 
 
 def inlet_mean_pressure(inp: NSBInput, res: NSBResult) -> float:

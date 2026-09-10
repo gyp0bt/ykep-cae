@@ -17,6 +17,17 @@
   - 面圧力 = 流体側セル値 → 圧力ゼロ勾配
 で、4 辺の WALL 面の扱いとまったく同じ。固体セルの行は残差 0・ヤコビアン単位行に置き換えるので
 δ = 0 に固定され、実質的に解かれない。
+
+[刳り抜きポート] `PORT_MASS_FLOW_INLET` / `PORT_PRESSURE_OUTLET` は、マスクに当たったセルを
+同じく未知数から外したうえで、そのセルと流体セルの間に生えた面（リング面）に壁ではなく
+**inlet / outlet の種別**を貼る。面種別は向き `wall_x` / `wall_y` と種別 `pkind_x` / `pkind_y`
+（0: 壁、1: inlet、2: outlet）の 2 枚で表す。1 枚の面の役割は 4 辺とまったく同じで
+  - inlet 面  : 面速度 = 法線方向に u_n（`pun_x` / `pun_y` に符号つきで持つ）、面圧力 = 流体側セル値、
+                面勾配は片側 2 倍（速度 Dirichlet）、質量流束は RC 補正なしの ρ A u_n
+  - outlet 面 : 面速度 = 流体側セル値（ゼロ勾配）、面圧力 = 指定値 `pp_x` / `pp_y`、面勾配 0、
+                質量流束は RC 補正なしの ρ A u_P
+OpenFOAM で `cylinderToCell` + `subsetMesh` で円板セルを削り、露出面を
+`flowRateInletVelocity` / `p fixedValue` のパッチにするのと 1 対 1 に対応する。
 """
 
 from __future__ import annotations
@@ -33,6 +44,8 @@ from nsb.data import (
     BrinkmanFlowInput,
     ConvectionSchemeType,
 )
+
+PORT_INLET, PORT_OUTLET = 1, 2  # [刳り抜きポート] pkind_x / pkind_y の値（0 は壁 or 内部面）
 
 
 @dataclass
@@ -109,15 +122,24 @@ class BrinkmanDiscretization:
         self.friction_blend = float(inp.friction_blend)
 
         patches = inp.effective_boundaries()
-        self.sides = self._resolve_boundaries(tuple(b for b in patches if not b.is_interior))
+        self.sides = self._resolve_boundaries(
+            tuple(b for b in patches if not b.is_interior and not b.is_port)
+        )
+        # [刳り抜きポート] セルを未知数から外すのは領域内ソースの按分より先（ポートには配らない）
+        self._mark_port_cells(tuple(b for b in patches if b.is_port))
         self._resolve_interior(tuple(b for b in patches if b.is_interior))
         self._resolve_solid()  # [壁セル] 孤立塊の刈り込み + 面マスク（wall_x / wall_y）
+        self._resolve_port_faces()  # [刳り抜きポート] リング面の種別・法線速度・指定圧力
         W, E, S, N = self.sides["W"], self.sides["E"], self.sides["S"], self.sides["N"]
-        n_in = sum(int(sd.is_inlet.sum()) for sd in self.sides.values()) + int(
-            (self.q_src > 0.0).sum()
+        n_in = (
+            sum(int(sd.is_inlet.sum()) for sd in self.sides.values())
+            + int((self.q_src > 0.0).sum())
+            + self._n_port_faces(PORT_INLET)
         )
-        n_out = sum(int(sd.is_outlet.sum()) for sd in self.sides.values()) + int(
-            ((self.q_sink > 0.0) | (self.c_sink > 0.0)).sum()
+        n_out = (
+            sum(int(sd.is_outlet.sum()) for sd in self.sides.values())
+            + int(((self.q_sink > 0.0) | (self.c_sink > 0.0)).sum())
+            + self._n_port_faces(PORT_OUTLET)
         )
         if n_in == 0 or n_out == 0:
             raise ValueError(
@@ -126,13 +148,17 @@ class BrinkmanDiscretization:
         if (
             not any(sd.is_outlet.any() for sd in self.sides.values())
             and not (self.c_sink > 0).any()
+            and self._n_port_faces(PORT_OUTLET) == 0
         ):
             raise ValueError(
-                "圧力の基準がありません: PRESSURE_OUTLET か INTERIOR_PRESSURE_SINK が必要です"
+                "圧力の基準がありません: PRESSURE_OUTLET / INTERIOR_PRESSURE_SINK / "
+                "PORT_PRESSURE_OUTLET のどれかが必要です"
             )
         # 擬似時間の速度スケール（最大流入速度。領域内ソースは周長 4√A から見積もる）
         u_b = max(float(np.abs(sd.un).max()) for sd in self.sides.values())
-        self.u_scale = max(u_b, self._interior_velocity_scale())
+        u_port = float(np.abs(self.pun_x).max()) if self.has_port else 0.0
+        u_port = max(u_port, float(np.abs(self.pun_y).max()) if self.has_port else 0.0)
+        self.u_scale = max(u_b, u_port, self._interior_velocity_scale())
 
         # 境界面の速度成分（W: u=+un, E: u=-un, S: v=+un, N: v=-un）
         self.u_w, self.v_w = W.un, np.zeros(self.ny)
@@ -150,11 +176,15 @@ class BrinkmanDiscretization:
         diff_diag[:, -1] += np.where(N.is_dirichlet, dyy, -dyy)
         if self.has_solid:
             # [壁セル] 内部壁面に接する流体セルは、その面の拡散が μA/d から 2μA/d になる
+            # [刳り抜きポート] inlet 面も速度 Dirichlet なので同じ、outlet 面はゼロ勾配で 0
             wx, wy = self.wall_x[1:-1], self.wall_y[:, 1:-1]
-            diff_diag[1:, :] += np.where(wx == 1, dxx, 0.0)
-            diff_diag[:-1, :] += np.where(wx == 2, dxx, 0.0)
-            diff_diag[:, 1:] += np.where(wy == 1, dyy, 0.0)
-            diff_diag[:, :-1] += np.where(wy == 2, dyy, 0.0)
+            px, py = self.pkind_x[1:-1], self.pkind_y[:, 1:-1]
+            cx = np.where(px == PORT_OUTLET, -dxx, dxx)
+            cy = np.where(py == PORT_OUTLET, -dyy, dyy)
+            diff_diag[1:, :] += np.where(wx == 1, cx, 0.0)
+            diff_diag[:-1, :] += np.where(wx == 2, cx, 0.0)
+            diff_diag[:, 1:] += np.where(wy == 1, cy, 0.0)
+            diff_diag[:, :-1] += np.where(wy == 2, cy, 0.0)
         self.diff_diag = diff_diag
         self._dxx, self._dyy = dxx, dyy
 
@@ -254,6 +284,108 @@ class BrinkmanDiscretization:
             self.p_sink = np.where(self.c_sink > 0.0, self.cp_sink / self.c_sink, 0.0)
 
     # ------------------------------------------------------------------
+    # [刳り抜きポート] 円板セルの刳り抜きとリング面の種別
+    # ------------------------------------------------------------------
+    def _cell_centers(self) -> tuple[np.ndarray, np.ndarray]:
+        xc = (np.arange(self.nx) + 0.5) * self.dx
+        yc = (np.arange(self.ny) + 0.5) * self.dy
+        return np.meshgrid(xc, yc, indexing="ij")
+
+    def _mark_port_cells(self, patches: tuple[BoundaryPatch, ...]) -> None:
+        """マスクに当たったセルを未知数から外す（OpenFOAM の `subsetMesh` に相当）.
+
+        マスクは**セル中心**で評価する（`cylinderToCell` と同じ規則）。ポート同士の重なりと、
+        既に固体（h <= h_solid）のセルを含む指定は、リング面積が黙って変わるので例外にする。
+        """
+        self.port_patches = patches
+        self.port_cells = np.zeros((self.nx, self.ny), dtype=bool)
+        self._port_masks: list[tuple[BoundaryPatch, np.ndarray]] = []
+        self.has_port = bool(patches)
+        if not self.has_port:
+            return
+        X, Y = self._cell_centers()
+        for patch in patches:
+            m = np.asarray(patch.mask(X, Y), dtype=bool)
+            if not m.any():
+                raise ValueError(
+                    f"刳り抜きポート '{patch.name}' のマスクに一致するセルがありません"
+                    "（半径が格子幅より小さくないか確認）"
+                )
+            if (m & self.port_cells).any():
+                raise ValueError(f"刳り抜きポート '{patch.name}' が他のポートと重なっています")
+            if not self.active[m].all():
+                raise ValueError(
+                    f"刳り抜きポート '{patch.name}' が固体セル（h <= h_solid={self.h_solid:g}）"
+                    "を含みます: ポートは流路の内側に置いてください"
+                )
+            self.port_cells |= m
+            self._port_masks.append((patch, m))
+        self.active = self.active & ~self.port_cells
+
+    def _port_face_masks(
+        self, m: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """ポートセル集合 m に対する 4 種のリング面マスク（ポートが左/右/下/上にある面）."""
+        nx, ny, a = self.nx, self.ny, self.active
+        left = np.zeros((nx + 1, ny), dtype=bool)
+        right = np.zeros((nx + 1, ny), dtype=bool)
+        bot = np.zeros((nx, ny + 1), dtype=bool)
+        top = np.zeros((nx, ny + 1), dtype=bool)
+        left[1:-1] = m[:-1] & a[1:]  # ポートが左、流体が右（wall_x == 1）
+        right[1:-1] = m[1:] & a[:-1]  # ポートが右、流体が左（wall_x == 2）
+        bot[:, 1:-1] = m[:, :-1] & a[:, 1:]
+        top[:, 1:-1] = m[:, 1:] & a[:, :-1]
+        return left, right, bot, top
+
+    def _resolve_port_faces(self) -> None:
+        """リング面に種別 `pkind_*`・法線流入速度 `pun_*`・指定圧力 `pp_*` を貼る.
+
+        u_n = mass_flow / (ρ Σ_f h_f A_f) は 4 辺の MASS_FLOW_INLET と同じ式で、Σ は
+        **実際に生えたリング面**（OpenFOAM も露出面から決まる）。h_f は流体側セルの厚さ。
+        `pun_*` は面の +x / +y 方向を正とする符号つきの面速度で持つ。
+        """
+        nx, ny = self.nx, self.ny
+        self.pkind_x = np.zeros((nx + 1, ny), dtype=np.int8)
+        self.pkind_y = np.zeros((nx, ny + 1), dtype=np.int8)
+        self.pun_x = np.zeros((nx + 1, ny))
+        self.pun_y = np.zeros((nx, ny + 1))
+        self.pp_x = np.zeros((nx + 1, ny))
+        self.pp_y = np.zeros((nx, ny + 1))
+        if self.has_port:
+            h = self.thickness
+            for patch, m in self._port_masks:
+                left, right, bot, top = self._port_face_masks(m)
+                fxm, fym = left | right, bot | top
+                if not (fxm.any() or fym.any()):
+                    raise ValueError(
+                        f"刳り抜きポート '{patch.name}' に流体と接する面が 1 枚もありません"
+                    )
+                if patch.kind is BoundaryKind.PORT_MASS_FLOW_INLET:
+                    self.pkind_x[fxm] = PORT_INLET
+                    self.pkind_y[fym] = PORT_INLET
+                    hfx = np.zeros((nx + 1, ny))
+                    hfy = np.zeros((nx, ny + 1))
+                    hfx[1:-1] = np.where(m[:-1], h[1:], h[:-1])  # 流体側セルの厚さ
+                    hfy[:, 1:-1] = np.where(m[:, :-1], h[:, 1:], h[:, :-1])
+                    area_h = float(hfx[fxm].sum() * self.dy + hfy[fym].sum() * self.dx)
+                    un = patch.mass_flow / (self.rho * area_h)
+                    self.pun_x[left] = un  # ポートから流体へ向かう向きが正
+                    self.pun_x[right] = -un
+                    self.pun_y[bot] = un
+                    self.pun_y[top] = -un
+                else:
+                    self.pkind_x[fxm] = PORT_OUTLET
+                    self.pkind_y[fym] = PORT_OUTLET
+                    self.pp_x[fxm] = patch.pressure
+                    self.pp_y[fym] = patch.pressure
+        self.pkx_in = self.pkind_x[1:-1]  # (nx-1, ny) 内部 x 面
+        self.pky_in = self.pkind_y[:, 1:-1]  # (nx, ny-1)
+        self.has_port_face = bool((self.pkind_x != 0).any() or (self.pkind_y != 0).any())
+
+    def _n_port_faces(self, kind: int) -> int:
+        return int((self.pkind_x == kind).sum() + (self.pkind_y == kind).sum())
+
+    # ------------------------------------------------------------------
     # [壁セル] 固体セルの確定と面マスク
     # ------------------------------------------------------------------
     def _resolve_solid(self) -> None:
@@ -313,6 +445,16 @@ class BrinkmanDiscretization:
             has_in[labels[ii[sd.is_inlet], jj[sd.is_inlet]]] = True
         has_ref[labels[self.c_sink > 0.0]] = True
         has_in[labels[(self.q_src > 0.0) | (self.q_sink > 0.0)]] = True
+        # [刳り抜きポート] リング面に接する流体セルは流入 / 圧力基準を持つ
+        for patch, m in getattr(self, "_port_masks", []):
+            left, right, bot, top = self._port_face_masks(m)
+            touch = np.zeros_like(self.active)
+            touch[1:] |= left[1:-1]
+            touch[:-1] |= right[1:-1]
+            touch[:, 1:] |= bot[:, 1:-1]
+            touch[:, :-1] |= top[:, 1:-1]
+            flag = has_in if patch.kind is BoundaryKind.PORT_MASS_FLOW_INLET else has_ref
+            flag[labels[touch & self.active]] = True
         has_ref[0] = has_in[0] = True  # 背景ラベル
         orphan_in = np.flatnonzero(has_in & ~has_ref)
         if orphan_in.size:
@@ -442,8 +584,17 @@ class BrinkmanDiscretization:
         fyo, cso, cno = fy_int[ky], cs[ky], cn[ky]
         wx_f = self.wx_in.ravel() if self.has_solid else np.zeros(fx_int.size, dtype=np.int8)
         wy_f = self.wy_in.ravel() if self.has_solid else np.zeros(fy_int.size, dtype=np.int8)
-        wx1, wx2 = wx_f == 1, wx_f == 2  # 1: 右セルが流体 / 2: 左セルが流体
-        wy1, wy2 = wy_f == 1, wy_f == 2
+        # 向き（1: 右/上セルが流体 / 2: 左/下セルが流体）× 種別（0: 壁 / 1: inlet / 2: outlet）
+        pkx_f, pky_f = self.pkx_in.ravel(), self.pky_in.ravel()
+        wx1, wx2 = (wx_f == 1) & (pkx_f == 0), (wx_f == 2) & (pkx_f == 0)  # 壁面
+        wy1, wy2 = (wy_f == 1) & (pky_f == 0), (wy_f == 2) & (pky_f == 0)
+        ix1, ix2 = (wx_f == 1) & (pkx_f == PORT_INLET), (wx_f == 2) & (pkx_f == PORT_INLET)
+        iy1, iy2 = (wy_f == 1) & (pky_f == PORT_INLET), (wy_f == 2) & (pky_f == PORT_INLET)
+        ox1, ox2 = (wx_f == 1) & (pkx_f == PORT_OUTLET), (wx_f == 2) & (pkx_f == PORT_OUTLET)
+        oy1, oy2 = (wy_f == 1) & (pky_f == PORT_OUTLET), (wy_f == 2) & (pky_f == PORT_OUTLET)
+        # 速度 Dirichlet の面（壁 = 面値 0、inlet = 面値 u_n）と、圧力ゼロ勾配の面は同じ集合
+        velx1, velx2 = wx1 | ix1, wx2 | ix2
+        vely1, vely2 = wy1 | iy1, wy2 | iy2
 
         # 面平均（両側が流体の内部面のみ）
         self.Ax = mat(
@@ -470,6 +621,20 @@ class BrinkmanDiscretization:
             mat(f[m], c[m], np.ones(int(m.sum())), (nfy, n))
             for f, c, m in ((fy_bot, c_bot, S.is_outlet), (fy_top, c_top, N.is_outlet))
         )
+        if self.has_port_face:
+            # [刳り抜きポート] outlet 面の速度は流体側セル値（ゼロ勾配）
+            self.Ux = self.Ux + mat(
+                np.r_[fx_int[ox1], fx_int[ox2]],
+                np.r_[cr[ox1], cl[ox2]],
+                np.ones(int(ox1.sum() + ox2.sum())),
+                (nfx, n),
+            )
+            self.Uy = self.Uy + mat(
+                np.r_[fy_int[oy1], fy_int[oy2]],
+                np.r_[cn[oy1], cs[oy2]],
+                np.ones(int(oy1.sum() + oy2.sum())),
+                (nfy, n),
+            )
 
         # 圧力の面補間: 内部 0.5/0.5、壁/inlet はセル値（ゼロ勾配）、outlet は定数（行列は 0）
         self.Px = self.Ax + sum(
@@ -481,17 +646,17 @@ class BrinkmanDiscretization:
             for f, c, m in ((fy_bot, c_bot, S.is_dirichlet), (fy_top, c_top, N.is_dirichlet))
         )
         if self.has_solid:
-            # [壁セル] 内部壁面の圧力はゼロ勾配 = 流体側セル値
+            # [壁セル] 内部壁面の圧力はゼロ勾配 = 流体側セル値（[刳り抜きポート] inlet 面も同じ）
             self.Px = self.Px + mat(
-                np.r_[fx_int[wx1], fx_int[wx2]],
-                np.r_[cr[wx1], cl[wx2]],
-                np.ones(int(wx1.sum() + wx2.sum())),
+                np.r_[fx_int[velx1], fx_int[velx2]],
+                np.r_[cr[velx1], cl[velx2]],
+                np.ones(int(velx1.sum() + velx2.sum())),
                 (nfx, n),
             )
             self.Py = self.Py + mat(
-                np.r_[fy_int[wy1], fy_int[wy2]],
-                np.r_[cn[wy1], cs[wy2]],
-                np.ones(int(wy1.sum() + wy2.sum())),
+                np.r_[fy_int[vely1], fy_int[vely2]],
+                np.r_[cn[vely1], cs[vely2]],
+                np.ones(int(vely1.sum() + vely2.sum())),
                 (nfy, n),
             )
 
@@ -543,21 +708,23 @@ class BrinkmanDiscretization:
 
         if self.has_solid:
             # [壁セル] 内部壁面の速度勾配（+x 方向）: 流体が右なら (φ_R − 0)/(dx/2)、左なら (0 − φ_L)/(dx/2)
+            # [刳り抜きポート] inlet 面も速度 Dirichlet で同じ形（面値は残差側の定数項に入る）、
+            # outlet 面はゼロ勾配なので何も足さない
             self.Fgx_vel = self.Fgx_vel + mat(
-                np.r_[fx_int[wx1], fx_int[wx2]],
-                np.r_[cr[wx1], cl[wx2]],
+                np.r_[fx_int[velx1], fx_int[velx2]],
+                np.r_[cr[velx1], cl[velx2]],
                 np.r_[
-                    np.full(int(wx1.sum()), 2.0 / self.dx),
-                    np.full(int(wx2.sum()), -2.0 / self.dx),
+                    np.full(int(velx1.sum()), 2.0 / self.dx),
+                    np.full(int(velx2.sum()), -2.0 / self.dx),
                 ],
                 (nfx, n),
             )
             self.Fgy_vel = self.Fgy_vel + mat(
-                np.r_[fy_int[wy1], fy_int[wy2]],
-                np.r_[cn[wy1], cs[wy2]],
+                np.r_[fy_int[vely1], fy_int[vely2]],
+                np.r_[cn[vely1], cs[vely2]],
                 np.r_[
-                    np.full(int(wy1.sum()), 2.0 / self.dy),
-                    np.full(int(wy2.sum()), -2.0 / self.dy),
+                    np.full(int(vely1.sum()), 2.0 / self.dy),
+                    np.full(int(vely2.sum()), -2.0 / self.dy),
                 ],
                 (nfy, n),
             )
@@ -613,20 +780,24 @@ class BrinkmanDiscretization:
         pfy[:, -1] = np.where(N.is_outlet, N.p, p[:, -1])
         if self.has_solid:
             # [壁セル] 内部壁面: 速度 0（no-slip）、圧力は流体側セル値（ゼロ勾配）
+            # [刳り抜きポート] inlet 面: 速度は法線方向 u_n・圧力は流体側セル値
+            #                  outlet 面: 速度は流体側セル値（ゼロ勾配）・圧力は指定値
             wx, wy = self.wx_in, self.wy_in
             mx, my = ~self.wx_open, ~self.wy_open
-            ufx[1:-1][mx] = 0.0
-            vfx[1:-1][mx] = 0.0
-            ufy[:, 1:-1][my] = 0.0
-            vfy[:, 1:-1][my] = 0.0
-            pfx[1:-1] = np.where(
-                mx, np.where(wx == 1, p[1:], np.where(wx == 2, p[:-1], 0.0)), pfx[1:-1]
-            )
-            pfy[:, 1:-1] = np.where(
-                my,
-                np.where(wy == 1, p[:, 1:], np.where(wy == 2, p[:, :-1], 0.0)),
-                pfy[:, 1:-1],
-            )
+            pkx, pky = self.pkx_in, self.pky_in
+            fl_x = lambda phi: np.where(wx == 1, phi[1:], phi[:-1])  # noqa: E731 流体側セル値
+            fl_y = lambda phi: np.where(wy == 1, phi[:, 1:], phi[:, :-1])  # noqa: E731
+            u_face_x = np.where(pkx == PORT_INLET, self.pun_x[1:-1], 0.0)
+            v_face_y = np.where(pky == PORT_INLET, self.pun_y[:, 1:-1], 0.0)
+            out_x, out_y = pkx == PORT_OUTLET, pky == PORT_OUTLET
+            ufx[1:-1] = np.where(mx, np.where(out_x, fl_x(u), u_face_x), ufx[1:-1])
+            vfx[1:-1] = np.where(mx, np.where(out_x, fl_x(v), 0.0), vfx[1:-1])
+            ufy[:, 1:-1] = np.where(my, np.where(out_y, fl_y(u), 0.0), ufy[:, 1:-1])
+            vfy[:, 1:-1] = np.where(my, np.where(out_y, fl_y(v), v_face_y), vfy[:, 1:-1])
+            p_wall_x = np.where(wx == 1, p[1:], np.where(wx == 2, p[:-1], 0.0))
+            p_wall_y = np.where(wy == 1, p[:, 1:], np.where(wy == 2, p[:, :-1], 0.0))
+            pfx[1:-1] = np.where(mx, np.where(out_x, self.pp_x[1:-1], p_wall_x), pfx[1:-1])
+            pfy[:, 1:-1] = np.where(my, np.where(out_y, self.pp_y[:, 1:-1], p_wall_y), pfy[:, 1:-1])
         return ufx, vfx, ufy, vfy, pfx, pfy
 
     def drag_factor(self, u: np.ndarray, v: np.ndarray) -> np.ndarray:
@@ -749,7 +920,7 @@ class BrinkmanDiscretization:
         if scheme is ConvectionSchemeType.FIRST_ORDER_UPWIND:
             cfx[1:-1] = np.where(up_x, phi[:-1], phi[1:])
             cfy[:, 1:-1] = np.where(up_y, phi[:, :-1], phi[:, 1:])
-            return cfx, cfy
+            return self._apply_port_convected(cfx, cfy, phifx, phify)
 
         gx = (phifx[1:] - phifx[:-1]) / self.dx
         gy = (phify[:, 1:] - phify[:, :-1]) / self.dy
@@ -762,6 +933,20 @@ class BrinkmanDiscretization:
         ey = 0.5 * self.dy * psi * gy
         cfx[1:-1] = np.where(up_x, phi[:-1] + ex[:-1], phi[1:] - ex[1:])
         cfy[:, 1:-1] = np.where(up_y, phi[:, :-1] + ey[:, :-1], phi[:, 1:] - ey[:, 1:])
+        return self._apply_port_convected(cfx, cfy, phifx, phify)
+
+    def _apply_port_convected(
+        self, cfx: np.ndarray, cfy: np.ndarray, phifx: np.ndarray, phify: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """[刳り抜きポート] リング面の対流面値は面値そのもの（4 辺の境界面と同じ扱い）.
+
+        inlet 面は指定した法線速度、outlet 面は流体側セル値（ゼロ勾配）が `phifx` / `phify` に
+        入っている。壁面は流束が 0 なので触らなくてよい。
+        """
+        if not self.has_port_face:
+            return cfx, cfy
+        cfx[1:-1] = np.where(self.pkx_in != 0, phifx[1:-1], cfx[1:-1])
+        cfy[:, 1:-1] = np.where(self.pky_in != 0, phify[:, 1:-1], cfy[:, 1:-1])
         return cfx, cfy
 
     def _venkatakrishnan(
@@ -779,13 +964,16 @@ class BrinkmanDiscretization:
         # [壁セル] 固体側の隣は壁面値 0 を見る（4 辺の境界で境界面値を見るのと同じ扱い）
         ox = self.wx_open if self.has_solid else True
         oy = self.wy_open if self.has_solid else True
-        nb[0, :-1] = np.where(ox, phi[1:], 0.0)
+        # [刳り抜きポート] ポート面の隣はその面値（4 辺で境界面値を見るのと同じ扱い）
+        cx = np.where(self.pkx_in != 0, phifx[1:-1], 0.0) if self.has_port_face else 0.0
+        cy = np.where(self.pky_in != 0, phify[:, 1:-1], 0.0) if self.has_port_face else 0.0
+        nb[0, :-1] = np.where(ox, phi[1:], cx)
         nb[0, -1] = phifx[-1]
-        nb[1, 1:] = np.where(ox, phi[:-1], 0.0)
+        nb[1, 1:] = np.where(ox, phi[:-1], cx)
         nb[1, 0] = phifx[0]
-        nb[2, :, :-1] = np.where(oy, phi[:, 1:], 0.0)
+        nb[2, :, :-1] = np.where(oy, phi[:, 1:], cy)
         nb[2, :, -1] = phify[:, -1]
-        nb[3, :, 1:] = np.where(oy, phi[:, :-1], 0.0)
+        nb[3, :, 1:] = np.where(oy, phi[:, :-1], cy)
         nb[3, :, 0] = phify[:, 0]
         d_max = np.maximum(nb.max(axis=0) - phi, 0.0)
         d_min = np.minimum(nb.min(axis=0) - phi, 0.0)
@@ -832,7 +1020,13 @@ class BrinkmanDiscretization:
         W, E, S, N = self.sides["W"], self.sides["E"], self.sides["S"], self.sides["N"]
 
         def diffusion(
-            phi: np.ndarray, bw: np.ndarray, be: np.ndarray, bs: np.ndarray, bn: np.ndarray
+            phi: np.ndarray,
+            bw: np.ndarray,
+            be: np.ndarray,
+            bs: np.ndarray,
+            bn: np.ndarray,
+            bx: np.ndarray | float = 0.0,
+            by: np.ndarray | float = 0.0,
         ) -> np.ndarray:
             # 面勾配（+x, +y 方向）。Dirichlet 面は (境界値 - セル値)/(d/2)、outlet 面は 0
             gxf = np.empty((self.nx + 1, self.ny))
@@ -845,33 +1039,36 @@ class BrinkmanDiscretization:
             gyf[:, -1] = np.where(N.is_dirichlet, (bn - phi[:, -1]) / (0.5 * dy), 0.0)
             if self.has_solid:
                 # [壁セル] 内部壁面は φ_f = 0 を距離 d/2 に置いた片側差分
+                # [刳り抜きポート] inlet 面は同じ形で φ_f = 指定面値、outlet 面は勾配 0
                 wx, wy = self.wx_in, self.wy_in
-                gxf[1:-1] = np.where(
-                    wx == 0,
-                    gxf[1:-1],
-                    np.where(wx == 1, phi[1:] / (0.5 * dx), 0.0)
-                    + np.where(wx == 2, -phi[:-1] / (0.5 * dx), 0.0),
+                gx_one = np.where(wx == 1, (phi[1:] - bx) / (0.5 * dx), 0.0) + np.where(
+                    wx == 2, (bx - phi[:-1]) / (0.5 * dx), 0.0
                 )
-                gyf[:, 1:-1] = np.where(
-                    wy == 0,
-                    gyf[:, 1:-1],
-                    np.where(wy == 1, phi[:, 1:] / (0.5 * dy), 0.0)
-                    + np.where(wy == 2, -phi[:, :-1] / (0.5 * dy), 0.0),
+                gy_one = np.where(wy == 1, (phi[:, 1:] - by) / (0.5 * dy), 0.0) + np.where(
+                    wy == 2, (by - phi[:, :-1]) / (0.5 * dy), 0.0
                 )
+                if self.has_port_face:
+                    gx_one = np.where(self.pkx_in == PORT_OUTLET, 0.0, gx_one)
+                    gy_one = np.where(self.pky_in == PORT_OUTLET, 0.0, gy_one)
+                gxf[1:-1] = np.where(wx == 0, gxf[1:-1], gx_one)
+                gyf[:, 1:-1] = np.where(wy == 0, gyf[:, 1:-1], gy_one)
             return mu * div(dy * gxf, dx * gyf)  # 流入側が正
 
         # 領域内マニホールド: 連続式に -q_in + q_out、吸出は局所運動量 q_out u_i を持ち出す
         q_in, q_out = self.interior_fluxes(p)
+        # [刳り抜きポート] inlet 面での成分ごとの面値（x 面では v=0、y 面では u=0）
+        bux = self.pun_x[1:-1] if self.has_port_face else 0.0
+        bvy = self.pun_y[:, 1:-1] if self.has_port_face else 0.0
         r_u = (
             cs * div(st.fx * st.conv_ufx, st.fy * st.conv_ufy)
-            - diffusion(u, self.u_w, self.u_e, self.u_s, self.u_n)
+            - diffusion(u, self.u_w, self.u_e, self.u_s, self.u_n, bux, 0.0)
             + (st.pfx[1:] - st.pfx[:-1]) * dy
             + self.drag * vol * st.drag_fac * u
             + q_out * u
         )
         r_v = (
             cs * div(st.fx * st.conv_vfx, st.fy * st.conv_vfy)
-            - diffusion(v, self.v_w, self.v_e, self.v_s, self.v_n)
+            - diffusion(v, self.v_w, self.v_e, self.v_s, self.v_n, 0.0, bvy)
             + (st.pfy[:, 1:] - st.pfy[:, :-1]) * dx
             + self.drag * vol * st.drag_fac * v
             + q_out * v
@@ -952,6 +1149,12 @@ class BrinkmanDiscretization:
             self.friction_blend,
             self.wall_x,
             self.wall_y,
+            self.pkind_x,
+            self.pkind_y,
+            self.pun_x,
+            self.pun_y,
+            self.pp_x,
+            self.pp_y,
         )
         if self.has_solid:
             r_u = r_u * self.active_f
@@ -979,10 +1182,16 @@ class BrinkmanDiscretization:
 
         fx = st.fx.ravel()
         fy = st.fy.ravel()
-        # 風上セレクタ
+        # 風上セレクタ（[刳り抜きポート] inlet 面は定数なので列を持たず、outlet 面は流体側セル）
         up_x = fx[self.fx_int] >= 0.0
+        sel_x = np.where(up_x, self.fx_cl, self.fx_cr)
+        keep_x = np.ones(sel_x.size, dtype=bool)
+        if self.has_port_face:
+            pkx, wxr = self.pkx_in.ravel(), self.wx_in.ravel()
+            sel_x = np.where(pkx == PORT_OUTLET, np.where(wxr == 1, self.fx_cr, self.fx_cl), sel_x)
+            keep_x = pkx != PORT_INLET
         Wx = sparse.csr_matrix(
-            (np.ones(len(self.fx_int)), (self.fx_int, np.where(up_x, self.fx_cl, self.fx_cr))),
+            (np.ones(int(keep_x.sum())), (self.fx_int[keep_x], sel_x[keep_x])),
             shape=(nfx, n),
         )
         # outlet 面: φ_f = φ_P（ゼロ勾配）
@@ -1000,8 +1209,14 @@ class BrinkmanDiscretization:
         ):
             Wx = Wx + sparse.csr_matrix((np.ones(len(faces)), (faces, cellids)), shape=(nfx, n))
         up_y = fy[self.fy_int] >= 0.0
+        sel_y = np.where(up_y, self.fy_cs, self.fy_cn)
+        keep_y = np.ones(sel_y.size, dtype=bool)
+        if self.has_port_face:
+            pky, wyr = self.pky_in.ravel(), self.wy_in.ravel()
+            sel_y = np.where(pky == PORT_OUTLET, np.where(wyr == 1, self.fy_cn, self.fy_cs), sel_y)
+            keep_y = pky != PORT_INLET
         Wy = sparse.csr_matrix(
-            (np.ones(len(self.fy_int)), (self.fy_int, np.where(up_y, self.fy_cs, self.fy_cn))),
+            (np.ones(int(keep_y.sum())), (self.fy_int[keep_y], sel_y[keep_y])),
             shape=(nfy, n),
         )
         for faces, cellids in (
@@ -1096,6 +1311,14 @@ class BrinkmanDiscretization:
         }
         m_in = sum(float(inward[k][sd.is_inlet].sum()) for k, sd in self.sides.items())
         m_out = sum(float(-inward[k][sd.is_outlet].sum()) for k, sd in self.sides.items())
+        if self.has_port_face:
+            # [刳り抜きポート] 流体へ向かう向きを正にする（流体が右/上なら +、左/下なら −）
+            inw_x = np.where(self.wall_x == 1, 1.0, -1.0) * st.fx
+            inw_y = np.where(self.wall_y == 1, 1.0, -1.0) * st.fy
+            m_in += float(inw_x[self.pkind_x == PORT_INLET].sum())
+            m_in += float(inw_y[self.pkind_y == PORT_INLET].sum())
+            m_out -= float(inw_x[self.pkind_x == PORT_OUTLET].sum())
+            m_out -= float(inw_y[self.pkind_y == PORT_OUTLET].sum())
         if self.interior_mask.any():
             p = np.zeros((self.nx, self.ny)) if x is None else self.split(x)[2]
             q_in, q_out = self.interior_fluxes(p)
