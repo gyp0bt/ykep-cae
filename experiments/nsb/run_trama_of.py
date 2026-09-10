@@ -74,6 +74,11 @@ def main() -> None:
         help="中心線の作り方（nsb 側の trama_case.py --variant と揃える）",
     )
     ap.add_argument("--dx", type=float, default=1.5)
+    ap.add_argument("--lx", type=float, default=600.0, help="領域の横 [mm]（nsb 側と揃える）")
+    ap.add_argument("--ly", type=float, default=350.0, help="領域の縦 [mm]（nsb 側と揃える）")
+    ap.add_argument(
+        "--scale", type=float, default=None, help="パターン単位 → mm の倍率（nsb 側と揃える）"
+    )
     ap.add_argument("--mass", type=float, default=0.15)
     ap.add_argument("--end-time", type=int, default=5000)
     ap.add_argument("--write-interval", type=int, default=500)
@@ -94,6 +99,14 @@ def main() -> None:
     ap.add_argument("--end-time-s", type=float, default=4.0)
     ap.add_argument("--write-interval-s", type=float, default=0.05)
     ap.add_argument("--max-co", type=float, default=5.0)
+    ap.add_argument(
+        "--n-outer",
+        type=int,
+        default=3,
+        help="PIMPLE の外側補正回数。既定 3 では residualControl 1e-4 に届かず"
+        "ステップあたり初期残差 1e-3 台が残る（＝ 擾乱の種になる）",
+    )
+    ap.add_argument("--n-corr", type=int, default=2, help="PIMPLE の圧力補正回数")
     ap.add_argument("--avg-start", type=float, default=2.0)
     ap.add_argument("--init-from", default=None, help="この ケースの最新時刻を初期場にする")
     ap.add_argument("--mesh-only", action="store_true")
@@ -105,7 +118,7 @@ def main() -> None:
     os.environ["OF_MEM"] = a.of_mem
     os.environ["OF_CPUS"] = a.of_cpus
     case = Path(a.out)
-    geo = load_trama(a.pattern, variant=a.geo_variant)
+    geo = load_trama(a.pattern, lx_mm=a.lx, ly_mm=a.ly, scale_mm=a.scale, variant=a.geo_variant)
     spec = write_case(
         case,
         geo,
@@ -127,6 +140,8 @@ def main() -> None:
         write_interval_s=a.write_interval_s,
         max_co=a.max_co,
         avg_start=a.avg_start,
+        n_outer=a.n_outer,
+        n_corr=a.n_corr,
     )
     _log(f"[of] case {case} variant={spec.variant} {spec.nx}x{spec.ny} dx={spec.dx * 1e3:.3g} mm")
     _log(

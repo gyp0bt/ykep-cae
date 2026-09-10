@@ -423,6 +423,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--cfl-init", type=float, default=None)
     ap.add_argument("--max-iter", type=int, default=80)
     ap.add_argument("--convection", default="sou")
+    ap.add_argument(
+        "--venkat-k", type=float, default=5.0, help="Venkatakrishnan 定数 K（大きいほど緩い）"
+    )
+    ap.add_argument(
+        "--rc-dt",
+        action="store_true",
+        help="[非定常] Rhie–Chow 係数に時間微分の対角を入れる d_f = V/(a_P + ρV/Δt)"
+        "（OpenFOAM の 1/A と同じ形）",
+    )
     ap.add_argument("--linear-solver", default="jfnk_simple")
     ap.add_argument("--jacobian", default="fou", choices=["fou", "fd"])
     ap.add_argument("--h-blocked", type=float, default=1.0e-5)
@@ -448,6 +457,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--port", default="interior", choices=["interior", "carve", "wall"])
     ap.add_argument("--variant", default="orig", choices=["orig", "ortho", "lead"])
+    ap.add_argument("--lx", type=float, default=600.0, help="領域の横 [mm]")
+    ap.add_argument("--ly", type=float, default=350.0, help="領域の縦 [mm]")
+    ap.add_argument(
+        "--scale",
+        type=float,
+        default=None,
+        help="パターン単位 → mm の倍率。既定 None は領域に収まるよう自動。縮小ジオメトリで"
+        "流路幅と格子を本番と揃えたいときに明示する（trama は 4.928149）",
+    )
     ap.add_argument(
         "--straight", type=float, default=None, help="直線流路の角度 [deg]（パターンの代わり）"
     )
@@ -486,7 +504,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
 
     geo = (
-        load_trama(a.pattern, variant=a.variant)
+        load_trama(a.pattern, lx_mm=a.lx, ly_mm=a.ly, scale_mm=a.scale, variant=a.variant)
         if a.straight is None
         else make_straight_geometry(a.straight)
     )
@@ -498,6 +516,8 @@ def main(argv: list[str] | None = None) -> int:
         "pseudo_compressibility": a.beta,
         "pseudo_time_in_residual": not a.steady_ser,
         "line_search_halvings": a.ls,
+        "venkat_k": a.venkat_k,
+        "rc_with_pseudo_time": a.rc_dt,
         "limiter_freeze_rel": a.freeze,
         "limiter_refreeze_max": a.refreeze,
     }
