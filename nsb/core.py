@@ -225,7 +225,9 @@ class NSBSettings:
     sub_iters : int
         1 擬似時間ステップあたりの Newton 反復数（u_prev を凍結）。1 で通常の擬似時間 Newton
     rc_with_pseudo_time : bool
-        Rhie–Chow 係数を d_f = V/(a_P + ρV/Δτ) にする
+        Rhie–Chow 係数を d_f = V/(a_P + ρV/Δτ) にする。非定常計算（`nsb.unsteady`）では
+        Δτ が物理時間刻み Δt になる（OpenFOAM の 1/A が ddt 項を含むのと同じ形）。
+        False（既定）だと低速域で a_P ≪ ρV/Δt となり d_f が過大になる
     alpha_u : float
         陰的緩和（運動量対角を a_P/α_u）。1.0（既定）で無し。速度下限ありなら緩和なしが最速
     newton_tol, newton_max_iter : float, int

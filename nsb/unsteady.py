@@ -133,12 +133,15 @@ def solve_unsteady(  # noqa: PLR0913
 
     tau_diag = (inp.rho * disc.vol / dt) * np.ones(n)  # ρV/Δt（大域・一定）
     x_prev = np.zeros(3 * n)
+    # [RC] 時間微分の対角 ρV/Δt を Rhie–Chow 係数 d_f = V/(a_P + ρV/Δt) に含めるか。
+    # 含めないと低速域（a_P ≪ ρV/Δt）で d_f が過大になり、圧力平滑化が Δt に依らず効き続ける
+    rc_diag: np.ndarray | None = tau_diag.reshape(shape) if s.rc_with_pseudo_time else None
 
     def state(xx: np.ndarray) -> StateArrays:
-        return disc.compute_state(xx, s.scheme, s.venkat_k)
+        return disc.compute_state(xx, s.scheme, s.venkat_k, rc_diag, psi=None)
 
     def steady_resid(xx: np.ndarray) -> np.ndarray:
-        return disc.residual_fast(xx, s.scheme, s.venkat_k)
+        return disc.residual_fast(xx, s.scheme, s.venkat_k, rc_diag, psi=None)
 
     def resid(xx: np.ndarray) -> np.ndarray:
         r = steady_resid(xx).copy()
@@ -199,6 +202,8 @@ def solve_unsteady(  # noqa: PLR0913
     while step < n_steps:
         # ---- 1 ステップ（Δt_cur）。線形解が壊れたら Δt を半分にして同じ場からやり直す ----
         tau_diag = (inp.rho * disc.vol / dt_cur) * np.ones(n)
+        if rc_diag is not None:
+            rc_diag = tau_diag.reshape(shape)
         pc.cfl = dt_cur / dt  # Δt が 2 倍変わったら前処理を組み直す（precond_cfl_ratio）
         x_prev = x.copy()
         r_tau0 = float(np.linalg.norm(resid(x)))  # = 定常残差（x = x_prev）
