@@ -47,6 +47,13 @@ class UnsteadyResult:
         プローブ時系列（speed_max, kinetic_energy, p_range, mass_out）
     snapshots : tuple[tuple[float, np.ndarray, np.ndarray, np.ndarray], ...]
         (t, u, v, p) のスナップショット
+    mean_u, mean_v, mean_p : np.ndarray | None
+        `avg_start` 以降の Δt 重み時間平均場（avg_start < 0 なら None）。OpenFOAM の
+        `fieldAverage`（UMean / pMean）と同じ量
+    rms_u, rms_v : np.ndarray | None
+        同区間の変動 RMS √(⟨u²⟩ − ⟨u⟩²)（OpenFOAM の UPrime2Mean の対角成分の平方根）
+    avg_window : tuple[float, float]
+        時間平均の区間 (t_start, t_end) [s]
     reached_steady : bool
         定常残差が settings.newton_tol を下回った
     n_steps_hit_max_newton : int
@@ -72,6 +79,12 @@ class UnsteadyResult:
     extra: dict[str, float] = field(default_factory=dict)
     dt_history: tuple[float, ...] = ()
     n_dt_backoffs: int = 0
+    mean_u: np.ndarray | None = None
+    mean_v: np.ndarray | None = None
+    mean_p: np.ndarray | None = None
+    rms_u: np.ndarray | None = None
+    rms_v: np.ndarray | None = None
+    avg_window: tuple[float, float] = (0.0, 0.0)
 
 
 def solve_unsteady(  # noqa: PLR0913
@@ -85,6 +98,7 @@ def solve_unsteady(  # noqa: PLR0913
     save_every: int = 0,
     stop_at_steady: bool = True,
     dt_backoff_max: int = 6,
+    avg_start: float = -1.0,
 ) -> UnsteadyResult:
     """後退 Euler の陰的非定常計算.
 
@@ -103,6 +117,9 @@ def solve_unsteady(  # noqa: PLR0913
         場のスナップショット間隔（0 で最終場のみ）
     stop_at_steady : bool
         定常残差 |R|/|R_ref| < settings.newton_tol になったら打ち切る
+    avg_start : float
+        この時刻 [s] 以降の場を Δt 重みで時間平均する（負なら平均しない）。定常解が無い流れの
+        「答え」は瞬間場ではなく時間平均なので、OpenFOAM の `fieldAverage` と同じものを作る
     dt_backoff_max : int
         線形解が壊れた（真の残差比 > reject_lin_ratio）・ステップ内残差が 10 倍に増えた・NaN のとき、
         同じ場から Δt を半分にしてやり直す回数の上限（2^-6 まで）。成功したステップの後は 2 倍ずつ戻す
@@ -135,13 +152,18 @@ def solve_unsteady(  # noqa: PLR0913
         u = np.zeros(shape) if inp.u0 is None else inp.u0.astype(float)
         v = np.zeros(shape) if inp.v0 is None else inp.v0.astype(float)
         p = np.zeros(shape) if inp.p0 is None else inp.p0.astype(float)
-        x = np.concatenate([u.ravel(), v.ravel(), p.ravel()])
+        x = disc.mask_state(np.concatenate([u.ravel(), v.ravel(), p.ravel()]))
         init_how = "u0/v0/p0"
     else:
         x = x_stokes.copy()
         init_how = "stokes"
     r0 = r_ref
     r_steady = float(np.linalg.norm(steady_resid(x)))
+    if disc.has_solid:
+        emit(
+            f"[nsb-t] solid cells: {disc.n - disc.n_active}/{disc.n} (h <= {disc.h_solid:g} m); "
+            f"unknowns {3 * disc.n_active}/{3 * disc.n}"
+        )
     emit(
         f"[nsb-t] stokes ref ({how}): |R_stokes(0)|={r_init_norm:.4e} |R_ref|={r_ref:.4e}; "
         f"init={init_how} |R|/|R_ref|={r_steady / r0:.3e} dt={dt:g} s n_steps={n_steps} "
@@ -161,6 +183,10 @@ def solve_unsteady(  # noqa: PLR0913
         "mass_out": [],
     }
     snapshots: list[tuple[float, np.ndarray, np.ndarray, np.ndarray]] = []
+    # 時間平均（Δt 重み。Δt はバックオフで変わるので単純平均では偏る）
+    acc = np.zeros((5, *shape)) if avg_start >= 0.0 else None  # ⟨u⟩,⟨v⟩,⟨p⟩,⟨u²⟩,⟨v²⟩ の重み付き和
+    acc_w = 0.0
+    acc_t0 = float("nan")
     reached = False
     n_hit_max = 0
     failure = ""
@@ -260,6 +286,11 @@ def solve_unsteady(  # noqa: PLR0913
         probes["kinetic_energy"].append(float(0.5 * inp.rho * ((uu**2 + vv**2) * disc.vol).sum()))
         probes["p_range"].append(float(np.ptp(pp)))
         probes["mass_out"].append(float(m_out))
+        if acc is not None and t >= avg_start:
+            if acc_w == 0.0:
+                acc_t0 = t - dt_cur
+            acc += dt_cur * np.stack([uu, vv, pp, uu**2, vv**2])
+            acc_w += dt_cur
         if save_every > 0 and step % save_every == 0:
             snapshots.append((t, uu.copy(), vv.copy(), pp.copy()))
         emit(
@@ -280,6 +311,19 @@ def solve_unsteady(  # noqa: PLR0913
     uu, vv, pp = disc.split(x)
     if not snapshots or snapshots[-1][0] != t:
         snapshots.append((t, uu.copy(), vv.copy(), pp.copy()))
+    mean_u = mean_v = mean_p = rms_u = rms_v = None
+    avg_window = (0.0, 0.0)
+    if acc is not None and acc_w > 0.0:
+        m = acc / acc_w
+        mean_u, mean_v, mean_p = m[0], m[1], m[2]
+        rms_u = np.sqrt(np.maximum(m[3] - mean_u**2, 0.0))
+        rms_v = np.sqrt(np.maximum(m[4] - mean_v**2, 0.0))
+        avg_window = (float(acc_t0), float(t))
+        emit(
+            f"[nsb-t] time average over t=[{acc_t0:.4f}, {t:.4f}] s (weight {acc_w:.4f} s): "
+            f"mean speed max={np.hypot(mean_u, mean_v).max():.3g} "
+            f"rms max={np.hypot(rms_u, rms_v).max():.3g} m/s"
+        )
     elapsed = time.perf_counter() - t0
     emit(
         f"[nsb-t] done reached_steady={reached} reason='{failure}' steps={len(times)} t={t:.4f} "
@@ -306,4 +350,10 @@ def solve_unsteady(  # noqa: PLR0913
         failure_reason=failure,
         dt_history=tuple(dt_hist),
         n_dt_backoffs=n_backoff,
+        mean_u=mean_u,
+        mean_v=mean_v,
+        mean_p=mean_p,
+        rms_u=rms_u,
+        rms_v=rms_v,
+        avg_window=avg_window,
     )

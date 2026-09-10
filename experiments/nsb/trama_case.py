@@ -173,6 +173,7 @@ def make_trama_input(
     sink_smooth_cells: float = 0.0,
     port_radius_factor: float = 1.0,
     friction_re_crit: float = 0.0,
+    h_solid: float = 0.0,
 ) -> NSBInput:
     """蛇行流路 NSBInput.
 
@@ -221,6 +222,7 @@ def make_trama_input(
         ly=geo.ly,
         h=h,
         bc=bc,
+        h_solid=h_solid,
         rho=rho,
         mu=mu,
         mu_b=mu,
@@ -255,6 +257,7 @@ def make_tag(a: argparse.Namespace) -> str:
     return a.tag or (
         f"{geo_tag}-{a.port}-m{a.mass:g}-dx{a.dx:g}-{a.convection}-{a.linear_solver}-{a.jacobian}"
         + (f"-hb{a.h_blocked:g}" if a.h_blocked != 1.0e-5 else "")
+        + (f"-hs{a.h_solid:g}" if a.h_solid > 0 else "")
         + (f"-beta{a.beta:g}" if a.beta > 0 else "")
         + (f"-cfl{a.cfl_init:g}" if a.cfl_init is not None else "")
         + ("-sser" if a.steady_ser else "")
@@ -294,6 +297,8 @@ def run_unsteady(
         newton_max=a.newton_per_step,
         step_tol=a.step_tol,
         save_every=a.save_every,
+        avg_start=a.avg_start,
+        stop_at_steady=not a.no_stop_at_steady,
     )
     tag = make_tag(a)
     out: dict[str, Any] = {
@@ -306,6 +311,7 @@ def run_unsteady(
         "rel_steady_min": float(min(res.steady_residual)) if res.steady_residual else float("nan"),
         "steps_hit_max_newton": int(res.n_steps_hit_max_newton),
         "dt_backoffs": int(res.n_dt_backoffs),
+        "avg_window": [float(v) for v in res.avg_window],
         "newton_total": int(sum(res.newton_iters)),
         "gmres_total": int(sum(res.gmres_iters)),
         "residual_ref": float(res.residual_ref),
@@ -324,12 +330,24 @@ def run_unsteady(
     out["probes"] = {k: [float(x) for x in v] for k, v in res.probes.items()}
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out / f"trama_{tag}.yaml").write_text(yaml.safe_dump(out, sort_keys=False))
+    avg = (
+        {}
+        if res.mean_u is None
+        else {
+            "mean_u": res.mean_u,
+            "mean_v": res.mean_v,
+            "mean_p": res.mean_p,
+            "rms_u": res.rms_u,
+            "rms_v": res.rms_v,
+        }
+    )
     np.savez_compressed(
         a.out / f"trama_{tag}_fields.npz",
         u=res.u,
         v=res.v,
         p=res.p,
         h=inp.h,
+        **avg,
         snap_t=np.array([sn[0] for sn in res.snapshots]),
         snap_u=np.array([sn[1] for sn in res.snapshots]),
         snap_v=np.array([sn[2] for sn in res.snapshots]),
@@ -356,6 +374,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--linear-solver", default="jfnk_simple")
     ap.add_argument("--jacobian", default="fou", choices=["fou", "fd"])
     ap.add_argument("--h-blocked", type=float, default=1.0e-5)
+    ap.add_argument(
+        "--h-solid",
+        type=float,
+        default=0.0,
+        help="[壁セル] この厚さ以下のセルを壁として解かない [m]（0 で無効。閉塞域なら 1e-4 程度）",
+    )
     ap.add_argument("--cfl-max", type=float, default=None)
     ap.add_argument("--beta", type=float, default=0.0, help="圧力の擬似時間項（人工圧縮性）β")
     ap.add_argument("--steady-ser", action="store_true", help="pseudo_time_in_residual=False")
@@ -394,6 +418,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--newton-per-step", type=int, default=6)
     ap.add_argument("--save-every", type=int, default=20)
     ap.add_argument("--step-tol", type=float, default=1e-3)
+    ap.add_argument(
+        "--avg-start",
+        type=float,
+        default=-1.0,
+        help="この時刻 [s] 以降を時間平均する（OpenFOAM の fieldAverage と同じ量。負で無効）",
+    )
+    ap.add_argument(
+        "--no-stop-at-steady",
+        action="store_true",
+        help="定常残差が閾値を割っても止めずに最後まで進める（時間平均を取り切るため）",
+    )
     ap.add_argument("--tag", default="")
     ap.add_argument("--out", type=Path, default=HERE / "results")
     a = ap.parse_args(argv)
@@ -428,6 +463,7 @@ def main(argv: list[str] | None = None) -> int:
         sink_smooth_cells=a.sink_smooth,
         port_radius_factor=a.port_radius_factor,
         friction_re_crit=a.friction,
+        h_solid=a.h_solid,
     )
     info = describe(geo, inp, a.mass)
     print(
@@ -455,6 +491,7 @@ def main(argv: list[str] | None = None) -> int:
                 sink_smooth_cells=a.sink_smooth,
                 port_radius_factor=a.port_radius_factor,
                 friction_re_crit=a.friction,
+                h_solid=a.h_solid,
             )
             if prev is not None:
                 ratio = m_k / prev_m
