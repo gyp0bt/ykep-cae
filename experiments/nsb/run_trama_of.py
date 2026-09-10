@@ -67,6 +67,12 @@ def main() -> None:
     ap.add_argument("pattern", nargs="?", type=Path, default=DEFAULT_PATTERN)
     ap.add_argument("--out", required=True)
     ap.add_argument("--variant", choices=["porous", "walls"], default="porous")
+    ap.add_argument(
+        "--geo-variant",
+        choices=["orig", "ortho", "lead"],
+        default="orig",
+        help="中心線の作り方（nsb 側の trama_case.py --variant と揃える）",
+    )
     ap.add_argument("--dx", type=float, default=1.5)
     ap.add_argument("--mass", type=float, default=0.15)
     ap.add_argument("--end-time", type=int, default=5000)
@@ -99,7 +105,7 @@ def main() -> None:
     os.environ["OF_MEM"] = a.of_mem
     os.environ["OF_CPUS"] = a.of_cpus
     case = Path(a.out)
-    geo = load_trama(a.pattern)
+    geo = load_trama(a.pattern, variant=a.geo_variant)
     spec = write_case(
         case,
         geo,

@@ -56,10 +56,40 @@ class TramaGeometry:
     outlet: tuple[float, float]  # to ノード [m]
     lx: float
     ly: float
+    variant: str = (
+        "orig"  # 中心線の作り方（orig / ortho / lead）。OF 側と揃えるため case.json に載せる
+    )
 
     @property
     def path_length(self) -> float:
         return float(np.linalg.norm(np.diff(self.polyline, axis=0), axis=1).sum())
+
+
+def prepend_lead(
+    pts: np.ndarray, w: float, back_widths: float = 3.0, stub_widths: float = 5.0
+) -> np.ndarray:
+    """入口側に「助走 + 90 度の曲がり」を継ぎ足した中心線を返す.
+
+    幾何: 元の中心線の第 1 区間の向きを d、その右手法線を n = (d_y, -d_x) とする。
+    入口ノード a から d の**逆向き**に back_widths×w 戻った点を曲がり角 corner に置き、
+    そこから n 方向に stub_widths×w 伸ばした先を新しい入口にする。
+
+        新入口 ●──stub──> corner ─back─> a ──(元のパターン)──>
+                          └ 90 度
+
+    この向きなら（trama の第 1 区間 d = +x に対して）助走脚は入口ノードの左下に伸び、
+    流れは「上向きに助走 → 右へ 90 度曲がる → 元の蛇行に入る」になる。ポートの噴流が
+    発達しきってから曲がりに入るので、ポート境界条件と曲がりの影響を分けて見られる。
+    """
+    d = pts[1] - pts[0]
+    n_d = float(np.linalg.norm(d))
+    if n_d == 0.0:
+        raise ValueError("中心線の第 1 区間の長さが 0 です")
+    d = d / n_d
+    n = np.array([d[1], -d[0]])
+    corner = pts[0] - d * back_widths * w
+    start = corner + n * stub_widths * w
+    return np.vstack([start[None, :], corner[None, :], pts])
 
 
 def load_trama(
@@ -74,6 +104,7 @@ def load_trama(
 
     variant="ortho" は斜め区間（隣接点で x, y が同時に変わる区間）を、格子に沿う 2 区間
     （まず x、次に y）に置き換える（階段状不連続の有無だけを変えた対照ケース用）。
+    variant="lead" は入口側に助走脚と 90 度の曲がりを継ぎ足す（`prepend_lead`）。
     """
     d = json.loads(Path(path).read_text())
     nodes = {k: np.asarray(v, float) for k, v in d["nodes"].items()}
@@ -81,6 +112,7 @@ def load_trama(
         raise ValueError(f"エッジ 1 本のパターンを想定: {len(d['edges'])} 本")
     e = d["edges"][0]
     pts = np.vstack([nodes[e["from"]], np.asarray(e.get("via", []), float), nodes[e["to"]]])
+    w = float(e["width"])
     if variant == "ortho":
         out = [pts[0]]
         for q in pts[1:]:
@@ -89,9 +121,10 @@ def load_trama(
                 out.append(np.array([q[0], prev[1]]))
             out.append(q)
         pts = np.vstack(out)
+    elif variant == "lead":
+        pts = prepend_lead(pts, w)
     elif variant != "orig":
-        raise ValueError(f"variant は orig / ortho: {variant!r}")
-    w = float(e["width"])
+        raise ValueError(f"variant は orig / ortho / lead: {variant!r}")
     lo = pts.min(axis=0) - w / 2
     hi = pts.max(axis=0) + w / 2
     if scale_mm is None:
@@ -107,6 +140,7 @@ def load_trama(
         outlet=tuple(phys[-1]),
         lx=lx_mm * 1e-3,
         ly=ly_mm * 1e-3,
+        variant=variant,
     )
 
 
@@ -222,7 +256,7 @@ def make_trama_input(
     elif port == "wall":
         ya, yb = geo.inlet[1], geo.outlet[1]
         poly = np.vstack([[[-w2, ya]], geo.polyline, [[-w2, yb]]])  # 壁の外まで伸ばして端を平らに
-        geo_w = TramaGeometry(poly, geo.width, geo.inlet, geo.outlet, geo.lx, geo.ly)
+        geo_w = TramaGeometry(poly, geo.width, geo.inlet, geo.outlet, geo.lx, geo.ly, geo.variant)
         h = make_trama_h(geo_w, nx, ny, h_channel, h_blocked)
         bc = BC(
             patches=(
@@ -413,7 +447,7 @@ def main(argv: list[str] | None = None) -> int:
         help="質量流量の継続法: カンマ区切り（例 0.0015,0.005,0.015,0.05,0.15）。前段の解を流量比で拡大して初期場にする",
     )
     ap.add_argument("--port", default="interior", choices=["interior", "carve", "wall"])
-    ap.add_argument("--variant", default="orig", choices=["orig", "ortho"])
+    ap.add_argument("--variant", default="orig", choices=["orig", "ortho", "lead"])
     ap.add_argument(
         "--straight", type=float, default=None, help="直線流路の角度 [deg]（パターンの代わり）"
     )

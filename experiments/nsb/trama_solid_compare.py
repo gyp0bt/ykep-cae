@@ -98,6 +98,10 @@ def main() -> None:
     ap.add_argument("--out-json", default="experiments/nsb/results/trama_solid_compare.json")
     ap.add_argument("--exclude-cells", type=float, default=3.0, help="ポート周りの除外 [セル]")
     ap.add_argument("--arc-bins", type=int, default=16, help="流路に沿った分割数")
+    ap.add_argument(
+        "--fig-prefix", default="solid", help="図のファイル名 f16_<prefix>_transient.png など"
+    )
+    ap.add_argument("--nsb-label", default="nsb 壁セル", help="図中の nsb 側の呼び名")
     a = ap.parse_args()
 
     import matplotlib
@@ -107,7 +111,6 @@ def main() -> None:
 
     plt.rcParams["font.family"] = "Noto Sans CJK JP"
 
-    geo = load_trama(a.pattern)
     z = np.load(a.nsb)
     if "mean_u" not in z:
         raise KeyError(f"{a.nsb} に時間平均場がありません（--avg-start を付けて回す）")
@@ -116,6 +119,7 @@ def main() -> None:
     nx, ny = un.shape
     case = Path(a.of)
     spec = json.loads((case / "case.json").read_text())
+    geo = load_trama(a.pattern, variant=spec.get("geo_variant", "orig"))
     if (spec["nx"], spec["ny"]) != (nx, ny):
         raise ValueError(f"格子が違う: nsb {un.shape} vs OpenFOAM {(spec['nx'], spec['ny'])}")
     f = load_of_mean(case)
@@ -217,7 +221,10 @@ def main() -> None:
     out["arc_decay_length_m"] = decay
     out["l_drag_m"] = float(l_drag)
     out["decay_over_l_drag"] = decay / float(l_drag)
+    out["port_limited"] = bool(decay < path_len)
     out["path_length_m"] = path_len
+    out["N"] = float(l_drag / geo.width)
+    out["mass_flow"] = float(spec["flow_rate"] * spec["rho"])
 
     print(json.dumps(out, indent=1, ensure_ascii=False))
     Path(a.out_json).write_text(json.dumps(out, indent=1, ensure_ascii=False) + "\n")
@@ -229,7 +236,7 @@ def main() -> None:
     vmax = float(np.nanmax(np.where(keep, sp_n, np.nan)))
     rmax = float(np.nanmax(np.where(keep, rms_o, np.nan)))
     panels = (
-        (axes[0, 0], sp_n, "nsb 壁セル 時間平均 |U|", "viridis", vmax),
+        (axes[0, 0], sp_n, f"{a.nsb_label} 時間平均 |U|", "viridis", vmax),
         (axes[0, 1], sp_o, "OpenFOAM walls 時間平均 |U|", "viridis", vmax),
         (
             axes[0, 2],
@@ -238,7 +245,7 @@ def main() -> None:
             "magma",
             0.2 * vmax,
         ),
-        (axes[1, 0], rms_n, "nsb 変動 RMS", "inferno", rmax),
+        (axes[1, 0], rms_n, f"{a.nsb_label} 変動 RMS", "inferno", rmax),
         (axes[1, 1], rms_o, "OpenFOAM 変動 RMS", "inferno", rmax),
         (axes[1, 2], np.abs(rms_n - rms_o), "変動 RMS の差", "magma", 0.5 * rmax),
     )
@@ -257,23 +264,29 @@ def main() -> None:
         ax.set_xlabel("x [mm]")
         ax.set_ylabel("y [mm]")
     fig.suptitle(
-        "0.15 kg/s（N = 13.3、定常解なし）の時間平均場: nsb 壁セル版 ↔ OpenFOAM", fontsize=13
+        f"{spec['flow_rate'] * spec['rho']:g} kg/s"
+        f"（N = {l_drag / geo.width:.1f}、定常解なし）の時間平均場: {a.nsb_label} ↔ OpenFOAM walls",
+        fontsize=13,
     )
     fig.tight_layout()
-    out_png = figs / "f16_solid_transient.png"
+    out_png = figs / f"f16_{a.fig_prefix}_transient.png"
     fig.savefig(out_png, dpi=110)
     print(f"wrote {out_png}")
 
     fig2, ax2 = plt.subplots(1, 2, figsize=(13, 4.4))
     sm = sc * 1e3
     ax2[0].semilogy(sm, rel_arc, "o-", color="#c0392b", label="時間平均速度の差の L2 相対")
-    ax2[0].semilogy(
-        sm,
-        rel_arc[0] * np.exp(-(sc - sc[0]) / decay),
-        "--",
-        color="#555",
-        label=f"exp(−s / {decay * 1e3:.0f} mm) 当てはめ",
-    )
+    # 減衰長が流路長より長ければ「距離で減衰していない」＝誤差源はポートではない。
+    # そこに指数当てはめを描くと嘘になるので描かない。
+    port_limited = decay < path_len
+    if port_limited:
+        ax2[0].semilogy(
+            sm,
+            rel_arc[0] * np.exp(-(sc - sc[0]) / decay),
+            "--",
+            color="#555",
+            label=f"exp(−s / {decay * 1e3:.0f} mm) 当てはめ",
+        )
     ax2[0].axvline(l_drag * 1e3, color="#2c6fa8", lw=1.2, ls=":")
     ax2[0].annotate(
         f"抗力長 L_drag = {l_drag * 1e3:.0f} mm",
@@ -284,12 +297,17 @@ def main() -> None:
     )
     ax2[0].set_xlabel("入口ポートからの流路に沿った距離 s [mm]")
     ax2[0].set_ylabel("時間平均速度の L2 相対差")
-    ax2[0].set_title("ポートの与え方の違いは抗力長で消える", fontsize=11)
+    ax2[0].set_title(
+        "ポートの与え方の違いは抗力長で消える"
+        if port_limited
+        else "差は距離で減衰しない ＝ 誤差源はポートではない",
+        fontsize=11,
+    )
     ax2[0].legend(fontsize=9)
     ax2[0].grid(alpha=0.3)
 
     ax2[1].plot(
-        [q["s_m"] * 1e3 for q in prof], [q["rms_nsb"] for q in prof], "o-", label="nsb 壁セル"
+        [q["s_m"] * 1e3 for q in prof], [q["rms_nsb"] for q in prof], "o-", label=a.nsb_label
     )
     ax2[1].plot(
         [q["s_m"] * 1e3 for q in prof], [q["rms_of"] for q in prof], "s-", label="OpenFOAM walls"
@@ -300,7 +318,7 @@ def main() -> None:
     ax2[1].legend(fontsize=9)
     ax2[1].grid(alpha=0.3)
     fig2.tight_layout()
-    out2 = figs / "f17_solid_arc.png"
+    out2 = figs / f"f17_{a.fig_prefix}_arc.png"
     fig2.savefig(out2, dpi=110)
     print(f"wrote {out2}")
 

@@ -59,7 +59,7 @@ def main() -> None:
 
     case = Path(a.case)
     spec = json.loads((case / "case.json").read_text())
-    geo = load_trama(a.pattern)
+    geo = load_trama(a.pattern, variant=spec.get("geo_variant", "orig"))
     t = latest_time(str(case))
     if not (case / t / "C").exists():
         run_of(
