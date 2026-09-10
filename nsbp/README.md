@@ -63,6 +63,16 @@ res = solve_steady(make_case("uturn", 2, u_in=1.0), NSBPSettings())   # res.u/v/
 nsb との解の差は max|Δu|/max|u| で 1e-5 台。律速は KSP（ILU 適用 + matvec）で、8 ランク超は伸びない（メモリ帯域）。
 詳細・機構・駄目だった試行は [status-42](../docs/status/status-42.md)。
 
+## 壁セル（status-48）
+
+`NSBInput.h_solid` を与えると h ≤ h_solid のセルを固体として未知数から外す（実装は
+`nsb.assembly` の面マスク `wall_x` / `wall_y` をパッチに切り出すだけ。詳細は `nsb/README.md`）。
+FD カラーリングは固体セルの行を全ゼロにするので、`jacobian_steady` で対角に 1 を足して単位行にする。
+
+これは nsbp にとって単なる高速化ではない。**ILU(2) を壊していたのは行列サイズではなく
+抗力コントラスト**（流路 2493 : 閉塞 3.6e8 = 1.4×10⁵ 倍）で、固体セルを外すとそれが 1 になる。
+uturn 144×96 U=1 で KSP 811 → 395 反復、12.2 → 4.2 s（4 ランクでも 1 ランクと 5 桁一致）。
+
 ## 設計の論点（なぜこの形か）
 
 ### ステンシル幅 2 とパッチ端の扱い

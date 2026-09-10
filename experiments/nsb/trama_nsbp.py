@@ -43,6 +43,9 @@ def main() -> int:
     ap.add_argument("--port", default="wall", choices=["interior", "wall"])
     ap.add_argument("--continuation", default="", help="カンマ区切りの質量流量")
     ap.add_argument("--freeze", type=float, default=1.0e-3, help="limiter_freeze_tol")
+    ap.add_argument(
+        "--h-solid", type=float, default=0.0, help="[壁セル] この厚さ以下のセルを解かない [m]"
+    )
     ap.add_argument("--pc", default="asm", choices=["asm", "bjacobi", "schur", "lu"])
     ap.add_argument("--ksp-rtol", type=float, default=1.0e-3)
     ap.add_argument("--jac-lag", type=int, default=1)
@@ -81,7 +84,7 @@ def main() -> int:
     prev_m = masses[0]
     t_all = time.perf_counter()
     for m_k in masses:
-        inp = make_trama_input(geo, m_k, dx_mm=a.dx, port=a.port)
+        inp = make_trama_input(geo, m_k, dx_mm=a.dx, port=a.port, h_solid=a.h_solid)
         if prev is not None:
             r = m_k / prev_m
             inp = NSBInput(
