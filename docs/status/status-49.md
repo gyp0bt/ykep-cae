@@ -139,3 +139,70 @@ for EX in 3 6 10 15 25; do
     --nsb experiments/nsb/results/trama_CARVE-oracle-m0005_fields.npz --of <of>/walls-m0005
 done
 ```
+
+## 付録: N 判定が uturn でも同じ位置に出る（gyp さんの追加質問）
+
+「0.7 × 0.4、流路幅 0.1、u_in = 1、288×182、ρ=1000、μ=1e-3、**h_channel = 4e-3** の uturn は何反復で収束するか」。
+まず判定式（status-47）に入れると `L_drag = ρuh²/(12μ) = 1.333 m`、`N = L_drag/w = 13.3`、
+`Re_h = 8000`、`Re_w = 1e5`。**trama の 0.15 kg/s と同じ N** で、境目（N ≈ 2）の 8 倍向こう。
+
+実測（SOU + Venkatakrishnan、上限 80）:
+
+| 構成 | 結果 | 定常残差比 | 時間 |
+|---|---|---|---|
+| `jfnk_simple`（既定） | **発散** | 27.7（`rel_min` 1.00 = 一度も参照を下回らない） | 221 s |
+| `jfnk` | 未収束 | 5.4e-2 で平坦 | 80 s |
+| `jfnk` + 壁セル `h_solid=1e-4` | 未収束 | 2.0e-1 | 19.8 s |
+
+継続法（U を上げる、壁セル + リミター凍結 1e-3 + 定常残差 SER、上限 200）:
+
+| U | **N** | 結果 | 反復 | 時間 |
+|---|---|---|---|---|
+| 0.125 | **1.67** | **収束** | **161** | 103 s |
+| 0.25 | **3.33** | 停滞（rel_steady 1.4e-1） | 200 未達 | 42 s |
+
+ny = 192 でも同じ（161 → 163 反復、停滞位置も同じ）ので、ny の端数（流路幅 0.1 が 45.5 セル）は原因ではない。
+
+**境目は N = 1.67 収束 / 3.33 停滞の間**で、status-47 が OpenFOAM の蛇行流路で測った
+**N 1.33 収束 / 2.22 停滞** と同じ位置に出る。**別の流路形状・別のソルバーで境目が一致**したので、
+N = L_drag/w は形状によらない判定と見てよい。
+
+### FOU で収束するのは数値拡散が粘度を 1200 倍にするから
+
+gyp さんの手元では FOU に切り替えると 100 反復程度で定常解に落ちるとのこと。1 次風上の切り捨て誤差は
+主流方向の拡散そのもので `μ_num ≈ ½ρ|u|Δx`。このケースでは Δx = 2.43 mm なので
+
+| 量 | 値 |
+|---|---|
+| セル Reynolds 数 `Re_Δ = ρuΔx/μ` | 2431 |
+| `μ_num = ½ρuΔx` | **1.22 Pa·s** |
+| `μ_phys` | 1.0e-3 Pa·s |
+| **比** | **≈ 1200 倍** |
+| 実効 `Re_w = ρuw/μ_eff` | 1e5 → **82** |
+
+渦放出に要る目安は Re_w ≳ 2000（status-47）なので、FOU では**渦がそもそも立たない**。
+status-47 で「乱流モデルで定常化させるのに必要」と測った渦粘性 ν_t = 4.2e-4 m²/s（隙間乱流の目安の
+22 倍なので棄却した）に対し、FOU が供給しているのは ν_num = 1.2e-3 で**その 3 倍**。
+**乱流モデルとして棄却した安定化を、FOU は名前を変えて 3 倍多く入れている。**
+
+切り分けは格子細分で決まる（μ_num ∝ Δx）。物理の解なら Δx → 0 で残り、数値拡散の産物なら
+細かくするほど実効 Re_w が上がって収束しなくなる（Re_w,eff = 2000 を跨ぐのは Δx ≈ 1e-4 m ＝ nx ≈ 7000 相当なので、
+288 → 576 → 1152 で u_max と Δp が単調に動き続けるかを見れば足りる）。
+商用ソルバーとの突き合わせでも、**両者のスキーム次数と実効セル Re を揃えない限り「同じ定常解が出た」は物理の裏付けにならない**。
+
+### 再現
+
+```bash
+python - <<'PY'
+from nsb.core import NSBInput, NSBSettings
+from nsb.geo import LX, LY, make_uturn_h, uturn_bc_preset
+from nsb.solver import solve_steady
+NX, NY, U = 288, 182, 1.0
+h = make_uturn_h(NX, NY, h_channel=4e-3, h_blocked=1e-5, width=0.1)
+inp = NSBInput(nx=NX, ny=NY, lx=LX, ly=LY, h=h, bc=uturn_bc_preset(NY, u_in=U),
+               h_solid=1e-4, rho=1000.0, mu=1e-3, mu_b=1e-3,
+               settings=NSBSettings(linear_solver="jfnk", newton_max_iter=80))
+r = solve_steady(inp, log=None)
+print(r.converged, r.n_iter, r.rel_steady_residual)
+PY
+```
