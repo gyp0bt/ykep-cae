@@ -28,10 +28,24 @@ from trama_of_case import DEFAULT_PATTERN  # noqa: E402
 from trama_of_compare import to_grid  # noqa: E402
 from trama_solid_compare import load_of_mean  # noqa: E402
 
-# 上側水平区間（90 度の曲がりを出た直後）。剥離泡と剪断層の崩れがここに出る
-ZOOM = (90.0, 520.0, 255.0, 325.0)  # x0, x1, y0, y1 [mm]
-BAND = (0.278, 0.320)  # 遷移位置を測る y 帯 [m]
-ONSET_X = (0.132, 0.300)  # 測る x の範囲 [m]
+
+def windows(geo):
+    """上側水平区間（90 度の曲がりを出た直後）の拡大範囲・測定帯を幾何から決める.
+
+    曲がり角は polyline[1]。そこから y が変わらない間だけ辿った先が水平区間の終わり
+    （本番は蛇行の続きがあるので polyline の最後の点ではない）。
+    """
+    q = geo.polyline * 1e3
+    x_bend, y_leg = float(q[1][0]), float(q[1][1])
+    k = 1
+    while k + 1 < len(q) and abs(q[k + 1][1] - y_leg) < 1e-9:
+        k += 1
+    x_end = float(q[k][0])
+    w2 = geo.width * 1e3 / 2
+    zoom = (x_bend - 25.0, min(x_bend + 410.0, x_end + 15.0), y_leg - w2 - 20.0, y_leg + w2 + 20.0)
+    band = ((y_leg - w2) * 1e-3, (y_leg + w2) * 1e-3)
+    onset = ((x_bend + 3.0) * 1e-3, min(x_bend + 200.0, x_end - 30.0) * 1e-3)
+    return zoom, band, onset
 
 
 def main() -> None:
@@ -39,8 +53,12 @@ def main() -> None:
     ap.add_argument("--nsb", required=True)
     ap.add_argument("--of", required=True)
     ap.add_argument("--pattern", type=Path, default=DEFAULT_PATTERN)
+    ap.add_argument("--lx", type=float, default=600.0, help="領域の横 [mm]（ケースと揃える）")
+    ap.add_argument("--ly", type=float, default=350.0, help="領域の縦 [mm]")
+    ap.add_argument("--scale", type=float, default=None, help="パターン単位 → mm の倍率")
+    ap.add_argument("--tag", default="lead", help="出力ファイル名に入れる名前")
     ap.add_argument("--figs", default="experiments/nsb/results/trama_figs")
-    ap.add_argument("--out-json", default="experiments/nsb/results/trama_lead_onset.json")
+    ap.add_argument("--out-json", default=None)
     a = ap.parse_args()
 
     import matplotlib
@@ -52,7 +70,14 @@ def main() -> None:
 
     case = Path(a.of)
     spec = json.loads((case / "case.json").read_text())
-    geo = load_trama(a.pattern, variant=spec.get("geo_variant", "orig"))
+    geo = load_trama(
+        a.pattern,
+        lx_mm=a.lx,
+        ly_mm=a.ly,
+        scale_mm=a.scale,
+        variant=spec.get("geo_variant", "orig"),
+    )
+    ZOOM, BAND, ONSET_X = windows(geo)
     z = np.load(a.nsb)
     un, vn, pn = z["mean_u"], z["mean_v"], z["mean_p"]
     rn = np.hypot(z["rms_u"], z["rms_v"])
@@ -113,7 +138,7 @@ def main() -> None:
         fontsize=13,
     )
     fig.tight_layout()
-    fig.savefig(figs / "f20_lead_fields.png", dpi=105)
+    fig.savefig(figs / f"f20_{a.tag}_fields.png", dpi=105)
 
     # --- f22: 曲がり直後の拡大 ---
     x0, x1, y0, y1 = ZOOM
@@ -136,7 +161,7 @@ def main() -> None:
             axx.set_xlabel("x [mm]")
     fig3.suptitle("曲がりを出た直後（上側水平区間）— 剪断層が崩れる位置", fontsize=13)
     fig3.tight_layout()
-    fig3.savefig(figs / "f22_lead_zoom.png", dpi=105)
+    fig3.savefig(figs / f"f22_{a.tag}_zoom.png", dpi=105)
 
     # --- f21: 剥離剪断層が崩れ始める位置 ---
     band = (np.arange(ny) * dy > BAND[0]) & (np.arange(ny) * dy < BAND[1])
@@ -194,9 +219,10 @@ def main() -> None:
     ax2.grid(alpha=0.3)
     ax2.legend(fontsize=9)
     fig2.tight_layout()
-    fig2.savefig(figs / "f21_lead_onset.png", dpi=110)
+    fig2.savefig(figs / f"f21_{a.tag}_onset.png", dpi=110)
 
-    Path(a.out_json).write_text(
+    out_json = a.out_json or f"experiments/nsb/results/trama_{a.tag}_onset.json"
+    Path(out_json).write_text(
         json.dumps(
             {
                 "u_mean": u_mean,
@@ -210,7 +236,7 @@ def main() -> None:
         )
         + "\n"
     )
-    print(f"wrote {figs}/f20_lead_fields.png, f21_lead_onset.png, f22_lead_zoom.png")
+    print(f"wrote {figs}/f20_{a.tag}_fields.png, f21_{a.tag}_onset.png, f22_{a.tag}_zoom.png, {out_json}")
 
 
 if __name__ == "__main__":
